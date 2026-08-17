@@ -179,6 +179,15 @@ def create_data_profile(df: pd.DataFrame, title: str = "Data Profile") -> None:
     plt.show()
 
 
+def calculate_statistics(data):
+    """Calculate basic statistics for dataset."""
+    return {
+        'mean': data.mean(),
+        'std': data.std(),
+        'count': len(data)
+    }
+
+
 def detect_outliers(df: pd.DataFrame, columns: List[str], method: str = 'iqr') -> Dict[str, np.ndarray]:
     """
     Detect outliers in specified columns using various methods.
