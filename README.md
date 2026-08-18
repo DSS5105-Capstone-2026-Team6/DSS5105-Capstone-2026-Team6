@@ -1,7 +1,8 @@
 # Data Science Collaboration Project
 
 This project demonstrates best practices for collaborative data science work, including proper project structure, version control, and reproducible workflows.
-
+## Team Members
+- Zhang Ruikai
 ## Project Structure
 
 ```
