@@ -1,71 +1,53 @@
-# Data Science Collaboration Project
+# DSS5105 Capstone 2026 — Team 6
 
-This project demonstrates best practices for collaborative data science work, including proper project structure, version control, and reproducible workflows.
-## Team Members
-- Zhang Ruikai
+**Track 2: The Quick-Response Subcontracting Desk** — primary objective: **minimise lateness**.
+
+The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
+
 ## Project Structure
 
 ```
-data-science-collaboration/
-├── README.md                    # Project documentation
-├── data/
-│   ├── raw/                    # Original, immutable data files
-│   └── processed/              # Cleaned and processed datasets
-├── notebooks/
-│   └── analysis.ipynb          # Jupyter notebooks for exploration
-├── src/
-│   ├── data_preprocessing.py   # Data cleaning and preprocessing scripts
-│   ├── model_training.py       # Model training and evaluation
-│   └── utils.py               # Utility functions
-├── tests/                      # Unit tests for the codebase
-└── requirements.txt           # Python dependencies
+├── README.md                  # This file
+├── data/                      # Track 2 dataset (from the course pack, see docs/CHANGELOG.md)
+│   ├── orders.csv             # 120 orders
+│   ├── workshops.csv          # 8 workshop profile cards
+│   ├── dispatch_requests.txt  # 30 chat-style allocation requests (NL inbox)
+│   ├── orders_stages.csv      # Optional --stages extension
+│   ├── workshops_stages.csv   # Optional --stages extension
+│   └── data_dictionary.md     # Column definitions
+├── harness/
+│   └── simulate.py            # Shared evaluation harness — DO NOT MODIFY
+├── docs/
+│   ├── Factory_Primer.md      # 3-minute domain primer
+│   ├── CHANGELOG.md           # Track 2 pack changelog
+│   ├── Capstone_Project_Spec_v5.pdf
+│   └── Capstone_Project_Tracks_v4.pdf
+├── src/                       # Our code: allocator, chat agent, tools
+├── notebooks/                 # Exploration
+├── tests/
+├── pyproject.toml             # uv project + pinned dependencies
+├── requirements.txt
+└── uv.lock
 ```
 
-## Getting Started
+## Quick Start
 
-1. Clone this repository
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Run the analysis:
-   ```bash
-   jupyter notebook notebooks/analysis.ipynb
-   ```
+```bash
+uv sync                          # or: pip install -r requirements.txt
+python harness/simulate.py       # runs the three baselines (random / greedy_biggest / cheapest)
+python harness/simulate.py --shock --seeds 10   # robustness scenario, averaged over 10 seeds
+```
 
-## Data Science Workflow
+`harness/simulate.py` loads its data from `../data` — keep the `harness/` and `data/` directories as siblings.
 
-1. **Data Collection**: Place raw data files in `data/raw/`
-2. **Data Preprocessing**: Use scripts in `src/` to clean and process data
-3. **Exploratory Analysis**: Conduct initial analysis in Jupyter notebooks
-4. **Model Development**: Develop and train models using `src/model_training.py`
-5. **Testing**: Write and run tests to ensure code reliability
-6. **Documentation**: Keep README and docstrings up to date
+## Evaluation Plan (Track 2)
 
-## Contributing
+1. **Primary objective — minimise lateness** (% late, late days; guardrail: % def pcs no worse than random). Must beat random, greedy_biggest, cheapest, and our own simple rule-based allocator.
+2. **Shock scenario**: one workshop closes day 30–44; report `--shock` averaged over 10 seeds.
+3. **Other objectives + hybrid**: run the same 120 orders under at least one other objective (minimise defects / fair allocation / robust) and one weighted hybrid; compare allocations. The objective is a configuration, never hard-coded.
+4. **Chat inbox**: run all 30 requests in `dispatch_requests.txt`; report behaviour by kind (extract / ask / refuse / unanswerable). The LLM parses and explains — all arithmetic stays in tools.
+5. **Deliverables**: tool specification table, auditable structured allocation records, dispatcher UX.
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and add tests
-4. Run tests: `python -m pytest tests/`
-5. Commit changes: `git commit -am 'Add new feature'`
-6. Push to branch: `git push origin feature-name`
-7. Submit a pull request
+## Team Members
 
-## Best Practices
-
-- Keep raw data immutable - never modify files in `data/raw/`
-- Use version control for code, not data
-- Write clear, documented code
-- Include unit tests for all functions
-- Use meaningful commit messages
-- Document your analysis process
-
-## License
-
-MIT License
+- Zhang Ruikai

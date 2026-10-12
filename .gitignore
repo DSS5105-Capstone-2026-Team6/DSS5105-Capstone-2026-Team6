@@ -120,6 +120,18 @@ cython_debug/
 !**/example_*.json
 !**/demo_*.xlsx
 
+# Track 2 capstone data (shared simulator input — must be committed)
+!data/orders.csv
+!data/workshops.csv
+!data/orders_stages.csv
+!data/workshops_stages.csv
+!data/dispatch_requests.txt
+!data/data_dictionary.md
+!Track 1 and Track 2 Data/track2/data/*.csv
+
+# Backup files
+*.bak
+
 # Model files
 *.pkl
 *.joblib
