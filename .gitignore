@@ -127,7 +127,6 @@ cython_debug/
 !data/workshops_stages.csv
 !data/dispatch_requests.txt
 !data/data_dictionary.md
-!Track 1 and Track 2 Data/track2/data/*.csv
 
 # Backup files
 *.bak
