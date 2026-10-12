@@ -132,6 +132,9 @@ cython_debug/
 # Backup files
 *.bak
 
+# uv lockfile is generated per-environment (uv sync / uv lock)
+uv.lock
+
 # Model files
 *.pkl
 *.joblib
