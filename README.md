@@ -42,4 +42,4 @@ python harness/eft_benchmark.py --seeds 10  # EFT benchmark, normal + shock, ave
 
 ## Team Members
 
-- Zhang Ruikai
+- 
