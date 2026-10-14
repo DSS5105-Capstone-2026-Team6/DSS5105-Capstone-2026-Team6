@@ -50,11 +50,71 @@ def eft_reserved(batch, workshops, queues):
     return eft(batch, workshops, queues)
 
 
+def _scaled(values):
+    """Min-max scale a {key: number} dict to 0-1. Equal values map to 0."""
+    lo, hi = min(values.values()), max(values.values())
+    if hi == lo:
+        return {k: 0.0 for k in values}
+    return {k: (v - lo) / (hi - lo) for k, v in values.items()}
+
+
+def make_hybrid_allocator(w):
+    """Hybrid-weighted scoring over eligible candidates (appendix weight sweep):
+
+        score = w * est_finish + 0.75(1-w) * defect_rate + 0.25(1-w) * cost
+
+    each component min-max scaled to 0-1 across the batch's eligible candidates
+    before weighting. w = 1.0 is plain EFT. Deterministic, no LLM."""
+    w_finish, w_defect, w_cost = w, 0.75 * (1 - w), 0.25 * (1 - w)
+
+    def hybrid(batch, workshops, queues):
+        ok = eligible_workshops(batch, workshops)
+        finish = {w.workshop_id: est_turnaround(batch, w, queues) for w in ok}
+        defect = {w.workshop_id: w.defect_rate for w in ok}
+        cost = {w.workshop_id: batch["pieces"] * w.cost for w in ok}
+        score = {}
+        for component, weight in ((finish, w_finish), (defect, w_defect), (cost, w_cost)):
+            for k, v in _scaled(component).items():
+                score[k] = score.get(k, 0.0) + weight * v
+        return min(score, key=lambda wid: (score[wid], wid))
+
+    hybrid.__name__ = f"hybrid_w{w}"
+    return hybrid
+
+
+def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)):
+    """Weight sweep: run each w over the seeds, normal and shock, and print the
+    table in the appendix-slide format."""
+    seeds = range(seed, seed + n_seeds)
+    normal = average_over_seeds(
+        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=False)
+    shock = average_over_seeds(
+        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=True)
+    header = (f"{'w':>6}{'% late':>8}{'late days':>11}{'% def pcs':>10}"
+              f"{'cost ($)':>12}{'max share':>11}{'shock % late':>13}")
+    print(f"score = w x est.finish + 0.75(1-w) x defect + 0.25(1-w) x cost, each scaled 0-1")
+    print(f"default simulator, mean over seeds {seed}..{seed + n_seeds - 1}")
+    print(header)
+    print("-" * len(header))
+    for w in weights:
+        name = f"w={w}"
+        m, s = normal[name], shock[name]
+        print(f"{w:>6.1f}{m['% late']:>7.0f}%{m['late days']:>11.1f}"
+              f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%"
+              f"{s['% late']:>12.0f}%")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=5105)
     parser.add_argument("--seeds", type=int, metavar="N")
+    parser.add_argument("--sweep", action="store_true",
+                        help="hybrid weight sweep (appendix table) instead of the baseline table")
     args = parser.parse_args()
+
+    if args.sweep:
+        sweep_table(args.seed, args.seeds or 10)
+        raise SystemExit
 
     allocators = {
         "random": random_choice,
