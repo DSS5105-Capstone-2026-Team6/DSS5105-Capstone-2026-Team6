@@ -10,8 +10,8 @@ the due date, keeping accessory shops free for scarves/beanie reorders).
 
 Usage (from this directory):
 
-    python eft_benchmark.py                # hybrid weight sweep, 10 seeds (appendix table)
-    python eft_benchmark.py --baselines    # baseline comparison instead (Table 6)
+    python eft_benchmark.py                # sweep table + baseline comparison, 10 seeds
+    python eft_benchmark.py --baselines    # baseline comparison only (Table 6)
     python eft_benchmark.py --seed 7       # single seed for either mode
 """
 
@@ -111,12 +111,11 @@ if __name__ == "__main__":
     parser.add_argument("--seeds", type=int, default=10, metavar="N",
                         help="average over N seeds starting at --seed (default 10)")
     parser.add_argument("--baselines", action="store_true",
-                        help="baseline comparison (random/greedy/cheapest/eft/eft_reserved) instead of the sweep")
+                        help="baseline comparison only, without the weight sweep")
     args = parser.parse_args()
 
     if not args.baselines:
         sweep_table(args.seed, args.seeds)
-        raise SystemExit
 
     allocators = {
         "random": random_choice,
