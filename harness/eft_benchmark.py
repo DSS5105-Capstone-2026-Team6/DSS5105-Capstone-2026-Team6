@@ -10,8 +10,9 @@ the due date, keeping accessory shops free for scarves/beanie reorders).
 
 Usage (from this directory):
 
-    python eft_benchmark.py                # default run, 10 seeds, normal + shock
-    python eft_benchmark.py --seeds 10 --seed 5105
+    python eft_benchmark.py                # hybrid weight sweep, 10 seeds (appendix table)
+    python eft_benchmark.py --baselines    # baseline comparison instead (Table 6)
+    python eft_benchmark.py --seed 7       # single seed for either mode
 """
 
 import argparse
@@ -107,13 +108,14 @@ def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=5105)
-    parser.add_argument("--seeds", type=int, metavar="N")
-    parser.add_argument("--sweep", action="store_true",
-                        help="hybrid weight sweep (appendix table) instead of the baseline table")
+    parser.add_argument("--seeds", type=int, default=10, metavar="N",
+                        help="average over N seeds starting at --seed (default 10)")
+    parser.add_argument("--baselines", action="store_true",
+                        help="baseline comparison (random/greedy/cheapest/eft/eft_reserved) instead of the sweep")
     args = parser.parse_args()
 
-    if args.sweep:
-        sweep_table(args.seed, args.seeds or 10)
+    if not args.baselines:
+        sweep_table(args.seed, args.seeds)
         raise SystemExit
 
     allocators = {
@@ -126,12 +128,6 @@ if __name__ == "__main__":
 
     for shock in (False, True):
         label = "SHOCK" if shock else "NORMAL"
-        print(f"\n=== {label} (seeds {args.seed}..{args.seed + (args.seeds or 1) - 1}) ===")
-        if args.seeds:
-            rows = average_over_seeds(allocators, range(args.seed, args.seed + args.seeds), shock=shock)
-        else:
-            sim = Simulator(shock=shock, seed=args.seed)
-            for name, fn in allocators.items():
-                sim.run(fn, name)
-            rows = {name: sim.metrics(out) for name, out in sim.results.items()}
+        print(f"\n=== {label} (seeds {args.seed}..{args.seed + args.seeds - 1}) ===")
+        rows = average_over_seeds(allocators, range(args.seed, args.seed + args.seeds), shock=shock)
         print_table(rows)
