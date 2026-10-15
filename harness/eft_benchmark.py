@@ -10,10 +10,11 @@ the due date, keeping accessory shops free for scarves/beanie reorders).
 
 Usage (from this directory):
 
-    python eft_benchmark.py                # six tables: NORMAL and SHOCK, each with
-                                           #   hybrid sweep (default), hybrid sweep
-                                           #   (--stages), and the baseline comparison
-    python eft_benchmark.py --sweep        # only the four hybrid sweep tables
+    python eft_benchmark.py                # NORMAL and SHOCK, each with a finish-weight
+                                           #   sweep, a defect-share sweep (why d=0.75),
+                                           #   and the baseline comparison
+    python eft_benchmark.py --sweep        # only the two sweeps, no baselines
+    python eft_benchmark.py --w 0.7        # fix another finish weight in the share sweep
     python eft_benchmark.py --seed 7 --seeds 1   # single seed for any mode
 """
 
@@ -61,14 +62,21 @@ def _scaled(values):
     return {k: (v - lo) / (hi - lo) for k, v in values.items()}
 
 
-def make_hybrid_allocator(w):
-    """Hybrid-weighted scoring over eligible candidates (appendix weight sweep):
+def make_hybrid_allocator(w, defect_share=0.75):
+    """Hybrid-weighted scoring over eligible candidates:
 
-        score = w * est_finish + 0.75(1-w) * defect_rate + 0.25(1-w) * cost
+        score = w * est_finish
+              + (1-w) * [ d * defect_rate + (1-d) * cost ]
 
-    each component min-max scaled to 0-1 across the batch's eligible candidates
-    before weighting. w = 1.0 is plain EFT. Deterministic, no LLM."""
-    w_finish, w_defect, w_cost = w, 0.75 * (1 - w), 0.25 * (1 - w)
+    where d = defect_share, the fraction of the non-finish weight given to
+    defects (cost gets the rest). d is a PARAMETER, not a constant: 0.75 is
+    our chosen value because defects is the declared second objective, and the
+    split sweep table shows how the metrics move as d changes. Each component
+    is min-max scaled to 0-1 across the batch's eligible candidates before
+    weighting. w = 1.0 is plain EFT. Deterministic, no LLM."""
+    w_finish = w
+    w_defect = (1 - w) * defect_share
+    w_cost = (1 - w) * (1 - defect_share)
 
     def hybrid(batch, workshops, queues):
         ok = eligible_workshops(batch, workshops)
@@ -81,7 +89,7 @@ def make_hybrid_allocator(w):
                 score[k] = score.get(k, 0.0) + weight * v
         return min(score, key=lambda wid: (score[wid], wid))
 
-    hybrid.__name__ = f"hybrid_w{w}"
+    hybrid.__name__ = f"hybrid_w{w}_d{defect_share}"
     return hybrid
 
 
@@ -111,22 +119,50 @@ def combined_table(seed, n_seeds, shock=False):
               + "".join(f"{s[c]:>11.1f}" for c in cols))
 
 
-def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4), stages=False, shock=False):
-    """Hybrid weight sweep for ONE scenario and ONE variant."""
+def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4),
+                stages=False, shock=False, defect_share=0.75):
+    """Finish-weight sweep for ONE scenario and ONE variant, at a fixed
+    defect_share of the non-finish weight."""
     seeds = range(seed, seed + n_seeds)
     rows = average_over_seeds(
-        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=shock, stages=stages)
+        {f"w={w}": make_hybrid_allocator(w, defect_share) for w in weights},
+        seeds, shock=shock, stages=stages)
     mode = "SHOCK" if shock else "NORMAL"
     variant = "--stages" if stages else "default simulator"
     header = (f"{'w':>6}{'% late':>8}{'late days':>11}{'% def pcs':>10}"
               f"{'cost ($)':>12}{'max share':>11}")
-    print(f"HYBRID SWEEP | {mode} | {variant} | seeds {seed}..{seed + n_seeds - 1}")
-    print("score = w x est.finish + 0.75(1-w) x defect + 0.25(1-w) x cost, each scaled 0-1")
+    print(f"FINISH-WEIGHT SWEEP | {mode} | {variant} | seeds {seed}..{seed + n_seeds - 1}")
+    print(f"score = w x est.finish + (1-w) x [{defect_share:.2f} x defect "
+          f"+ {1 - defect_share:.2f} x cost], each scaled 0-1")
     print(header)
     print("-" * len(header))
     for w in weights:
         m = rows[f"w={w}"]
         print(f"{w:>6.1f}{m['% late']:>7.0f}%{m['late days']:>11.1f}"
+              f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%")
+
+
+def split_table(seed, n_seeds, w=0.6, shares=(0.0, 0.25, 0.5, 0.65, 0.75, 0.85, 1.0),
+                stages=False, shock=False):
+    """Defect-share sweep at a fixed finish weight: why 0.75? As d moves from 0
+    (cost-only secondary) to 1 (defects-only secondary), watch lateness, defect
+    exposure and cost trade against each other. d = 0.75 is our choice because
+    defects is the declared second objective and cost is margin only."""
+    seeds = range(seed, seed + n_seeds)
+    rows = average_over_seeds(
+        {f"d={d}": make_hybrid_allocator(w, d) for d in shares},
+        seeds, shock=shock, stages=stages)
+    mode = "SHOCK" if shock else "NORMAL"
+    variant = "--stages" if stages else "default simulator"
+    header = (f"{'d':>6}{'% late':>8}{'late days':>11}{'% def pcs':>10}"
+              f"{'cost ($)':>12}{'max share':>11}")
+    print(f"DEFECT-SHARE SWEEP | {mode} | {variant} | fixed w={w} | seeds {seed}..{seed + n_seeds - 1}")
+    print("score = w x est.finish + (1-w) x [d x defect + (1-d) x cost], each scaled 0-1")
+    print(header)
+    print("-" * len(header))
+    for d in shares:
+        m = rows[f"d={d}"]
+        print(f"{d:>6.2f}{m['% late']:>7.0f}%{m['late days']:>11.1f}"
               f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%")
 
 
@@ -136,12 +172,16 @@ if __name__ == "__main__":
     parser.add_argument("--seeds", type=int, default=10, metavar="N",
                         help="average over N seeds starting at --seed (default 10)")
     parser.add_argument("--sweep", action="store_true",
-                        help="only the four hybrid sweep tables, skip the baseline comparisons")
+                        help="only the weight sweeps, skip the baseline comparisons")
+    parser.add_argument("--w", type=float, default=0.6,
+                        help="finish weight fixed in the defect-share sweep (default 0.6)")
     args = parser.parse_args()
 
     for shock in (False, True):
         for stages in (False, True):
             sweep_table(args.seed, args.seeds, stages=stages, shock=shock)
+            print()
+            split_table(args.seed, args.seeds, w=args.w, stages=stages, shock=shock)
             print()
         if not args.sweep:
             combined_table(args.seed, args.seeds, shock=shock)
