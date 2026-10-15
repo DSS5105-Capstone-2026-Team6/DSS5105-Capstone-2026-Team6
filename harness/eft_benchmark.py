@@ -10,9 +10,10 @@ the due date, keeping accessory shops free for scarves/beanie reorders).
 
 Usage (from this directory):
 
-    python eft_benchmark.py                # one table: every policy, default vs --stages
-    python eft_benchmark.py --shock        # same table under the shock scenario
-    python eft_benchmark.py --sweep        # hybrid weight sweep (one table per variant)
+    python eft_benchmark.py                # six tables: NORMAL and SHOCK, each with
+                                           #   hybrid sweep (default), hybrid sweep
+                                           #   (--stages), and the baseline comparison
+    python eft_benchmark.py --sweep        # only the four hybrid sweep tables
     python eft_benchmark.py --seed 7 --seeds 1   # single seed for any mode
 """
 
@@ -100,7 +101,7 @@ def combined_table(seed, n_seeds, shock=False):
     cols = ("% late", "late days", "% def pcs", "cost")
     header = f"{'policy':<15}" + "".join(f"{c:>11}" for c in cols) * 2
     mode = "SHOCK" if shock else "NORMAL"
-    print(f"{mode} run, mean over seeds {seed}..{seed + n_seeds - 1}   "
+    print(f"BASELINES | {mode} | seeds {seed}..{seed + n_seeds - 1}   "
           f"[left: default simulator | right: --stages]")
     print(header)
     print("-" * len(header))
@@ -110,27 +111,23 @@ def combined_table(seed, n_seeds, shock=False):
               + "".join(f"{s[c]:>11.1f}" for c in cols))
 
 
-def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4), stages=False):
-    """Weight sweep: run each w over the seeds, normal and shock, and print the
-    table in the appendix-slide format."""
+def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4), stages=False, shock=False):
+    """Hybrid weight sweep for ONE scenario and ONE variant."""
     seeds = range(seed, seed + n_seeds)
-    normal = average_over_seeds(
-        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=False, stages=stages)
-    shock = average_over_seeds(
-        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=True, stages=stages)
+    rows = average_over_seeds(
+        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=shock, stages=stages)
+    mode = "SHOCK" if shock else "NORMAL"
+    variant = "--stages" if stages else "default simulator"
     header = (f"{'w':>6}{'% late':>8}{'late days':>11}{'% def pcs':>10}"
-              f"{'cost ($)':>12}{'max share':>11}{'shock % late':>13}")
-    print(f"score = w x est.finish + 0.75(1-w) x defect + 0.25(1-w) x cost, each scaled 0-1")
-    variant = "stages variant (--stages)" if stages else "default simulator"
-    print(f"{variant}, mean over seeds {seed}..{seed + n_seeds - 1}")
+              f"{'cost ($)':>12}{'max share':>11}")
+    print(f"HYBRID SWEEP | {mode} | {variant} | seeds {seed}..{seed + n_seeds - 1}")
+    print("score = w x est.finish + 0.75(1-w) x defect + 0.25(1-w) x cost, each scaled 0-1")
     print(header)
     print("-" * len(header))
     for w in weights:
-        name = f"w={w}"
-        m, s = normal[name], shock[name]
+        m = rows[f"w={w}"]
         print(f"{w:>6.1f}{m['% late']:>7.0f}%{m['late days']:>11.1f}"
-              f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%"
-              f"{s['% late']:>12.0f}%")
+              f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%")
 
 
 if __name__ == "__main__":
@@ -138,16 +135,14 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=5105)
     parser.add_argument("--seeds", type=int, default=10, metavar="N",
                         help="average over N seeds starting at --seed (default 10)")
-    parser.add_argument("--shock", action="store_true",
-                        help="show the shock-scenario numbers in the combined table")
     parser.add_argument("--sweep", action="store_true",
-                        help="hybrid weight sweep tables (one per variant) instead of the combined table")
+                        help="only the four hybrid sweep tables, skip the baseline comparisons")
     args = parser.parse_args()
 
-    if args.sweep:
+    for shock in (False, True):
         for stages in (False, True):
+            sweep_table(args.seed, args.seeds, stages=stages, shock=shock)
             print()
-            sweep_table(args.seed, args.seeds, stages=stages)
-        raise SystemExit
-
-    combined_table(args.seed, args.seeds, shock=args.shock)
+        if not args.sweep:
+            combined_table(args.seed, args.seeds, shock=shock)
+            print()
