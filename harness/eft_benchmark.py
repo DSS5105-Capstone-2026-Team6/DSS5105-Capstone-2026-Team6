@@ -10,10 +10,10 @@ the due date, keeping accessory shops free for scarves/beanie reorders).
 
 Usage (from this directory):
 
-    python eft_benchmark.py                # stages mode by default (sweep + baseline tables)
-    python eft_benchmark.py --no-stages    # default simulator yardstick (no stage rule)
-    python eft_benchmark.py --baselines    # baseline comparison only (Table 6)
-    python eft_benchmark.py --seed 7       # single seed for either mode
+    python eft_benchmark.py                # one table: every policy, default vs --stages
+    python eft_benchmark.py --shock        # same table under the shock scenario
+    python eft_benchmark.py --sweep        # hybrid weight sweep (one table per variant)
+    python eft_benchmark.py --seed 7 --seeds 1   # single seed for any mode
 """
 
 import argparse
@@ -84,6 +84,32 @@ def make_hybrid_allocator(w):
     return hybrid
 
 
+def combined_table(seed, n_seeds, shock=False):
+    """One table, both variants side by side: every policy's headline metrics
+    under the default simulator and under the stages extension."""
+    seeds = range(seed, seed + n_seeds)
+    allocators = {
+        "random": random_choice,
+        "greedy_biggest": greedy_biggest,
+        "cheapest": cheapest,
+        "eft": eft,
+        "eft_reserved": eft_reserved,
+    }
+    default = average_over_seeds(allocators, seeds, shock=shock, stages=False)
+    stages = average_over_seeds(allocators, seeds, shock=shock, stages=True)
+    cols = ("% late", "late days", "% def pcs", "cost")
+    header = f"{'policy':<15}" + "".join(f"{c:>11}" for c in cols) * 2
+    mode = "SHOCK" if shock else "NORMAL"
+    print(f"{mode} run, mean over seeds {seed}..{seed + n_seeds - 1}   "
+          f"[left: default simulator | right: --stages]")
+    print(header)
+    print("-" * len(header))
+    for name in allocators:
+        d, s = default[name], stages[name]
+        print(f"{name:<15}" + "".join(f"{d[c]:>11.1f}" for c in cols)
+              + "".join(f"{s[c]:>11.1f}" for c in cols))
+
+
 def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4), stages=False):
     """Weight sweep: run each w over the seeds, normal and shock, and print the
     table in the appendix-slide format."""
@@ -112,29 +138,16 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=5105)
     parser.add_argument("--seeds", type=int, default=10, metavar="N",
                         help="average over N seeds starting at --seed (default 10)")
-    parser.add_argument("--baselines", action="store_true",
-                        help="baseline comparison only, without the weight sweep")
-    parser.add_argument("--stages", action=argparse.BooleanOptionalAction, default=True,
-                        help="stage extension on by default: eligible workshops must cover every "
-                             "stage from the dispatch stage through PACKING; "
-                             "use --no-stages for the default simulator yardstick")
+    parser.add_argument("--shock", action="store_true",
+                        help="show the shock-scenario numbers in the combined table")
+    parser.add_argument("--sweep", action="store_true",
+                        help="hybrid weight sweep tables (one per variant) instead of the combined table")
     args = parser.parse_args()
 
-    if not args.baselines:
-        sweep_table(args.seed, args.seeds, stages=args.stages)
+    if args.sweep:
+        for stages in (False, True):
+            print()
+            sweep_table(args.seed, args.seeds, stages=stages)
+        raise SystemExit
 
-    allocators = {
-        "random": random_choice,
-        "greedy_biggest": greedy_biggest,
-        "cheapest": cheapest,
-        "eft": eft,
-        "eft_reserved": eft_reserved,
-    }
-
-    variant = "STAGES" if args.stages else "DEFAULT"
-    for shock in (False, True):
-        label = "SHOCK" if shock else "NORMAL"
-        print(f"\n=== {label} / {variant} (seeds {args.seed}..{args.seed + args.seeds - 1}) ===")
-        rows = average_over_seeds(allocators, range(args.seed, args.seed + args.seeds),
-                                  shock=shock, stages=args.stages)
-        print_table(rows)
+    combined_table(args.seed, args.seeds, shock=args.shock)
