@@ -13,6 +13,8 @@ Usage (from this directory):
     python eft_benchmark.py                # NORMAL and SHOCK, each with a finish-weight
                                            #   sweep, a defect-share sweep (why d=0.75),
                                            #   and the baseline comparison
+    python eft_benchmark.py --grid         # 2D scan: 10 w values x 12 d values x 10 seeds,
+                                           #   pick (w, d) by the objective hierarchy
     python eft_benchmark.py --sweep        # only the two sweeps, no baselines
     python eft_benchmark.py --w 0.7        # fix another finish weight in the share sweep
     python eft_benchmark.py --seed 7 --seeds 1   # single seed for any mode
@@ -166,6 +168,57 @@ def split_table(seed, n_seeds, w=0.6, shares=(0.0, 0.25, 0.5, 0.65, 0.75, 0.85, 
               f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%")
 
 
+def linspace(lo, hi, n):
+    return [lo + (hi - lo) * i / (n - 1) for i in range(n)]
+
+
+def grid_search(seed, n_seeds, n_w=10, n_d=12, stages=False, shock=False,
+                late_tol=0.5):
+    """Full 2D scan over (w, d): n_w finish weights x n_d defect shares.
+
+    Selection rule, matching the declared objective hierarchy (lateness primary,
+    defects second, cost margin only): among grid points whose % late is within
+    late_tol percentage points of the grid minimum, pick the one with the lowest
+    % def pcs; break ties by lower cost, then by higher w (lateness weight).
+    """
+    w_values = linspace(1.0, 0.4, n_w)
+    d_values = linspace(0.0, 1.0, n_d)
+    allocators = {f"w={w:.3f},d={d:.3f}": make_hybrid_allocator(w, d)
+                  for w in w_values for d in d_values}
+    rows = average_over_seeds(allocators, range(seed, seed + n_seeds),
+                              shock=shock, stages=stages)
+    mode = "SHOCK" if shock else "NORMAL"
+    variant = "--stages" if stages else "default simulator"
+    print(f"WEIGHT GRID | {mode} | {variant} | {n_w}x{n_d}={n_w * n_d} combos "
+          f"x {n_seeds} seeds ({seed}..{seed + n_seeds - 1})")
+
+    def cell(w, d, metric):
+        return rows[f"w={w:.3f},d={d:.3f}"][metric]
+
+    print(f"% late (grid min {min(cell(w, d, '% late') for w in w_values for d in d_values):.1f}):")
+    print(f"{'w \\ d':>7}" + "".join(f"{d:>7.2f}" for d in d_values))
+    for w in w_values:
+        print(f"{w:>7.3f}" + "".join(f"{cell(w, d, '% late'):>6.0f}%" for d in d_values))
+    print(f"% def pcs:")
+    print(f"{'w \\ d':>7}" + "".join(f"{d:>7.2f}" for d in d_values))
+    for w in w_values:
+        print(f"{w:>7.3f}" + "".join(f"{cell(w, d, '% def pcs'):>6.0f}%" for d in d_values))
+
+    best_late = min(cell(w, d, "% late") for w in w_values for d in d_values)
+    feasible = [(w, d) for w in w_values for d in d_values
+                if cell(w, d, "% late") <= best_late + late_tol]
+    feasible.sort(key=lambda wd: (cell(*wd, "% def pcs"), cell(*wd, "cost"), -wd[0]))
+    print(f"selection: % late within {late_tol:.1f}pp of grid min ({best_late:.1f}%), "
+          "then minimise % def pcs, tiebreak cost, then higher w:")
+    for w, d in feasible[:5]:
+        m = rows[f"w={w:.3f},d={d:.3f}"]
+        print(f"  w={w:.3f} d={d:.3f}  % late {m['% late']:.1f}  late days {m['late days']:.1f}  "
+              f"% def pcs {m['% def pcs']:.1f}  cost {m['cost']:,.0f}  max share {m['max share']:.0f}%")
+    w, d = feasible[0]
+    print(f"=> chosen (w, d) = ({w:.3f}, {d:.3f})")
+    return w, d
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=5105)
@@ -175,7 +228,17 @@ if __name__ == "__main__":
                         help="only the weight sweeps, skip the baseline comparisons")
     parser.add_argument("--w", type=float, default=0.6,
                         help="finish weight fixed in the defect-share sweep (default 0.6)")
+    parser.add_argument("--grid", action="store_true",
+                        help="2D weight grid search (10 w values x 12 d values) that "
+                             "derives the (w, d) combination; skips the other tables")
     args = parser.parse_args()
+
+    if args.grid:
+        for stages in (False, True):
+            for shock in (False, True):
+                grid_search(args.seed, args.seeds, stages=stages, shock=shock)
+                print()
+        raise SystemExit
 
     for shock in (False, True):
         for stages in (False, True):
