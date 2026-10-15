@@ -13,6 +13,7 @@ Usage (from this directory):
     python eft_benchmark.py                # sweep table + baseline comparison, 10 seeds
     python eft_benchmark.py --baselines    # baseline comparison only (Table 6)
     python eft_benchmark.py --seed 7       # single seed for either mode
+    python eft_benchmark.py --stages       # opt-in stage extension (adds a 4th eligibility rule)
 """
 
 import argparse
@@ -83,18 +84,19 @@ def make_hybrid_allocator(w):
     return hybrid
 
 
-def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)):
+def sweep_table(seed, n_seeds, weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4), stages=False):
     """Weight sweep: run each w over the seeds, normal and shock, and print the
     table in the appendix-slide format."""
     seeds = range(seed, seed + n_seeds)
     normal = average_over_seeds(
-        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=False)
+        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=False, stages=stages)
     shock = average_over_seeds(
-        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=True)
+        {f"w={w}": make_hybrid_allocator(w) for w in weights}, seeds, shock=True, stages=stages)
     header = (f"{'w':>6}{'% late':>8}{'late days':>11}{'% def pcs':>10}"
               f"{'cost ($)':>12}{'max share':>11}{'shock % late':>13}")
     print(f"score = w x est.finish + 0.75(1-w) x defect + 0.25(1-w) x cost, each scaled 0-1")
-    print(f"default simulator, mean over seeds {seed}..{seed + n_seeds - 1}")
+    variant = "stages variant (--stages)" if stages else "default simulator"
+    print(f"{variant}, mean over seeds {seed}..{seed + n_seeds - 1}")
     print(header)
     print("-" * len(header))
     for w in weights:
@@ -112,10 +114,13 @@ if __name__ == "__main__":
                         help="average over N seeds starting at --seed (default 10)")
     parser.add_argument("--baselines", action="store_true",
                         help="baseline comparison only, without the weight sweep")
+    parser.add_argument("--stages", action="store_true",
+                        help="opt-in stage extension: eligible workshops must cover every "
+                             "stage from the dispatch stage through PACKING")
     args = parser.parse_args()
 
     if not args.baselines:
-        sweep_table(args.seed, args.seeds)
+        sweep_table(args.seed, args.seeds, stages=args.stages)
 
     allocators = {
         "random": random_choice,
@@ -125,8 +130,10 @@ if __name__ == "__main__":
         "eft_reserved": eft_reserved,
     }
 
+    variant = "STAGES" if args.stages else "DEFAULT"
     for shock in (False, True):
         label = "SHOCK" if shock else "NORMAL"
-        print(f"\n=== {label} (seeds {args.seed}..{args.seed + args.seeds - 1}) ===")
-        rows = average_over_seeds(allocators, range(args.seed, args.seed + args.seeds), shock=shock)
+        print(f"\n=== {label} / {variant} (seeds {args.seed}..{args.seed + args.seeds - 1}) ===")
+        rows = average_over_seeds(allocators, range(args.seed, args.seed + args.seeds),
+                                  shock=shock, stages=args.stages)
         print_table(rows)
