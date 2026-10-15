@@ -146,6 +146,12 @@ def grid_search(seed, n_seeds, step=0.01, stages=False, shock=False,
     axis = [round(i * step, 2) for i in range(n + 1)]
     combos = [(wl, wd) for wl in axis for wd in axis if wl + wd <= 1.0 + 1e-9]
 
+    mode, variant = ("SHOCK" if shock else "NORMAL"), ("--stages" if stages else "default simulator")
+    print(f"WEIGHT SCAN | {mode} | {variant} | {len(combos)} combos (step {step}) "
+          f"x {n_seeds} seeds ({seed}..{seed + n_seeds - 1})", flush=True)
+    print("scanning (this cell takes a minute or two; nothing prints until it "
+          "finishes, then the lateness table appears)...", flush=True)
+
     def key(wl, wd):
         return f"{wl:.2f},{wd:.2f}"
 
@@ -156,10 +162,6 @@ def grid_search(seed, n_seeds, step=0.01, stages=False, shock=False,
 
     def cell(wl, wd, metric):
         return rows[key(wl, wd)][metric]
-
-    mode, variant = ("SHOCK" if shock else "NORMAL"), ("--stages" if stages else "default simulator")
-    print(f"WEIGHT SCAN | {mode} | {variant} | {len(combos)} combos (step {step}) "
-          f"x {n_seeds} seeds ({seed}..{seed + n_seeds - 1})")
 
     # stage 1: scan lateness -- best achievable % late at each w_late
     best_late = min(rows[k]["% late"] for k in rows)
@@ -208,6 +210,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.grid:
+        print(f"4 cells to scan (NORMAL/SHOCK x default/--stages), "
+              f"~1-2 minutes each on a laptop...", flush=True)
         for stages in (False, True):
             for shock in (False, True):
                 grid_search(args.seed, args.seeds, step=args.step, stages=stages,
