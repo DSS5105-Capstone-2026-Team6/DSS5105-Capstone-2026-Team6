@@ -10,10 +10,10 @@ the due date, keeping accessory shops free for scarves/beanie reorders).
 
 Usage (from this directory):
 
-    python eft_benchmark.py                # sweep table + baseline comparison, 10 seeds
+    python eft_benchmark.py                # stages mode by default (sweep + baseline tables)
+    python eft_benchmark.py --no-stages    # default simulator yardstick (no stage rule)
     python eft_benchmark.py --baselines    # baseline comparison only (Table 6)
     python eft_benchmark.py --seed 7       # single seed for either mode
-    python eft_benchmark.py --stages       # opt-in stage extension (adds a 4th eligibility rule)
 """
 
 import argparse
@@ -114,9 +114,10 @@ if __name__ == "__main__":
                         help="average over N seeds starting at --seed (default 10)")
     parser.add_argument("--baselines", action="store_true",
                         help="baseline comparison only, without the weight sweep")
-    parser.add_argument("--stages", action="store_true",
-                        help="opt-in stage extension: eligible workshops must cover every "
-                             "stage from the dispatch stage through PACKING")
+    parser.add_argument("--stages", action=argparse.BooleanOptionalAction, default=True,
+                        help="stage extension on by default: eligible workshops must cover every "
+                             "stage from the dispatch stage through PACKING; "
+                             "use --no-stages for the default simulator yardstick")
     args = parser.parse_args()
 
     if not args.baselines:
