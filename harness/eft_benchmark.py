@@ -1,18 +1,40 @@
 """
-eft_benchmark.py — the EFT benchmark and hybrid weight sweep (Sprint 1 roadmap).
+eft_benchmark.py — Sprint 1 reproduction: EFT baselines + hybrid weight sweep.
 
-EFT ("earliest estimated finish") picks the eligible workshop with the smallest
-queue + pieces/capacity + transport days. eft_reserved keeps TOPS orders off
-the accessory shops when a TOPS-only shop still meets the date. The hybrid
-allocator adds defect and cost terms; --grid scans the raw weights on the
-simplex w_late + w_defect + w_cost = 1 and selects lateness-first, then defects.
+Objective hierarchy (Sprint 1 review):
+    1. Lateness  (% late, late days) -- the problem today; the industry runs
+       on speed, quick-response reorders are due in 1-2 weeks.
+    2. Defects   (% def pcs) -- also reported.
+The objective is a *setting*: switch lateness / defects / hybrid without
+changing the allocator.
+
+The hybrid scores each eligible workshop
+    score = w * est.finish + (1-w) * [share * defect_rate + (1-share) * cost]
+with every component min-max scaled to 0-1 across the batch's eligible
+candidates. Tuning is TWO-STAGE, in the objective hierarchy:
+
+    Stage 1 -- lock w on lateness: sweep the finish-time weight w on a 0.1
+        grid and take the LOWEST w whose late orders do not exceed EFT's
+        (w = 1.0). Lateness is the only criterion here. On the Sprint 1 data
+        (default simulator, seeds 5105-5114) that locks w = 0.7: same 2.0
+        late orders as EFT at 3.4% lower cost.
+    Stage 2 -- scan the defect:cost split at the locked w: keep only splits
+        that still match EFT on late orders (the lateness guardrail), then
+        pick the lowest % def pcs (tiebreak cost). That selects 3:1
+        (def pcs 6.850 < 4:1's 6.914 < 3:2's 6.968; 1:1, defects-only and
+        cost-only break the guardrail). Sprint 1: the choice is not
+        sensitive between 3:2 and 3:1.
+
+Known limits (Sprint 1): scoring the current order's days late gives 17-27%
+late; defects-only scoring gives ~95% late. With stage checks and shock,
+every hybrid weight adds 0.3-0.6 late orders per run versus EFT.
 
 Usage (from this directory):
 
-    python eft_benchmark.py             # NORMAL/SHOCK x (weight sweep default,
-                                        #   weight sweep --stages, baselines)
-    python eft_benchmark.py --grid      # weight scan (step 0.01), select
-                                        #   lateness-first then defects
+    python eft_benchmark.py                 # sweep + split check + baselines
+    python eft_benchmark.py --seeds 20      # 20-seed check (Sprint 1 uses it
+                                            #   for the w=0.7 confirmation)
+    python eft_benchmark.py --stages        # stage-capability variant
     python eft_benchmark.py --seed 7 --seeds 1
 """
 
@@ -33,7 +55,7 @@ def est_turnaround(batch, w, queues):
 
 
 def eft(batch, workshops, queues):
-    """Earliest estimated finish over eligible workshops."""
+    """Earliest estimated finish over eligible workshops. w = 1.0 hybrid."""
     ok = eligible_workshops(batch, workshops)
     return min(ok, key=lambda w: est_turnaround(batch, w, queues)).workshop_id
 
@@ -43,14 +65,21 @@ def eft_reserved(batch, workshops, queues):
     TOPS-only workshops if one can still meet the due date; otherwise plain EFT."""
     ok = eligible_workshops(batch, workshops)
     if batch["category"] == "TOPS":
-        tops_only = [w for w in ok if w.makes == {"TOPS"}]
-        if tops_only:
-            slack = (batch["due_date"] - DAY0).days - (batch["sent_date"] - DAY0).days
-            feasible = [w for w in tops_only if est_turnaround(batch, w, queues) <= slack]
-            if feasible:
-                return min(feasible, key=lambda w: est_turnaround(batch, w, queues)).workshop_id
+        slack = (batch["due_date"] - batch["sent_date"]).days
+        feasible = [w for w in ok
+                    if w.makes == {"TOPS"} and est_turnaround(batch, w, queues) <= slack]
+        if feasible:
+            return min(feasible, key=lambda w: est_turnaround(batch, w, queues)).workshop_id
     return eft(batch, workshops, queues)
 
+
+def defects_only(batch, workshops, queues):
+    """Lowest defect rate, nothing else. The guardrail failure case (~95% late)."""
+    ok = eligible_workshops(batch, workshops)
+    return min(ok, key=lambda w: (w.defect_rate, w.workshop_id)).workshop_id
+
+
+# ------------------------------- the hybrid -------------------------------
 
 def _scaled(values):
     """Min-max scale a {key: number} dict to 0-1. Equal values map to 0."""
@@ -61,9 +90,8 @@ def _scaled(values):
 
 
 def make_weighted_allocator(w_late, w_defect, w_cost):
-    """score = w_late*est_finish + w_defect*defect_rate + w_cost*cost, each
-    component min-max scaled to 0-1 across the batch's eligible candidates.
-    (1, 0, 0) is plain EFT. Deterministic, no LLM."""
+    """score = w_late*est.finish + w_defect*defect_rate + w_cost*cost, each
+    component min-max scaled to 0-1 across the batch's eligible candidates."""
     def weighted(batch, workshops, queues):
         ok = eligible_workshops(batch, workshops)
         parts = (
@@ -80,10 +108,12 @@ def make_weighted_allocator(w_late, w_defect, w_cost):
     return weighted
 
 
-def make_hybrid_allocator(w):
-    """score = w * est_finish + (1-w) * [0.75 * defect + 0.25 * cost], each
-    component scaled 0-1. w = 1.0 is plain EFT."""
-    return make_weighted_allocator(w, 0.75 * (1 - w), 0.25 * (1 - w))
+def make_hybrid_allocator(w, defect_share=0.75):
+    """score = w * est.finish + (1-w) * [defect_share * defect +
+    (1-defect_share) * cost], each component scaled 0-1. w = 1.0 is EFT.
+    defect_share = 0.75 is the Sprint 1 choice (defect : cost = 3 : 1)."""
+    return make_weighted_allocator(w, defect_share * (1 - w),
+                                   (1 - defect_share) * (1 - w))
 
 
 # ------------------------------- tables -------------------------------
@@ -94,106 +124,111 @@ BASELINES = {
     "cheapest": cheapest,
     "eft": eft,
     "eft_reserved": eft_reserved,
+    "defects_only": defects_only,
 }
 
+WEIGHTS = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)
 
-def sweep_table(seed, n_seeds, stages=False, shock=False,
-                weights=(1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4)):
-    """Finish-weight sweep (0.75/0.25 defect-cost split) for one scenario/variant."""
+
+def late_orders(m):
+    """Mean late orders per run of 120 (= % late * 1.2)."""
+    return m["% late"] * 1.2
+
+
+def sweep_table(seed, n_seeds, stages=False):
+    """Stage 1: lock the finish-time weight w on LATENESS ONLY -- sweep w on
+    the 0.1 grid (shock late orders shown alongside) and take the lowest w
+    whose late orders do not exceed EFT's (w = 1.0). The 3:1 working ratio is
+    irrelevant to this lock: stage 2 shows every split from 3:2 to 4:1 gives
+    the same late orders at the locked w."""
     seeds = range(seed, seed + n_seeds)
-    rows = average_over_seeds(
-        {f"w={w}": make_hybrid_allocator(w) for w in weights},
-        seeds, shock=shock, stages=stages)
-    mode, variant = ("SHOCK" if shock else "NORMAL"), ("--stages" if stages else "default simulator")
-    header = (f"{'w':>6}{'% late':>8}{'late days':>11}{'% def pcs':>10}"
-              f"{'cost ($)':>12}{'max share':>11}")
-    print(f"WEIGHT SWEEP | {mode} | {variant} | seeds {seed}..{seed + n_seeds - 1}")
-    print("score = w x est.finish + (1-w) x [0.75 x defect + 0.25 x cost], each scaled 0-1")
+    allocators = {f"{w:.1f}": make_hybrid_allocator(w) for w in WEIGHTS}
+    normal = average_over_seeds(allocators, seeds, stages=stages)
+    shock = average_over_seeds(allocators, seeds, shock=True, stages=stages)
+
+    eft_late = late_orders(normal["1.0"])
+    chosen = min(WEIGHTS, key=lambda w: w if late_orders(normal[f"{w:.1f}"]) <= eft_late + 1e-9
+                 else float("inf"))
+    if late_orders(normal[f"{chosen:.1f}"]) > eft_late + 1e-9:
+        chosen = None
+
+    variant = "--stages" if stages else "default simulator"
+    print(f"STAGE 1, WEIGHT SWEEP (lock w on lateness) | NORMAL + shock column | "
+          f"{variant} | seeds {seed}..{seed + n_seeds - 1}")
+    print("score = w x est.finish + (1-w) x [share x defect + (1-share) x cost], "
+          "each scaled 0-1; selection here uses late orders only")
+    header = (f"{'w':>5}{'late orders':>13}{'late days':>11}{'% def pcs':>10}"
+              f"{'cost ($)':>12}{'max share':>11}{'shock: late':>13}")
     print(header)
     print("-" * len(header))
-    for w in weights:
-        m = rows[f"w={w}"]
-        print(f"{w:>6.1f}{m['% late']:>7.0f}%{m['late days']:>11.1f}"
-              f"{m['% def pcs']:>9.0f}%{m['cost']:>12,.0f}{m['max share']:>10.0f}%")
+    for w in WEIGHTS:
+        n, s = normal[f"{w:.1f}"], shock[f"{w:.1f}"]
+        mark = "  (= EFT)" if w == 1.0 else ("  <== locked" if w == chosen else "")
+        print(f"{w:>5.1f}{late_orders(n):>13.1f}{n['late days']:>11.2f}"
+              f"{n['% def pcs']:>9.1f}%{n['cost']:>12,.0f}{n['max share']:>10.0f}%"
+              f"{late_orders(s):>13.1f}{mark}")
+    if chosen is None:
+        print(f"=> no weight matches EFT's {eft_late:.1f} late orders; keep w = 1.0")
+    else:
+        n = normal[f"{chosen:.1f}"]
+        saving = 100 * (normal["1.0"]["cost"] - n["cost"]) / normal["1.0"]["cost"]
+        print(f"=> locked w = {chosen:.1f} on lateness: lowest finish-time weight "
+              f"with no more late orders than EFT ({late_orders(n):.1f} vs "
+              f"{eft_late:.1f}); cost {saving:.1f}% lower")
+    return chosen
 
 
-def combined_table(seed, n_seeds, shock=False):
-    """Baseline comparison, both variants side by side."""
+def split_table(w, seed, n_seeds, stages=False):
+    """Stage 2: with w locked, scan the defect:cost split. Guardrail first --
+    keep only splits whose late orders still match EFT's -- then pick the
+    lowest % def pcs (tiebreak cost). Selects 3:1 on the Sprint 1 data."""
     seeds = range(seed, seed + n_seeds)
-    default = average_over_seeds(BASELINES, seeds, shock=shock, stages=False)
-    stages = average_over_seeds(BASELINES, seeds, shock=shock, stages=True)
-    cols = ("% late", "late days", "% def pcs", "cost")
-    header = f"{'policy':<15}" + "".join(f"{c:>11}" for c in cols) * 2
-    mode = "SHOCK" if shock else "NORMAL"
-    print(f"BASELINES | {mode} | seeds {seed}..{seed + n_seeds - 1}   "
-          f"[left: default simulator | right: --stages]")
+    ratios = [("3:2", 0.60), ("1:1", 0.50), ("3:1", 0.75),
+              ("4:1", 0.80), ("defects only", 1.00), ("cost only", 0.00)]
+    allocators = {name: make_hybrid_allocator(w, defect_share=ds)
+                  for name, ds in ratios}
+    allocators["EFT (w=1.0)"] = make_hybrid_allocator(1.0)
+    normal = average_over_seeds(allocators, seeds, stages=stages)
+    shock = average_over_seeds(allocators, seeds, shock=True, stages=stages)
+
+    eft_late = late_orders(normal["EFT (w=1.0)"])
+    survivors = [(name, ds) for name, ds in ratios
+                 if late_orders(normal[name]) <= eft_late + 1e-9]
+    picked, picked_ds = min(survivors,
+                            key=lambda r: (normal[r[0]]["% def pcs"],
+                                           normal[r[0]]["cost"]))
+
+    variant = "--stages" if stages else "default simulator"
+    print(f"STAGE 2, DEFECT:COST SPLIT at locked w = {w:.1f} | {variant} | "
+          f"seeds {seed}..{seed + n_seeds - 1}")
+    print(f"guardrail: late orders <= EFT's {eft_late:.1f}; "
+          "among the survivors pick min % def pcs (tiebreak cost)")
+    header = (f"{'split':>15}{'late orders':>13}{'shock: late':>13}"
+              f"{'% def pcs':>11}{'cost ($)':>12}{'  guardrail':>12}")
     print(header)
     print("-" * len(header))
-    for name in BASELINES:
-        d, s = default[name], stages[name]
-        print(f"{name:<15}" + "".join(f"{d[c]:>11.1f}" for c in cols)
-              + "".join(f"{s[c]:>11.1f}" for c in cols))
+    for name, _ in ratios:
+        n, s = normal[name], shock[name]
+        ok = late_orders(n) <= eft_late + 1e-9
+        mark = "PICK" if name == picked else ("pass" if ok else "FAIL")
+        print(f"{name:>15}{late_orders(n):>13.2f}{late_orders(s):>13.2f}"
+              f"{n['% def pcs']:>10.2f}%{n['cost']:>12,.0f}{mark:>12}")
+    n, s = normal["EFT (w=1.0)"], shock["EFT (w=1.0)"]
+    print(f"{'EFT (w=1.0)':>15}{late_orders(n):>13.2f}{late_orders(s):>13.2f}"
+          f"{n['% def pcs']:>10.2f}%{n['cost']:>12,.0f}")
+    print(f"=> selected split {picked} (defect share {picked_ds:.2f}): "
+          f"matches EFT on late orders, lowest % def pcs "
+          f"{normal[picked]['% def pcs']:.2f}% among the survivors")
 
 
-def grid_search(seed, n_seeds, step=0.01, stages=False, shock=False,
-                late_tol=0.5, target=(0.6, 0.3, 0.1)):
-    """Scan the raw weights (w_late, w_defect, w_cost = 1 - w_late - w_defect)
-    on a simplex grid. Selection is lexicographic, matching the declared
-    objective hierarchy: first scan lateness -- keep only grid points whose
-    % late is within late_tol of the grid minimum -- then optimise defects,
-    tiebreak cost, then higher w_late."""
-    n = int(round(1 / step))
-    axis = [round(i * step, 2) for i in range(n + 1)]
-    combos = [(wl, wd) for wl in axis for wd in axis if wl + wd <= 1.0 + 1e-9]
-
-    mode, variant = ("SHOCK" if shock else "NORMAL"), ("--stages" if stages else "default simulator")
-    print(f"WEIGHT SCAN | {mode} | {variant} | {len(combos)} combos (step {step}) "
-          f"x {n_seeds} seeds ({seed}..{seed + n_seeds - 1})", flush=True)
-    print("scanning (this cell takes a minute or two; nothing prints until it "
-          "finishes, then the lateness table appears)...", flush=True)
-
-    def key(wl, wd):
-        return f"{wl:.2f},{wd:.2f}"
-
-    rows = average_over_seeds(
-        {key(wl, wd): make_weighted_allocator(wl, wd, round(1 - wl - wd, 2))
-         for wl, wd in combos},
-        range(seed, seed + n_seeds), shock=shock, stages=stages)
-
-    def cell(wl, wd, metric):
-        return rows[key(wl, wd)][metric]
-
-    # stage 1: scan lateness -- best achievable % late at each w_late
-    best_late = min(rows[k]["% late"] for k in rows)
-    print(f"stage 1, lateness scan (grid min {best_late:.1f}%; "
-          f"plateau = within {late_tol:.1f}pp, marked *):")
-    print(f"{'w_late':>7}{'min % late':>11}")
-    for wl in axis:
-        m = min(cell(wl, wd, "% late") for wd in axis if wl + wd <= 1.0 + 1e-9)
-        mark = " *" if m <= best_late + late_tol else ""
-        print(f"{wl:>7.2f}{m:>10.1f}%{mark}")
-
-    # stage 2: among the plateau, optimise defects
-    feasible = [(wl, wd) for wl, wd in combos if cell(wl, wd, "% late") <= best_late + late_tol]
-    feasible.sort(key=lambda c: (cell(*c, "% def pcs"), cell(*c, "cost"), -c[0]))
-    print(f"stage 2, defect optimisation within the plateau ({len(feasible)} points):")
-    for wl, wd in feasible[:5]:
-        m = rows[key(wl, wd)]
-        print(f"  ({wl:.2f}, {wd:.2f}, {1 - wl - wd:.2f})  % late {m['% late']:.1f}  "
-              f"late days {m['late days']:.1f}  % def pcs {m['% def pcs']:.1f}  "
-              f"cost {m['cost']:,.0f}  max share {m['max share']:.0f}%")
-
-    twl, twd, twc = target
-    if twl in axis and twd in axis and abs(twl + twd + twc - 1) < 1e-9:
-        m = rows[key(twl, twd)]
-        rank = next((i + 1 for i, c in enumerate(feasible) if c == (twl, twd)), None)
-        late_rank = 1 + sum(1 for c in combos if cell(*c, "% late") < m["% late"])
-        print(f"declared hybrid {target}: % late {m['% late']:.1f} "
-              f"(rank {late_rank}/{len(combos)} by lateness), % def pcs {m['% def pcs']:.1f}, "
-              f"cost {m['cost']:,.0f}; selection-rule rank "
-              f"{'#%d of %d' % (rank, len(feasible)) if rank else 'infeasible'}")
-    wl, wd = feasible[0]
-    print(f"=> selected: ({wl:.2f}, {wd:.2f}, {1 - wl - wd:.2f})")
+def baseline_table(seed, n_seeds, stages=False):
+    """Fixed baselines and the chosen hybrid side by side, full metrics."""
+    seeds = range(seed, seed + n_seeds)
+    allocators = {**BASELINES, "hybrid_0.7": make_hybrid_allocator(0.7)}
+    rows = average_over_seeds(allocators, seeds, stages=stages)
+    variant = "--stages" if stages else "default simulator"
+    print(f"BASELINES | NORMAL | {variant} | seeds {seed}..{seed + n_seeds - 1}")
+    print_table(rows)
 
 
 if __name__ == "__main__":
@@ -201,27 +236,13 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=5105)
     parser.add_argument("--seeds", type=int, default=10, metavar="N",
                         help="average over N seeds starting at --seed (default 10)")
-    parser.add_argument("--grid", action="store_true",
-                        help="scan the raw weights on a simplex grid, lateness-first "
-                             "then defects; skips the other tables")
-    parser.add_argument("--step", type=float, default=0.01, help="grid step (default 0.01)")
-    parser.add_argument("--late-tol", type=float, default=0.5,
-                        help="plateau half-width in percentage points (default 0.5)")
+    parser.add_argument("--stages", action="store_true",
+                        help="stage-capability variant (uses the *_stages.csv files)")
     args = parser.parse_args()
 
-    if args.grid:
-        print(f"4 cells to scan (NORMAL/SHOCK x default/--stages), "
-              f"~1-2 minutes each on a laptop...", flush=True)
-        for stages in (False, True):
-            for shock in (False, True):
-                grid_search(args.seed, args.seeds, step=args.step, stages=stages,
-                            shock=shock, late_tol=args.late_tol)
-                print()
-        raise SystemExit
-
-    for shock in (False, True):
-        for stages in (False, True):
-            sweep_table(args.seed, args.seeds, stages=stages, shock=shock)
-            print()
-        combined_table(args.seed, args.seeds, shock=shock)
+    chosen = sweep_table(args.seed, args.seeds, stages=args.stages)
+    print()
+    if chosen is not None:
+        split_table(chosen, args.seed, args.seeds, stages=args.stages)
         print()
+    baseline_table(args.seed, args.seeds, stages=args.stages)
