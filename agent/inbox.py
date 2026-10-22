@@ -24,8 +24,14 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .lookup_order import OrderStore
-from .llm import DispatchAgent
+try:
+    from .lookup_order import OrderStore
+    from .llm import DispatchAgent
+except ImportError:  # run directly as a script: python agent/inbox.py
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from agent.lookup_order import OrderStore
+    from agent.llm import DispatchAgent
 
 INBOX_PATH = Path(__file__).parent.parent / "data" / "dispatch_requests.txt"
 DEFAULT_OUT = Path(__file__).parent.parent / "results" / "inbox_run.jsonl"

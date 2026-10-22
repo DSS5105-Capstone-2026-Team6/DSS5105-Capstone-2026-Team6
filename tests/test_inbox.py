@@ -1,6 +1,11 @@
 """Unit tests for inbox parsing — the envelope split only; message text must
 pass through verbatim (the inbox is deliberately not clean)."""
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))  # allow direct script runs
+
 from agent.inbox import parse_inbox
 
 
@@ -24,3 +29,8 @@ def test_text_is_verbatim():
     requests = parse_inbox()
     r25 = next(r for r in requests if r["request_id"] == "R25")
     assert "…and keep it away from BudgetWorks" in r25["text"]
+
+
+if __name__ == "__main__":
+    import pytest
+    raise SystemExit(pytest.main([__file__, "-v"]))

@@ -2,6 +2,11 @@
 behaviour the spec guards (roadmap Table 4: never a nearest match; several
 matches must surface as ambiguous, not a guess)."""
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))  # allow direct script runs
+
 import pytest
 
 from agent.lookup_order import OrderStore, lookup_order
@@ -91,3 +96,8 @@ def test_stages_mode_exposes_dispatch_stage(stages_store):
 def test_default_mode_has_no_dispatch_stage(store):
     r = lookup_order(order_id="ORD-063", store=store)
     assert "dispatch_stage" not in r["matches"][0]
+
+
+if __name__ == "__main__":
+    import pytest
+    raise SystemExit(pytest.main([__file__, "-v"]))
