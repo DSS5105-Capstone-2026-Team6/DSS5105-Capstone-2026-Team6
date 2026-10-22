@@ -17,8 +17,13 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 │   └── data_dictionary.md     # Column definitions
 ├── harness/
 │   ├── simulate.py            # Shared evaluation harness — DO NOT MODIFY
-│   └── eft_benchmark.py       # EFT benchmark + accessory-reservation experiment
-├── tests/                     # pytest suite (Sprint 2)
+│   ├── eft_benchmark.py       # EFT benchmark + accessory-reservation experiment
+│   └── algorithm2.py          # Lateness-first hybrid allocator + tolerance scan
+├── agent/
+│   ├── lookup_order.py        # Tool 1: order resolution (id / filters, ambiguous-safe)
+│   ├── registry.py            # Tool registry + dispatch; schemas for the LLM
+│   └── llm.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
+├── tests/                     # pytest suite: one failure case per tool
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
@@ -28,6 +33,8 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 uv sync                                     # install deps (generates uv.lock)
 python harness/simulate.py                  # runs the three baselines (random / greedy_biggest / cheapest)
 python harness/eft_benchmark.py --seeds 10  # EFT benchmark, normal + shock, averaged over 10 seeds
+uv run pytest                               # tool unit tests (incl. failure cases)
+uv run python -m agent.llm "R07: ORD-063 — 100 cardigans, make Apr 29."   # chat smoke test (needs DeepSeek key in .env)
 ```
 
 `harness/simulate.py` loads its data from `../data` — keep the `harness/` and `data/` directories as siblings.
