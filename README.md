@@ -22,7 +22,8 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 ├── agent/
 │   ├── lookup_order.py        # Tool 1: order resolution (id / filters, ambiguous-safe)
 │   ├── registry.py            # Tool registry + dispatch; schemas for the LLM
-│   └── llm.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
+│   ├── llm.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
+│   └── inbox.py               # Reads dispatch_requests.txt, runs all 30, writes JSONL
 ├── tests/                     # pytest suite: one failure case per tool
 └── pyproject.toml             # uv project, Python 3.11
 ```
@@ -38,6 +39,42 @@ uv run python -m agent.llm "R07: ORD-063 — 100 cardigans, make Apr 29."   # ch
 ```
 
 `harness/simulate.py` loads its data from `../data` — keep the `harness/` and `data/` directories as siblings.
+
+## How the System Runs
+
+The LLM reads and explains; every number comes from a deterministic tool.
+
+```
+data/dispatch_requests.txt            (evaluation fixture: the 30 chat requests)
+   │  agent/inbox.py: parse_inbox() reads the file and splits each envelope
+   │  ("R07 [08:23] Ravi: <text>"); the message text passes through verbatim
+   ▼
+Intake agent (agent/llm.py, DeepSeek, temperature 0)
+   │  parses the message, decides which tool to call; never does arithmetic
+   ▼
+agent/registry.py: dispatch_tool()
+   ▼
+Tools (pure Python, no LLM) and where each gets its facts:
+   ├─ lookup_order        → data/orders.csv (id / customer / product / category)
+   ├─ check_eligibility   → simulate.py's load_workshops() + eligible_workshops()
+   ├─ get_queue           → workshops.csv current_queue_days (the 1 Apr chat snapshot,
+   │                        kept separate from the simulator's 1 Jan state)
+   ├─ estimate_delivery   → harness/algorithm2.py est_turnaround_expected()
+   ├─ rank_candidates     → the allocator's ranking logic, shared with the simulator
+   ├─ probe_overload      → read-only queue arithmetic
+   ├─ earliest_feasible   → earliest date, single batch or split
+   └─ commit_allocation   → writes the audit record + updates the chat-side queue,
+                            only after a human confirms
+   │  structured results (numbers, reasons, candidates) go back to the agent
+   ▼
+The LLM composes the reply, quoting only numbers the tools returned
+(tool log kept per request for the faithfulness checker)
+   ▼
+Dispatcher UI: candidates + estimated dates → human confirms → audit record written
+```
+
+Run one request end-to-end: `uv run python -m agent.llm R20`
+Run the whole inbox and record replies + tool logs: `uv run python -m agent.inbox`
 
 ## Evaluation Plan (Track 2)
 

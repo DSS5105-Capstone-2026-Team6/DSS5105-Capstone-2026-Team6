@@ -108,3 +108,15 @@ LOOKUP_ORDER_SCHEMA = {
         },
     },
 }
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    arg = " ".join(sys.argv[1:]) or "ORD-063"
+    if arg.startswith("ORD-"):
+        result = lookup_order(order_id=arg)
+    else:
+        result = lookup_order(customer=arg)
+    print(json.dumps(result, indent=2, ensure_ascii=False))

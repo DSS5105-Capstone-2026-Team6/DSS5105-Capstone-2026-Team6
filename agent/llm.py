@@ -23,8 +23,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from .lookup_order import OrderStore
-from .registry import dispatch_tool, tool_schemas
+try:
+    from .lookup_order import OrderStore
+    from .registry import dispatch_tool, tool_schemas
+except ImportError:  # run directly as a script: python agent/llm.py
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from agent.lookup_order import OrderStore
+    from agent.registry import dispatch_tool, tool_schemas
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -96,8 +101,26 @@ class DispatchAgent:
 
 
 if __name__ == "__main__":
+    # Usage:
+    #   python -m agent.llm            -> run R08 from the real inbox
+    #   python -m agent.llm R20        -> run request R20 from the inbox
+    #   python -m agent.llm <text>     -> run the given message verbatim
+    try:
+        from .inbox import parse_inbox
+    except ImportError:  # run directly as a script: python agent/llm.py
+        from agent.inbox import parse_inbox
+
+    arg = " ".join(sys.argv[1:])
+    requests = parse_inbox()
+    if not arg or arg.upper() in {r["request_id"] for r in requests}:
+        req_id = arg.upper() or "R08"
+        req = next(r for r in requests if r["request_id"] == req_id)
+        text = req["text"]
+        print(f"[{req['request_id']} {req['time']}] {req['speaker']}: {text}\n")
+    else:
+        text = arg
+
     agent = DispatchAgent()
-    text = " ".join(sys.argv[1:]) or "R08: send ORD-073 to FreshStart."
     print(agent.chat(text))
     print(f"\n--- tool log ({len(agent.tool_log)} calls) ---")
     for entry in agent.tool_log:

@@ -10,7 +10,13 @@ lookup_order is implemented; the other seven core tools from the roadmap
 fill each one in and the LLM side needs no changes.
 """
 
-from .lookup_order import OrderStore, lookup_order, LOOKUP_ORDER_SCHEMA
+try:
+    from .lookup_order import OrderStore, lookup_order, LOOKUP_ORDER_SCHEMA
+except ImportError:  # run directly as a script: python agent/registry.py
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from agent.lookup_order import OrderStore, lookup_order, LOOKUP_ORDER_SCHEMA
 
 
 def _placeholder(name):
@@ -73,3 +79,12 @@ def dispatch_tool(name, arguments, *, store=None):
         return {"error": str(exc)}
     except (TypeError, ValueError) as exc:
         return {"error": f"bad arguments for {name}: {exc}"}
+
+
+if __name__ == "__main__":
+    print(f"{len(TOOL_REGISTRY)} tools registered:")
+    for name, entry in TOOL_REGISTRY.items():
+        implemented = entry["func"].__name__ != "run"
+        print(f"  {name:<24} {'implemented' if implemented else 'placeholder'}")
+    print("\nsample dispatch:")
+    print(dispatch_tool("lookup_order", {"order_id": "ORD-063"}))
