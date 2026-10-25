@@ -14,8 +14,11 @@ Usage:
     uv run python -m agent.inbox --only R08 R20  # specific requests
 
 Output: one JSON object per line in the output file (default
-results/inbox_run.jsonl): {"request_id", "speaker", "raw", "reply",
-"tool_log"}. The tool log is what the faithfulness checker scores against.
+results/inbox_run.jsonl): the serialised Decision per request (behaviour,
+parsed fields, candidates, explanation) plus the raw text. The tool log
+inside is what the faithfulness checker scores against. State is NOT
+committed during a batch run — confirmation is a UI action, so the chat-side
+queues stay at the 1 April snapshot throughout.
 """
 
 import argparse
@@ -25,13 +28,13 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from .lookup_order import OrderStore
-    from .llm import DispatchAgent
+    from desk.desk import DispatchDesk
+    from desk.contracts import to_dict
 except ImportError:  # run directly as a script: python agent/inbox.py
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from agent.lookup_order import OrderStore
-    from agent.llm import DispatchAgent
+    from desk.desk import DispatchDesk
+    from desk.contracts import to_dict
 
 INBOX_PATH = Path(__file__).parent.parent / "data" / "dispatch_requests.txt"
 DEFAULT_OUT = Path(__file__).parent.parent / "results" / "inbox_run.jsonl"
@@ -62,28 +65,31 @@ def run_inbox(out_path=DEFAULT_OUT, limit=None, only=None, model=None):
     if limit:
         requests = requests[:limit]
 
-    agent = DispatchAgent(model=model) if model else DispatchAgent()
+    desk = DispatchDesk(model=model) if model else DispatchDesk()
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps({"meta": {"model": agent.model,
+        f.write(json.dumps({"meta": {"model": desk.agent.model,
                                      "run_at": datetime.now().isoformat(timespec="seconds"),
                                      "n_requests": len(requests)}},
                            ensure_ascii=False) + "\n")
         for i, req in enumerate(requests, 1):
-            agent.tool_log.clear()          # fresh conversation per request
             try:
-                reply = agent.chat(req["text"])
+                decision = desk.handle(req["text"])
+                decision.request_id = req["request_id"]
+                record = {"speaker": req["speaker"], "raw": req["text"],
+                          **to_dict(decision)}
+                n_tools = len(decision.tool_log)
             except Exception as exc:
-                reply = f"AGENT ERROR: {exc}"
-            record = {"request_id": req["request_id"], "speaker": req["speaker"],
-                      "raw": req["text"], "reply": reply,
-                      "tool_log": list(agent.tool_log)}
+                record = {"request_id": req["request_id"], "speaker": req["speaker"],
+                          "raw": req["text"], "error": f"AGENT ERROR: {exc}"}
+                n_tools = 0
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
             print(f"[{i}/{len(requests)}] {req['request_id']} done "
-                  f"({len(agent.tool_log)} tool calls)")
+                  f"({n_tools} tool calls, "
+                  f"{record.get('behaviour', record.get('error', '?'))})")
     print(f"written to {out_path}")
     return out_path
 

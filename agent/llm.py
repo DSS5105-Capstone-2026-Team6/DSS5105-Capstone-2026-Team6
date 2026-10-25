@@ -73,9 +73,10 @@ class DispatchAgent:
     def __init__(self, model=DEFAULT_MODEL, stages=False, api_key=None):
         self.client = OpenAI(api_key=api_key or load_api_key(),
                              base_url=DEEPSEEK_BASE_URL)
-        self.model = model
+        self.model = model or DEFAULT_MODEL
         self.store = OrderStore(stages=stages)
         self.workshops = WorkshopStore(stages=stages)
+        self.desk = None   # set by desk.DispatchDesk; tools then share its state
         self.tool_log = []   # [{"tool", "arguments", "result"}] per call
 
     def chat(self, message):
@@ -94,7 +95,7 @@ class DispatchAgent:
             for call in msg.tool_calls:
                 result = dispatch_tool(call.function.name,
                                        json.loads(call.function.arguments or "{}"),
-                                       store=self.store, workshops=self.workshops)
+                                       desk=self.desk)
                 self.tool_log.append({"tool": call.function.name,
                                       "arguments": json.loads(call.function.arguments or "{}"),
                                       "result": result})

@@ -1,0 +1,151 @@
+"""
+rank_candidates — the allocator as an agent-facing tool.
+
+Spec (roadmap Table 4): eligible workshops sorted by the objective score,
+with all estimates. It contains no LLM and never commits. The objective is a
+configuration parameter ("lateness" | "defects" | "hybrid"), never logic.
+
+The time model comes from harness/algorithm2.py (est_turnaround_expected /
+expected_days_late) — the same formulas the simulator runs. The hybrid branch
+reimplements the plateau selection of make_hybrid_allocator(late_tol); a unit
+test pins the two to the same winner on all 120 orders, so the chat layer
+and the simulator cannot diverge. (Refactoring algorithm2 to call this tool
+directly is deferred to the wiring pass, to keep the harness diff minimal.)
+
+Constraints honoured today: excluded workshops (by name or id, with the
+originator recorded by the caller). More constraint kinds arrive with the
+routing code.
+"""
+
+from datetime import date, timedelta
+
+try:
+    from .lookup_order import OrderStore
+    from .check_eligibility import WorkshopStore
+except ImportError:  # run directly as a script: python agent/rank_candidates.py
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from agent.lookup_order import OrderStore
+    from agent.check_eligibility import WorkshopStore
+
+# algorithm2.py is a script-style module (imports `simulate` flat), so its
+# directory must be importable whether we run as a package or directly.
+import sys
+from pathlib import Path as _Path
+_HARNESS = str(_Path(__file__).parent.parent / "harness")
+if _HARNESS not in sys.path:
+    sys.path.append(_HARNESS)
+from harness.algorithm2 import est_turnaround_expected, expected_days_late
+from harness.simulate import eligible_workshops
+
+CHAT_TODAY = date(2026, 4, 1)
+OBJECTIVES = ("lateness", "defects", "hybrid")
+
+
+def _candidate_row(w, batch, queues):
+    est = est_turnaround_expected(batch, w, queues)
+    finish = CHAT_TODAY + timedelta(days=round(est))
+    due = batch["due_date"]
+    pieces = batch["pieces"]
+    return {"workshop_id": w.workshop_id, "name": w.name,
+            "estimated_finish": finish.isoformat(),
+            "days_late": max(0, (finish - due).days),
+            "cost": round(pieces * w.cost, 2),
+            "defect_risk": w.defect_rate,
+            "expected_days_late": round(expected_days_late(batch, w, queues), 2),
+            "est_finish_days": round(est, 2),
+            "components": {"queue_days": queues[w.workshop_id],
+                           "work_days_expected": round(
+                               pieces / w.capacity * (1 + 0.5 * w.defect_rate), 2),
+                           "transport_days": w.lead_days}}
+
+
+def _sort_key(objective, row):
+    if objective == "defects":
+        return (row["defect_risk"], row["expected_days_late"],
+                row["est_finish_days"], row["cost"], row["workshop_id"])
+    # lateness: expected days late first, then earliest finish
+    return (row["expected_days_late"], row["est_finish_days"],
+            row["defect_risk"], row["cost"], row["workshop_id"])
+
+
+def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
+                    excluded=None, *, orders=None, store=None):
+    """Rank every eligible workshop for an order. Returns candidates sorted
+    best-first plus the chosen id; an error dict for a bad order/objective;
+    empty candidates when no workshop can take it (never a silent pick)."""
+    orders = orders or OrderStore()
+    store = store or WorkshopStore()
+    if objective not in OBJECTIVES:
+        return {"error": f"objective must be one of {OBJECTIVES}, got {objective!r}"}
+    rec = orders.by_id(order_id) if order_id else None
+    if rec is None:
+        return {"error": f"unknown order {order_id!r}"}
+
+    excluded_ids = set()
+    for name in excluded or []:
+        wid = store.resolve(name)
+        if wid:
+            excluded_ids.add(wid)
+
+    batch = {"category": rec["category"], "pieces": int(rec["pieces"]),
+             "sent_date": CHAT_TODAY,
+             "due_date": date.fromisoformat(rec["due_date"])}
+    queues = {wid: w.queue0 for wid, w in store.workshops.items()}
+
+    ok = [w for w in eligible_workshops(batch, store.workshops)
+          if w.workshop_id not in excluded_ids]
+
+    rows = [_candidate_row(w, batch, queues) for w in ok]
+
+    if objective == "hybrid" and rows:
+        # algorithm2.make_hybrid_allocator's plateau, listing everyone in it
+        best = min(r["expected_days_late"] for r in rows)
+        plateau = [r for r in rows if r["expected_days_late"] <= best + late_tol]
+        if best == 0.0:
+            earliest = min(r["est_finish_days"] for r in plateau)
+            plateau = [r for r in plateau if r["est_finish_days"] <= earliest + late_tol]
+        rows = sorted(plateau,
+                      key=lambda r: (r["defect_risk"], r["est_finish_days"],
+                                     r["cost"], r["workshop_id"]))
+    else:
+        rows = sorted(rows, key=lambda r: _sort_key(objective, r))
+
+    return {"order_id": order_id, "objective": objective,
+            "late_tol": late_tol if objective == "hybrid" else None,
+            "chosen": rows[0]["workshop_id"] if rows else None,
+            "candidates": rows,
+            "n_eligible": len(rows)}
+
+
+RANK_CANDIDATES_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "rank_candidates",
+        "description": "The allocator: every eligible workshop ranked by the "
+                       "objective (lateness first, or defects, or the hybrid "
+                       "which keeps the lateness plateau and picks the lowest "
+                       "defect rate). Call it once per allocation request.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "objective": {"type": "string",
+                              "enum": ["lateness", "defects", "hybrid"],
+                              "description": "default lateness"},
+                "excluded": {"type": "array", "items": {"type": "string"},
+                             "description": "workshops the request excludes"},
+            },
+            "required": ["order_id"],
+        },
+    },
+}
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+    order = sys.argv[1] if len(sys.argv) > 1 else "ORD-041"
+    print(f"rank_candidates(order_id={order!r}, objective='lateness')\n")
+    print(json.dumps(rank_candidates(order), indent=2, ensure_ascii=False))

@@ -19,12 +19,24 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 │   ├── simulate.py            # Shared evaluation harness — DO NOT MODIFY
 │   ├── eft_benchmark.py       # EFT benchmark + accessory-reservation experiment
 │   └── algorithm2.py          # Lateness-first hybrid allocator + tolerance scan
-├── agent/
-│   ├── lookup_order.py        # Tool 1: order resolution (id / filters, ambiguous-safe)
-│   ├── registry.py            # Tool registry + dispatch; schemas for the LLM
-│   ├── llm.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
-│   └── inbox.py               # Reads dispatch_requests.txt, runs all 30, writes JSONL
-├── tests/                     # pytest suite: one failure case per tool
+├── agent/                       # the 8 deterministic tools (no LLM) + the chat agent
+│   ├── lookup_order.py          # Tool 1: order resolution (id / filters, ambiguous-safe)
+│   ├── check_eligibility.py     # Tool 2: per-workshop eligible yes/no with reasons
+│   ├── get_queue.py             # Tool 3: queue snapshot (as of 2026-04-01)
+│   ├── estimate_delivery.py     # Tool 4: finish date, slack, cost, defect risk (one order x workshop)
+│   ├── rank_candidates.py       # Tool 5: the allocator — ranked candidates, objective as config
+│   ├── probe_overload.py        # Tool 6: what-if overload probe (read-only)
+│   ├── earliest_feasible.py     # Tool 7: earliest date, single batch or split
+│   ├── commit_allocation.py     # Tool 8: audited commit (re-checks eligibility first)
+│   ├── registry.py              # tool registry + dispatch; schemas for the LLM
+│   ├── llm.py                   # DeepSeek intake agent (tool-calling loop, temp 0)
+│   └── inbox.py                 # batch runner: 30 requests -> JSONL of Decisions
+├── desk/                        # application core: state, audit, orchestration
+│   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
+│   ├── state.py                 # DeskState: chat-side queues (1 Apr snapshot, commits only)
+│   ├── audit.py                 # AuditLog: append-only JSONL audit trail
+│   └── desk.py                  # DispatchDesk: handle() -> Decision, confirm() -> record
+├── tests/                     # pytest suite: one failure case per tool (74 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
