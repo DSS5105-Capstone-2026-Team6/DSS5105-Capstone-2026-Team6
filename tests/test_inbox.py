@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))  # allow direct script runs
 
-from agent.inbox import parse_inbox
+from eval.run_eval import parse_inbox
 
 
 def test_parses_all_30_requests():

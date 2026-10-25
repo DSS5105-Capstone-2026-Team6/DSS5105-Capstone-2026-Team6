@@ -19,23 +19,20 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 │   ├── simulate.py            # Shared evaluation harness — DO NOT MODIFY
 │   ├── eft_benchmark.py       # EFT benchmark + accessory-reservation experiment
 │   └── algorithm2.py          # Lateness-first hybrid allocator + tolerance scan
-├── agent/                       # the 8 deterministic tools (no LLM) + the chat agent
-│   ├── lookup_order.py          # Tool 1: order resolution (id / filters, ambiguous-safe)
-│   ├── check_eligibility.py     # Tool 2: per-workshop eligible yes/no with reasons
-│   ├── get_queue.py             # Tool 3: queue snapshot (as of 2026-04-01)
-│   ├── estimate_delivery.py     # Tool 4: finish date, slack, cost, defect risk (one order x workshop)
-│   ├── rank_candidates.py       # Tool 5: the allocator — ranked candidates, objective as config
-│   ├── probe_overload.py        # Tool 6: what-if overload probe (read-only)
-│   ├── earliest_feasible.py     # Tool 7: earliest date, single batch or split
-│   ├── commit_allocation.py     # Tool 8: audited commit (re-checks eligibility first)
-│   ├── registry.py              # tool registry + dispatch; schemas for the LLM
-│   ├── llm.py                   # DeepSeek intake agent (tool-calling loop, temp 0)
-│   └── inbox.py                 # batch runner: 30 requests -> JSONL of Decisions
 ├── desk/                        # application core: state, audit, orchestration
 │   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
+│   ├── config.py                # central constants: model, API and data/results paths
+│   ├── register.py              # OrderStore + WorkshopStore (shared data stores)
+│   ├── tools.py                 # the 7 deterministic tools (no LLM) + tool registry
+│   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
+│   ├── agent.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
+│   ├── router.py                # code-assigned behaviour: tool log -> Decision
+│   ├── prompts/system.txt       # the system prompt (plain text)
 │   ├── state.py                 # DeskState: chat-side queues (1 Apr snapshot, commits only)
 │   ├── audit.py                 # AuditLog: append-only JSONL audit trail
-│   └── desk.py                  # DispatchDesk: handle() -> Decision, confirm() -> record
+│   └── desk.py                  # DispatchDesk: handle_message() -> Decision, confirm() -> record
+├── eval/
+│   └── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions
 ├── tests/                     # pytest suite: one failure case per tool (74 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
@@ -47,7 +44,7 @@ uv sync                                     # install deps (generates uv.lock)
 python harness/simulate.py                  # runs the three baselines (random / greedy_biggest / cheapest)
 python harness/eft_benchmark.py --seeds 10  # EFT benchmark, normal + shock, averaged over 10 seeds
 uv run pytest                               # tool unit tests (incl. failure cases)
-uv run python -m agent.llm "R07: ORD-063 — 100 cardigans, make Apr 29."   # chat smoke test (needs DeepSeek key in .env)
+uv run python desk/agent.py "R07: ORD-063 — 100 cardigans, make Apr 29."   # chat smoke test (needs DeepSeek key in .env)
 ```
 
 `harness/simulate.py` loads its data from `../data` — keep the `harness/` and `data/` directories as siblings.
@@ -58,13 +55,13 @@ The LLM reads and explains; every number comes from a deterministic tool.
 
 ```
 data/dispatch_requests.txt            (evaluation fixture: the 30 chat requests)
-   │  agent/inbox.py: parse_inbox() reads the file and splits each envelope
+   │  eval/run_eval.py: parse_inbox() reads the file and splits each envelope
    │  ("R07 [08:23] Ravi: <text>"); the message text passes through verbatim
    ▼
-Intake agent (agent/llm.py, DeepSeek, temperature 0)
+Intake agent (desk/agent.py, DeepSeek, temperature 0)
    │  parses the message, decides which tool to call; never does arithmetic
    ▼
-agent/registry.py: dispatch_tool()
+desk/tools.py: dispatch_tool()
    ▼
 Tools (pure Python, no LLM) and where each gets its facts:
    ├─ lookup_order        → data/orders.csv (id / customer / product / category)
@@ -85,8 +82,8 @@ The LLM composes the reply, quoting only numbers the tools returned
 Dispatcher UI: candidates + estimated dates → human confirms → audit record written
 ```
 
-Run one request end-to-end: `uv run python -m agent.llm R20`
-Run the whole inbox and record replies + tool logs: `uv run python -m agent.inbox`
+Run one request end-to-end: `uv run python desk/agent.py R20`
+Run the whole inbox and record replies + tool logs: `python eval/run_eval.py`
 
 ## Evaluation Plan (Track 2)
 

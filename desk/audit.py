@@ -11,12 +11,14 @@ from pathlib import Path
 
 try:
     from .contracts import AllocationRecord, allocation_from_dict, to_dict
+    from .config import DEFAULT_AUDIT_PATH
 except ImportError:  # run directly as a script
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.contracts import AllocationRecord, allocation_from_dict, to_dict
+    from desk.config import DEFAULT_AUDIT_PATH
 
-DEFAULT_PATH = Path(__file__).parent.parent / "results" / "audit_log.jsonl"
+DEFAULT_PATH = DEFAULT_AUDIT_PATH
 
 
 class AuditLog:

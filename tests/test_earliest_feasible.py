@@ -10,9 +10,8 @@ sys.path.append(str(Path(__file__).parent.parent / "harness"))
 
 import pytest
 
-from agent.earliest_feasible import earliest_feasible
-from agent.lookup_order import OrderStore
-from agent.check_eligibility import WorkshopStore
+from desk.tools import earliest_feasible
+from desk.register import OrderStore, WorkshopStore
 
 
 @pytest.fixture(scope="module")

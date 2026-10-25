@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))  # allow direct script run
 
 import pytest
 
-from agent.check_eligibility import WorkshopStore, check_eligibility
+from desk.register import OrderStore, WorkshopStore
+from desk.tools import check_eligibility
 from harness.simulate import eligible_workshops
 
 

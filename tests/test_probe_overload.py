@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))  # allow direct script run
 
 import pytest
 
-from agent.probe_overload import probe_overload
-from agent.check_eligibility import WorkshopStore
+from desk.tools import probe_overload
+from desk.register import WorkshopStore
 
 
 @pytest.fixture(scope="module")

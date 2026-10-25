@@ -9,9 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))  # allow direct script run
 
 import pytest
 
-from agent.estimate_delivery import estimate_delivery
-from agent.lookup_order import OrderStore
-from agent.check_eligibility import WorkshopStore
+from desk.tools import estimate_delivery
+from desk.register import OrderStore, WorkshopStore
 
 
 @pytest.fixture(scope="module")

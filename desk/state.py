@@ -13,12 +13,12 @@ makes the desk's own next estimate consistent with what it told the user.
 """
 
 try:
-    from agent.check_eligibility import WorkshopStore
+    from desk.register import WorkshopStore
 except ImportError:  # run directly as a script
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from agent.check_eligibility import WorkshopStore
+    from desk.register import WorkshopStore
 
 import sys
 from pathlib import Path as _Path

@@ -1,20 +1,18 @@
 """
-desk — the application core: LLM + tools + chat-side state + audit.
+desk — the application core facade: LLM + tools + chat-side state + audit.
 
-The chat agent (agent/llm.py) is the mouth and hands; the desk is the brain
-and memory. handle() runs one message through the agent and assembles the
-structured Decision the UI renders and the evaluation scores; confirm()
-is the only path that moves state, and it goes through commit_allocation.
-
-The behaviour assignment in _decision_from_log is the routing code's v1
-(roadmap Table 3): it reads the tool log, never the prose, so the outcome
-of the hard cases cannot depend on the LLM's wording.
+The chat agent (desk/agent.py) is the mouth and hands; the desk is the brain
+and memory. handle_message() runs one message through the agent and hands
+the tool log to desk/router.py, which assembles the structured Decision the
+UI renders and the evaluation scores; confirm() is the only path that moves
+state, and it goes through commit_allocation.
 """
 
 try:
-    from agent.llm import DispatchAgent
-    from agent.lookup_order import OrderStore
-    from agent.commit_allocation import commit_allocation
+    from desk.agent import DispatchAgent
+    from desk.register import OrderStore
+    from desk.tools import commit_allocation
+    from desk.router import route
     from .contracts import (Behaviour, Candidate, Decision, ParsedRequest,
                             allocation_from_dict, to_dict)
     from .state import DeskState
@@ -23,16 +21,14 @@ except ImportError:  # run directly as a script
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from agent.llm import DispatchAgent
-    from agent.lookup_order import OrderStore
-    from agent.commit_allocation import commit_allocation
+    from desk.agent import DispatchAgent
+    from desk.register import OrderStore
+    from desk.tools import commit_allocation
+    from desk.router import route
     from desk.contracts import (Behaviour, Candidate, Decision, ParsedRequest,
                                 allocation_from_dict, to_dict)
     from desk.state import DeskState
     from desk.audit import AuditLog
-
-_CANDIDATE_FIELDS = ("workshop_id", "name", "estimated_finish", "days_late",
-                     "cost", "defect_risk", "components")
 
 
 class DispatchDesk:
@@ -46,53 +42,16 @@ class DispatchDesk:
 
     # ---------------- conversation ----------------
 
-    def handle(self, text):
+    def handle_message(self, text, requester=None, request_id=None,
+                       verbose=False):
         """One chat message -> Decision (candidates + explanation + tool
-        log). No state moves here; that only happens in confirm()."""
-        reply = self.agent.chat(text)
-        return self._decision_from_log(text, reply, self.agent.tool_log)
-
-    def _decision_from_log(self, text, reply, log):
-        def last_ok(name):
-            for entry in reversed(log):
-                if entry["tool"] == name and "error" not in entry["result"]:
-                    return entry
-            return None
-
-        parsed = ParsedRequest()
-        candidates, chosen, behaviour = [], None, Behaviour.ANSWER
-
-        lookup = last_ok("lookup_order")
-        if lookup:
-            m = lookup["result"]["matches"]
-            if lookup["result"]["status"] == "found":
-                parsed.order_id = m[0]["order_id"]
-                parsed.pieces = int(m[0]["pieces"])
-                parsed.category = m[0]["category"]
-                parsed.due_date = m[0]["due_date"]
-            elif lookup["arguments"].get("order_id"):
-                parsed.order_id = lookup["arguments"]["order_id"]
-
-        rank = last_ok("rank_candidates")
-        earliest = last_ok("earliest_feasible")
-
-        if rank and rank["result"].get("chosen"):
-            behaviour = Behaviour.ALLOCATE
-            parsed.order_id = parsed.order_id or rank["arguments"].get("order_id")
-            rows = rank["result"]["candidates"]
-            candidates = [Candidate(**{k: row[k] for k in _CANDIDATE_FIELDS})
-                          for row in rows]
-            top = next(r for r in rows if r["workshop_id"] == rank["result"]["chosen"])
-            chosen = Candidate(**{k: top[k] for k in _CANDIDATE_FIELDS})
-        elif earliest and not (earliest["result"].get("meets_due_split")
-                               or earliest["result"].get("meets_due_single")):
-            behaviour = Behaviour.IMPOSSIBLE
-        elif lookup and lookup["result"]["status"] in ("ambiguous", "not_found"):
-            behaviour = Behaviour.ASK
-
-        return Decision(request_id="", behaviour=behaviour, parsed=parsed,
-                        candidates=candidates, chosen=chosen,
-                        explanation=reply, tool_log=list(log))
+        log). No state moves here; that only happens in confirm().
+        verbose=True streams each tool round to stdout."""
+        reply = self.agent.chat(text, verbose=verbose)
+        decision = route(text, reply, self.agent.tool_log)
+        if request_id is not None:
+            decision.request_id = request_id
+        return decision
 
     # ---------------- confirmation ----------------
 
@@ -111,11 +70,11 @@ class DispatchDesk:
 
 
 if __name__ == "__main__":
-    from agent.inbox import parse_inbox
+    from eval.run_eval import parse_inbox
     req = next(r for r in parse_inbox() if r["request_id"] == "R07")
     desk = DispatchDesk()
     print(f"[R07] {req['speaker']}: {req['text']}\n")
-    decision = desk.handle(req["text"])
+    decision = desk.handle_message(req["text"])
     print(f"behaviour: {decision.behaviour.value}")
     print(f"chosen:    {decision.chosen.workshop_id if decision.chosen else '-'}")
     print(decision.explanation)

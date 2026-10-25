@@ -20,14 +20,12 @@ routing code.
 from datetime import date, timedelta
 
 try:
-    from .lookup_order import OrderStore
-    from .check_eligibility import WorkshopStore
-except ImportError:  # run directly as a script: python agent/rank_candidates.py
+    from desk.register import OrderStore, WorkshopStore
+except ImportError:  # run directly as a script: python desk/allocator.py
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from agent.lookup_order import OrderStore
-    from agent.check_eligibility import WorkshopStore
+    from desk.register import OrderStore, WorkshopStore
 
 # algorithm2.py is a script-style module (imports `simulate` flat), so its
 # directory must be importable whether we run as a package or directly.

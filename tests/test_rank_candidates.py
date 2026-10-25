@@ -11,9 +11,8 @@ from datetime import date
 
 import pytest
 
-from agent.rank_candidates import CHAT_TODAY, rank_candidates
-from agent.lookup_order import OrderStore
-from agent.check_eligibility import WorkshopStore
+from desk.allocator import CHAT_TODAY, rank_candidates
+from desk.register import OrderStore, WorkshopStore
 
 _HARNESS = str(Path(__file__).parent.parent / "harness")
 if _HARNESS not in sys.path:

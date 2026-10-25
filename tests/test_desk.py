@@ -1,6 +1,6 @@
 """Unit tests for the desk layer: state commits, the audit log, the
-commit_allocation tool and the v1 routing in DispatchDesk._decision_from_log.
-No network: _decision_from_log takes the tool log directly."""
+commit_allocation tool and the v1 routing in desk.router.route.
+No network: route() takes the tool log directly."""
 
 import sys
 from pathlib import Path
@@ -13,7 +13,8 @@ from desk.state import DeskState
 from desk.audit import AuditLog
 from desk.contracts import AllocationRecord, Behaviour, Decision, ParsedRequest
 from desk.desk import DispatchDesk
-from agent.commit_allocation import commit_allocation
+from desk.router import route
+from desk.tools import commit_allocation
 
 
 @pytest.fixture()
@@ -106,7 +107,7 @@ def test_decision_allocate_from_rank(desk):
               "estimated_finish": "2026-04-08", "days_late": 0, "cost": 720.0,
               "defect_risk": 0.05, "components": {}}]}),
     ])
-    d = desk._decision_from_log("text", "reply", log)
+    d = route("text", "reply", log)
     assert d.behaviour is Behaviour.ALLOCATE
     assert d.parsed.order_id == "ORD-041"
     assert d.chosen.workshop_id == "W6"
@@ -116,14 +117,14 @@ def test_decision_allocate_from_rank(desk):
 def test_decision_ask_on_ambiguous_lookup(desk):
     log = _log([("lookup_order", {"customer": "TrendCart"},
                  {"status": "ambiguous", "matches": [{}, {}, {}]})])
-    d = desk._decision_from_log("t", "r", log)
+    d = route("t", "r", log)
     assert d.behaviour is Behaviour.ASK
 
 
 def test_decision_impossible_from_earliest(desk):
     log = _log([("earliest_feasible", {"order_id": "ORD-103"},
                  {"meets_due_single": False, "meets_due_split": False})])
-    d = desk._decision_from_log("t", "r", log)
+    d = route("t", "r", log)
     assert d.behaviour is Behaviour.IMPOSSIBLE
 
 
@@ -132,7 +133,7 @@ def test_decision_never_allocates_on_error_results(desk):
     ALLOCATE — v1 routing reads results, not tool names."""
     log = _log([("rank_candidates", {"order_id": "ORD-999"},
                  {"error": "unknown order"})])
-    d = desk._decision_from_log("t", "r", log)
+    d = route("t", "r", log)
     assert d.behaviour is not Behaviour.ALLOCATE
     assert d.chosen is None
 
@@ -148,7 +149,7 @@ def test_confirm_round_trip(desk):
               "estimated_finish": "2026-04-08", "days_late": 0, "cost": 720.0,
               "defect_risk": 0.05, "components": {}}]}),
     ])
-    d = desk._decision_from_log("t", "r", log)
+    d = route("t", "r", log)
     record = desk.confirm(d, committed_by="dispatcher")
     assert record.order_id == "ORD-041" and record.workshop_id == "W6"
     assert record.committed_by == "dispatcher"
