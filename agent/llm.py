@@ -25,10 +25,12 @@ from openai import OpenAI
 
 try:
     from .lookup_order import OrderStore
+    from .check_eligibility import WorkshopStore
     from .registry import dispatch_tool, tool_schemas
 except ImportError:  # run directly as a script: python agent/llm.py
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from agent.lookup_order import OrderStore
+    from agent.check_eligibility import WorkshopStore
     from agent.registry import dispatch_tool, tool_schemas
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -73,6 +75,7 @@ class DispatchAgent:
                              base_url=DEEPSEEK_BASE_URL)
         self.model = model
         self.store = OrderStore(stages=stages)
+        self.workshops = WorkshopStore(stages=stages)
         self.tool_log = []   # [{"tool", "arguments", "result"}] per call
 
     def chat(self, message):
@@ -91,7 +94,7 @@ class DispatchAgent:
             for call in msg.tool_calls:
                 result = dispatch_tool(call.function.name,
                                        json.loads(call.function.arguments or "{}"),
-                                       store=self.store)
+                                       store=self.store, workshops=self.workshops)
                 self.tool_log.append({"tool": call.function.name,
                                       "arguments": json.loads(call.function.arguments or "{}"),
                                       "result": result})

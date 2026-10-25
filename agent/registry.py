@@ -12,11 +12,15 @@ fill each one in and the LLM side needs no changes.
 
 try:
     from .lookup_order import OrderStore, lookup_order, LOOKUP_ORDER_SCHEMA
+    from .check_eligibility import (WorkshopStore, check_eligibility,
+                                    CHECK_ELIGIBILITY_SCHEMA)
 except ImportError:  # run directly as a script: python agent/registry.py
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from agent.lookup_order import OrderStore, lookup_order, LOOKUP_ORDER_SCHEMA
+    from agent.check_eligibility import (WorkshopStore, check_eligibility,
+                                         CHECK_ELIGIBILITY_SCHEMA)
 
 
 def _placeholder(name):
@@ -37,8 +41,6 @@ def _placeholder_schema(name, description):
 
 
 _PLACEHOLDERS = {
-    "check_eligibility": "For each workshop: eligible yes/no with the reason "
-                         "(suspended, cannot make, over cap, excluded).",
     "get_queue": "Days of work each workshop currently holds.",
     "estimate_delivery": "Queue + processing + transport = finish date, slack "
                          "against the due date, cost and defect risk.",
@@ -54,6 +56,7 @@ _PLACEHOLDERS = {
 
 TOOL_REGISTRY = {
     "lookup_order": {"schema": LOOKUP_ORDER_SCHEMA, "func": lookup_order},
+    "check_eligibility": {"schema": CHECK_ELIGIBILITY_SCHEMA, "func": check_eligibility},
     **{name: {"schema": _placeholder_schema(name, desc), "func": _placeholder(name)}
        for name, desc in _PLACEHOLDERS.items()},
 }
@@ -64,7 +67,7 @@ def tool_schemas():
     return [entry["schema"] for entry in TOOL_REGISTRY.values()]
 
 
-def dispatch_tool(name, arguments, *, store=None):
+def dispatch_tool(name, arguments, *, store=None, workshops=None):
     """Execute one tool call from the model. Returns the tool's result dict
     (or an error dict the model can read and relay)."""
     entry = TOOL_REGISTRY.get(name)
@@ -73,6 +76,8 @@ def dispatch_tool(name, arguments, *, store=None):
     kwargs = dict(arguments or {})
     if name == "lookup_order":
         kwargs["store"] = store or OrderStore()
+    elif name == "check_eligibility":
+        kwargs["store"] = workshops or WorkshopStore()
     try:
         return entry["func"](**kwargs)
     except NotImplementedError as exc:
