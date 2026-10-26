@@ -167,6 +167,79 @@ def test_decision_never_allocates_on_error_results(desk):
     assert d.chosen is None
 
 
+# ---------------- router v2 ----------------
+
+def _found_lookup(oid, pieces="400", category="TOPS", due="2026-04-20"):
+    return ("lookup_order", {"order_id": oid},
+            {"status": "found", "matches": [{"order_id": oid, "pieces": pieces,
+              "category": category, "due_date": due}]})
+
+
+def _rank(oid, chosen="W6"):
+    return ("rank_candidates", {"order_id": oid},
+            {"chosen": chosen, "candidates": [
+                {"workshop_id": "W6", "name": "Nimble Needle",
+                 "estimated_finish": "2026-04-06", "days_late": 0, "cost": 480.0,
+                 "defect_risk": 0.05, "components": {}}]})
+
+
+def _elig(rows):
+    return ("check_eligibility", {"category": "TOPS", "pieces": 400},
+            {"category": "TOPS", "pieces": 400, "eligible_count": len(rows),
+             "workshops": rows})
+
+
+def _w(wid, name, eligible, reasons):
+    return {"workshop_id": wid, "name": name, "eligible": eligible,
+            "reasons": reasons}
+
+
+def test_refuse_on_ineligible_suggested_workshop(desk):
+    """R08: 'send ORD-073 to FreshStart' — FreshStart fails the cap check,
+    so the behaviour is REFUSE even though the rank picked an alternative."""
+    from desk.register import WorkshopStore
+    log = _log([
+        _found_lookup("ORD-073"),
+        _elig([_w("W8", "FreshStart", False,
+                  ["batch of 400 exceeds its 300-piece cap"])]),
+        _rank("ORD-073"),
+    ])
+    d = route("Send ORD-073 (400 hoodies) to FreshStart, their quote was good.",
+              "reply", log, workshops=WorkshopStore())
+    assert d.behaviour is Behaviour.REFUSE
+    assert d.parsed.suggested_workshop == "FreshStart"
+    assert d.chosen is None                    # nothing may be committed
+    assert len(d.candidates) == 1              # alternatives still listed
+
+
+def test_exclusion_does_not_trigger_refuse(desk):
+    """'not QuickStitch' is a constraint, not a refusal — an exclusion is
+    the only reason on the row, so ALLOCATE must stand."""
+    from desk.register import WorkshopStore
+    log = _log([
+        _found_lookup("ORD-053", pieces="300", due="2026-04-10"),
+        _elig([_w("W1", "QuickStitch", False, ["excluded by Boss"])]),
+        _rank("ORD-053"),
+    ])
+    d = route("Boss says ORD-053 must not go to QuickStitch.", "reply", log,
+              workshops=WorkshopStore())
+    assert d.behaviour is Behaviour.ALLOCATE
+
+
+def test_no_data_when_order_unknown_even_if_model_ranked_another(desk):
+    """R18: ORD-999 does not exist. If the model, after the failed lookup,
+    ranked a different order anyway, that rank must not produce ALLOCATE."""
+    log = _log([
+        ("lookup_order", {"order_id": "ORD-999"},
+         {"status": "not_found", "matches": []}),
+        _rank("ORD-061"),
+    ])
+    d = route("what's the status of ORD-999?", "reply", log)
+    assert d.behaviour is Behaviour.NO_DATA
+    assert d.parsed.order_id == "ORD-999"
+    assert d.chosen is None
+
+
 def test_confirm_round_trip(desk):
     log = _log([
         ("lookup_order", {"order_id": "ORD-041"},

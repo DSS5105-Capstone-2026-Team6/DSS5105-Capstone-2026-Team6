@@ -76,6 +76,8 @@ class DispatchAgent:
         self.tool_log = []   # [{"tool", "arguments", "result"}] per call
 
     def chat(self, message, verbose=False):
+        self.tool_log = []   # per message: route() and the faithfulness
+                             # checker must never see a previous request's calls
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": message},
