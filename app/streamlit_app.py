@@ -75,11 +75,12 @@ def card(html):
 def split_chat_dump(text):
     """Split a pasted group-chat dump into single messages. A line matching
     the inbox envelope (R23 [08:29] Priya: ...) starts a new message;
-    continuation lines belong to the previous one. One message -> [text]."""
+    continuation lines belong to the previous one; # comments and blank
+    lines are skipped. One message -> [text]."""
     msgs, current = [], None
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith("#"):
             continue
         if ENVELOPE.match(stripped):
             if current:
