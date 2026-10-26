@@ -43,19 +43,43 @@ SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.txt"
 
 
 def load_api_key(env_path=PROJECT_ROOT / ".env"):
-    """Load the API key from .env: prefer a *DEEPSEEK* variable, fall back to
-    OPENAI_API_KEY (this project stores the DeepSeek key under that name,
-    since DeepSpeak's API is OpenAI-compatible)."""
-    load_dotenv(env_path)
+    """Resolve the DeepSeek API key. Lookup order:
+    1. Process env vars (Streamlit Cloud injects Secrets here at runtime).
+       Prefers any *DEEPSEEK* variable, falls back to OPENAI_API_KEY
+       (the project stores the DeepSeek key under that name, since
+       DeepSeek's API is OpenAI-compatible).
+    2. st.secrets (explicit check, in case env injection is unavailable).
+    3. Local .env file — optional, missing it is NOT an error on the cloud.
+    """
+    # 1) environment (works both locally after load_dotenv and on the cloud)
+    if env_path.exists():          # .env is a local-dev convenience only
+        load_dotenv(env_path)      # missing file -> skip silently
     for var, value in os.environ.items():
         if "DEEPSEEK" in var.upper() and value:
             return value
     value = os.environ.get("OPENAI_API_KEY")
     if value:
         return value
+
+    # 2) st.secrets — Streamlit Cloud's canonical store; also scans any
+    #    key whose name mentions DEEPSEEK, mirroring the env-var logic
+    try:
+        import streamlit as st
+        secrets = st.secrets
+        for var in secrets.keys():
+            if "DEEPSEEK" in var.upper() and secrets[var]:
+                return secrets[var]
+        if secrets.get("OPENAI_API_KEY"):
+            return secrets["OPENAI_API_KEY"]
+    except Exception:
+        pass  # not running inside Streamlit (e.g. pytest, CLI smoke runs)
+
+    # 3) nothing found — error message now covers BOTH sources
     raise RuntimeError(
-        f"No API key found: expected a *DEEPSEEK* or OPENAI_API_KEY variable "
-        f"in {env_path}")
+        "No API key found. On Streamlit Cloud: app Settings -> Secrets, add "
+        'DEEPSEEK_API_KEY = "sk-..." (or OPENAI_API_KEY). '
+        f"Locally: create {env_path} with the same variable.")
+
 
 
 class DispatchAgent:
