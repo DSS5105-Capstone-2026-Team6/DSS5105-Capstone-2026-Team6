@@ -32,7 +32,9 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 │   ├── audit.py                 # AuditLog: append-only JSONL audit trail
 │   └── desk.py                  # DispatchDesk: handle_message() -> Decision, confirm() -> record
 ├── eval/
-│   └── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions
+│   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
+│   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
+│   └── faithfulness.py          # every number in the reply must trace to the tool log
 ├── tests/                     # pytest suite: one failure case per tool (74 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
@@ -84,6 +86,11 @@ Dispatcher UI: candidates + estimated dates → human confirms → audit record 
 
 Run one request end-to-end: `uv run python desk/agent.py R20`
 Run the whole inbox and record replies + tool logs: `python eval/run_eval.py`
+Score the run against the labelled inbox (Table 7 ground truth):
+`python eval/score_run.py` — reports behaviour accuracy by kind, workshop
+accuracy, and faithfulness (numbers traced to the tool log). The held-out
+set (`data/dispatch_requests_heldout.txt` + `data/labels_heldout.json`)
+scores the same way: `python eval/score_run.py --labels data/labels_heldout.json --results results/heldout_run.jsonl`
 
 ## Evaluation Plan (Track 2)
 

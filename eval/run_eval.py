@@ -26,6 +26,7 @@ queues stay at the 1 April snapshot throughout.
 import argparse
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -85,12 +86,14 @@ def run_inbox(out_path=DEFAULT_OUT, limit=None, only=None, model=None,
                     print(f"\n===== {req['request_id']} [{req['time']}] "
                           f"{req['speaker']}: {req['text']}")
                 desk.agent.new_conversation()   # each request stands alone
+                t0 = time.perf_counter()
                 decision = desk.handle_message(req["text"],
                                                requester=req["speaker"],
                                                request_id=req["request_id"],
                                                verbose=verbose)
+                latency_s = round(time.perf_counter() - t0, 2)
                 record = {"speaker": req["speaker"], "raw": req["text"],
-                          **to_dict(decision)}
+                          "latency_s": latency_s, **to_dict(decision)}
                 n_tools = len(decision.tool_log)
             except Exception as exc:
                 record = {"request_id": req["request_id"], "speaker": req["speaker"],

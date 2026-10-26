@@ -119,6 +119,8 @@ cython_debug/
 !**/sample_*.csv
 !**/example_*.json
 !**/demo_*.xlsx
+# Evaluation ground truth is tracked: the scorer needs it to grade runs
+!data/labels_*.json
 
 # Track 2 capstone data (shared simulator input — must be committed)
 !data/orders.csv
