@@ -1,0 +1,23 @@
+# SweaterCo dispatch group chat — afternoon of 2026-04-01.
+# One allocation request per line. This is the held-out inbox.
+
+H01 [13:05] Ravi: Can we get ORD-036 out the door? UrbanThread scarves, 1000 pieces, due Apr 26.
+H02 [13:12] Boss: ORD-108 — 2000 scarves for Harbor Knits, has to ship Apr 3. Find someone.
+H03 [13:20] Chen: The Bright Basics scarf order needs to get moving — who's on it?
+H04 [13:28] Priya: Factory says ORD-114 is stuck. Farm it out — Northwind will give us the new date after their call. See who's free.
+H05 [13:37] Mei: Boss wants ORD-109 fast — 500 vests for Harbor Knits, due Apr 13. Fastest shop, don't care what it costs.
+H06 [13:45] Ravi: FreshStart is keen for work, can we throw ORD-008 their way? 600 polos for Loom & Leaf, due Apr 9.
+H07 [13:54] Chen: The Loom & Leaf beanie job — the small one — can someone dispatch it today?
+H08 [14:03] Priya: Quick one — which outside workshop have we used the most since January? Boss wants it before the review.
+H09 [14:11] Boss: ORD-010. 1000 cardigans, Cotton Club, due Apr 25. Margin's gone on this one — cheapest shop that still hits the date.
+H10 [14:20] Mei: Northwind Apparel is chasing again — sort out their open order, will you?
+H11 [14:29] Ravi: OldMill is just sitting there with an empty queue — give ORD-015 to them, yeah? 300 vests.
+H12 [14:38] Chen: Maple & Co just rang about a new scarf run they want sent outside — no numbers yet, details in an email later. Can you set something up?
+H13 [14:47] Priya: ORD-041 please — 600 beanies, Harbor Knits, due Apr 21. Send it out today.
+H14 [14:56] Boss: ORD-029 is due TODAY. 1500 beanies for Northwind. Someone tell me we can still make it.
+H15 [15:07] Mei: For ORD-082 — 600 beanies for TrendCart — QC is still sore about the last lot, so lowest defect rate you can find. Due May 1, there's time.
+H16 [15:16] Ravi: What did we quote Cotton Club for their February vests? They say the invoice doesn't match.
+H17 [15:25] Chen: ORD-062, 2000 scarves for Bright Basics, due Apr 8. QuickStitch is the fastest, right? Book them.
+H18 [15:34] Mei: ORD-017 — 800 cardigans for TrendCart, due Apr 10. Boss says nothing new to QuickStitch this week, they're buried.
+H19 [15:43] Priya: Any movement on ORD-212? The client keeps asking.
+H20 [15:52] Chen: TrendCart's beanie reorder — 1000 pieces, ship by Apr 17 — get it outside today.
