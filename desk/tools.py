@@ -204,10 +204,13 @@ CHECK_ELIGIBILITY_SCHEMA = {
 
 # ---------------- get_queue ----------------
 
-def get_queue(workshop_ids=None, *, store=None):
+def get_queue(workshop_ids=None, *, store=None, queues=None):
     """Queue snapshot for the given workshops (all of them by default).
-    Unknown names land in "unknown" instead of failing silently."""
+    Unknown names land in "unknown" instead of failing silently. `queues`
+    supplies the live chat-side state; recent_change is the drift from the
+    2026-04-01 snapshot caused by commits."""
     store = store or WorkshopStore()
+    queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
 
     ids, unknown = [], []
     if workshop_ids:
@@ -221,10 +224,9 @@ def get_queue(workshop_ids=None, *, store=None):
     for wid in ids:
         w = store.workshops[wid]
         rows.append({"workshop_id": w.workshop_id, "name": w.name,
-                     "queue_days": w.queue0,
-                     # no chat-side history yet; DeskState will supply this
-                     "recent_change": 0.0})
-    result = {"as_of": CHAT_AS_OF, "source": "workshops.csv snapshot (2026-04-01)",
+                     "queue_days": round(queues[wid], 2),
+                     "recent_change": round(queues[wid] - w.queue0, 2)})
+    result = {"as_of": CHAT_AS_OF, "source": "live chat-side queues (2026-04-01 snapshot + commits)",
               "workshops": rows}
     if unknown:
         result["unknown"] = unknown
@@ -254,11 +256,13 @@ GET_QUEUE_SCHEMA = {
 # ---------------- estimate_delivery ----------------
 
 def estimate_delivery(order_id=None, workshop_id=None, *,
-                      orders=None, store=None):
+                      orders=None, store=None, queues=None):
     """Estimate one order at one workshop. Returns an error dict for unknown
-    ids — never a nearest match, mirroring lookup_order's guard."""
+    ids — never a nearest match, mirroring lookup_order's guard. `queues`
+    overrides the 1 April snapshot with the desk's live chat-side queues."""
     orders = orders or OrderStore()
     store = store or WorkshopStore()
+    queues = queues or {wid2: w2.queue0 for wid2, w2 in store.workshops.items()}
     if not order_id:
         return {"error": "order_id is required"}
     if not workshop_id:
@@ -276,7 +280,6 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
     due_date = date.fromisoformat(rec["due_date"])
     batch = {"category": rec["category"], "pieces": pieces,
              "sent_date": CHAT_TODAY, "due_date": due_date}
-    queues = {wid2: w2.queue0 for wid2, w2 in store.workshops.items()}
 
     total_days = est_turnaround_expected(batch, w, queues)
     finish = CHAT_TODAY + timedelta(days=round(total_days))
@@ -290,7 +293,7 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
             "defect_risk": w.defect_rate,
             "estimator": "profile_card",
             "as_of": CHAT_TODAY.isoformat(),
-            "components": {"queue_days": w.queue0,
+            "components": {"queue_days": round(queues[wid], 2),
                            "work_days_expected": round(work_days, 2),
                            "transport_days": w.lead_days}}
 
@@ -317,10 +320,13 @@ ESTIMATE_DELIVERY_SCHEMA = {
 
 # ---------------- probe_overload ----------------
 
-def probe_overload(workshop_id=None, additional_pieces=None, *, store=None):
+def probe_overload(workshop_id=None, additional_pieces=None, *,
+                   store=None, queues=None):
     """Read-only overload probe. Error dicts for unknown workshop or bad
-    piece counts — never a silent guess."""
+    piece counts — never a silent guess. `queues` overrides the snapshot
+    with the desk's live chat-side queues."""
     store = store or WorkshopStore()
+    queues = queues or {i: w.queue0 for i, w in store.workshops.items()}
     if not workshop_id:
         return {"error": "workshop_id is required"}
     wid = store.resolve(workshop_id)
@@ -331,6 +337,7 @@ def probe_overload(workshop_id=None, additional_pieces=None, *, store=None):
                          f"got {additional_pieces!r}"}
 
     w = store.workshops[wid]
+    current = queues[wid]
     # expected added work = algorithm2's priced formula, derived from
     # est_turnaround_expected itself (queue 0, transport subtracted) so the
     # single source of truth stays in the harness.
@@ -341,15 +348,15 @@ def probe_overload(workshop_id=None, additional_pieces=None, *, store=None):
     # simulator's defective case: work is redone at 1.5x (simulate.py:245)
     defective_added = additional_pieces / w.capacity * 1.5
     return {"workshop_id": wid, "name": w.name,
-            "current_queue_days": w.queue0,
+            "current_queue_days": round(current, 2),
             "added_work_days_expected": round(added, 2),
-            "new_queue_days_expected": round(w.queue0 + added, 2),
+            "new_queue_days_expected": round(current + added, 2),
             # first-come-first-served: the new batch goes to the back, so
             # everything already queued slips by exactly the added work
             "delay_to_queued_orders_days": round(added, 2),
             "defective_case": {
                 "added_work_days_if_defective": round(defective_added, 2),
-                "new_queue_days_if_defective": round(w.queue0 + defective_added, 2),
+                "new_queue_days_if_defective": round(current + defective_added, 2),
                 "delay_if_defective": round(defective_added, 2)},
             "read_only": True}
 
@@ -389,18 +396,19 @@ def _finish(pieces, w, queues):
     return est_turnaround_expected(batch, w, queues)
 
 
-def earliest_feasible(order_id=None, *, orders=None, store=None):
+def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
     """Earliest date as one batch and as a two-way split. Error dict for an
-    unknown order; flags report when even the split misses the due date."""
+    unknown order; flags report when even the split misses the due date.
+    `queues` overrides the 1 April snapshot with live chat-side queues."""
     orders = orders or OrderStore()
     store = store or WorkshopStore()
+    queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
     rec = orders.by_id(order_id) if order_id else None
     if rec is None:
         return {"error": f"unknown order {order_id!r}"}
 
     pieces, category = int(rec["pieces"]), rec["category"]
     due = date.fromisoformat(rec["due_date"])
-    queues = {wid: w.queue0 for wid, w in store.workshops.items()}
 
     # --- single batch: earliest finish over all eligible workshops
     single = None   # (finish date, workshop)
@@ -560,6 +568,12 @@ _STORE_KWARGS = {
 }
 _FACTORIES = {"orders": OrderStore, "workshops": WorkshopStore}
 
+# tools that accept a `queues` override: with a desk they read its live
+# chat-side queues (commits move later answers); without one they fall back
+# to the 2026-04-01 snapshot inside the tool
+_QUEUES_TOOLS = {"get_queue", "estimate_delivery", "rank_candidates",
+                 "probe_overload", "earliest_feasible"}
+
 
 def tool_schemas():
     """The schemas to pass as `tools=` to the chat completion."""
@@ -569,8 +583,9 @@ def tool_schemas():
 def dispatch_tool(name, arguments, *, desk=None):
     """Execute one tool call from the model. Returns the tool's result dict
     (or an error dict the model can read and relay). With a desk, tools read
-    its shared stores and commit_allocation can write state; without one,
-    fresh stores are built and the committer refuses (nothing to commit to)."""
+    its shared stores and live queues, and commit_allocation can write state;
+    without one, fresh stores are built and the committer refuses (nothing
+    to commit to)."""
     entry = TOOL_REGISTRY.get(name)
     if entry is None:
         return {"error": f"unknown tool {name!r}"}
@@ -584,6 +599,8 @@ def dispatch_tool(name, arguments, *, desk=None):
                 kwargs[param] = getattr(desk, kind)
             else:
                 kwargs[param] = _FACTORIES[kind]()
+        if desk is not None and name in _QUEUES_TOOLS:
+            kwargs["queues"] = desk.state.queues
     try:
         return entry["func"](**kwargs)
     except (TypeError, ValueError) as exc:

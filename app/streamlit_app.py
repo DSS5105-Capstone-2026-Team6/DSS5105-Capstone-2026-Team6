@@ -11,6 +11,7 @@ Run from the project root:
     uv run streamlit run app/streamlit_app.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -49,12 +50,17 @@ h1 { font-size: 1.4rem !important; }
 def get_desk():
     """One DispatchDesk per session, so chat-side queues survive reruns.
     API key: locally from .env (load_api_key); on Streamlit Community Cloud
-    from st.secrets, which we mirror into os.environ here."""
+    from st.secrets, mirrored into os.environ. Locally there is no
+    secrets.toml, and merely touching st.secrets raises — hence the guard."""
     if "desk" not in st.session_state:
         try:
+            try:
+                secrets = dict(st.secrets)
+            except Exception:
+                secrets = {}
             for var in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
-                if var in st.secrets and not __import__("os").environ.get(var):
-                    __import__("os").environ[var] = st.secrets[var]
+                if secrets.get(var) and not os.environ.get(var):
+                    os.environ[var] = secrets[var]
             st.session_state.desk = DispatchDesk()
         except Exception as exc:  # missing API key, unreadable data...
             st.error(f"Backend failed to start: {exc}")
@@ -129,23 +135,31 @@ def render_candidates(decision):
 
 
 def render_confirm(decision, desk):
-    """Step 4 — one-tap confirm; a rerun never commits twice."""
+    """Step 4 — the system recommends (⭐), the human decides: every candidate
+    gets its own confirm button, not just the top pick. A rerun never
+    commits twice."""
     key = f"committed-{id(decision)}"
-    if decision.chosen is None or decision.parsed.order_id is None:
+    if not decision.candidates or decision.parsed.order_id is None:
         return
     if key in st.session_state:
-        st.success(f"已提交 {st.session_state[key].record_id} — "
-                   f"{st.session_state[key].order_id} → {st.session_state[key].workshop_id}")
+        r = st.session_state[key]
+        st.success(f"已提交 {r.record_id} — {r.order_id} → {r.workshop_id}")
         return
-    if st.button(f"✅ 确认 {decision.chosen.name}", use_container_width=True,
-                 key=f"btn-{id(decision)}"):
-        try:
-            record = desk.confirm(decision, committed_by="dispatcher")
-        except ValueError as exc:
-            st.error(str(exc))
-            return
-        st.session_state[key] = record
-        st.rerun()
+    st.markdown("**拍板（推荐只是参考，可改选）**")
+    from dataclasses import replace
+    for c in decision.candidates[:3]:
+        is_chosen = decision.chosen and c.workshop_id == decision.chosen.workshop_id
+        label = f"✅ 确认 {c.name} ({c.workshop_id})" + (" ⭐ 系统推荐" if is_chosen else "")
+        if st.button(label, use_container_width=True,
+                     key=f"btn-{id(decision)}-{c.workshop_id}"):
+            try:
+                record = desk.confirm(replace(decision, chosen=c),
+                                      committed_by="dispatcher")
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+            st.session_state[key] = record
+            st.rerun()
 
 
 def render_reply(decision):
