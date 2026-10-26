@@ -51,6 +51,16 @@ class DispatchDesk:
         decision = route(text, reply, self.agent.tool_log)
         if request_id is not None:
             decision.request_id = request_id
+        # the model may skip lookup_order and call rank_candidates directly;
+        # fill any missing parsed fields from the register so the UI card and
+        # slack math never show blanks
+        p = decision.parsed
+        if p.order_id and p.pieces is None:
+            rec = self.orders.by_id(p.order_id)
+            if rec is not None:
+                p.pieces = int(rec["pieces"])
+                p.category = rec["category"]
+                p.due_date = rec["due_date"]
         return decision
 
     # ---------------- confirmation ----------------
