@@ -1,10 +1,14 @@
 """
-streamlit_app — the dispatcher's phone-first desk UI.
+streamlit_app — the dispatcher's desk UI.
 
 The only bridge to the backend is the DispatchDesk facade: handle_message()
-turns one pasted chat line into a Decision, confirm() commits it and writes
-the audit record. This file renders Decisions and captures taps; it holds no
+turns one chat line into a Decision, confirm() commits it and writes the
+audit record. This file renders Decisions and captures taps; it holds no
 business logic.
+
+Layout: four tabs — 🗂 inbox (batch worklist, bucketed by behaviour),
+💬 chat (multi-turn follow-ups), 📊 dashboard (live queue charts, ECharts),
+🧾 records (append-only audit feed).
 
 Run from the project root:
 
@@ -32,8 +36,16 @@ BADGE = {
     Behaviour.NO_DATA: ("⚪ NO DATA", "#e9ecef"),
 }
 
+# inbox buckets: which behaviour needs the human first
+NEEDS_HUMAN = {Behaviour.ASK, Behaviour.REFUSE, Behaviour.IMPOSSIBLE,
+               Behaviour.NO_DATA}
+
 CSS = """
 <style>
+.block-container {
+    max-width: 1200px;     /* ~2/3 wider than Streamlit's centered 730px */
+    margin: auto;
+}
 .card {
     border: 1px solid #dee2e6; border-radius: 12px;
     padding: 12px 14px; margin: 8px 0; background: #fff;
@@ -51,8 +63,13 @@ def get_desk():
     """One DispatchDesk per session, so chat-side queues survive reruns.
     API key: locally from .env (load_api_key); on Streamlit Community Cloud
     from st.secrets, mirrored into os.environ. Locally there is no
-    secrets.toml, and merely touching st.secrets raises — hence the guard."""
-    if "desk" not in st.session_state:
+    secrets.toml, and merely touching st.secrets raises — hence the guard.
+    Hot-reload guard: a desk created before a code update may lack newer
+    agent methods; rebuild it rather than crash."""
+    desk = st.session_state.get("desk")
+    if desk is not None and not hasattr(desk.agent, "new_conversation"):
+        desk = None
+    if desk is None:
         try:
             try:
                 secrets = dict(st.secrets)
@@ -61,11 +78,12 @@ def get_desk():
             for var in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
                 if secrets.get(var) and not os.environ.get(var):
                     os.environ[var] = secrets[var]
-            st.session_state.desk = DispatchDesk()
+            desk = DispatchDesk()
+            st.session_state.desk = desk
         except Exception as exc:  # missing API key, unreadable data...
             st.error(f"Backend failed to start: {exc}")
             st.stop()
-    return st.session_state.desk
+    return desk
 
 
 def card(html):
@@ -75,11 +93,12 @@ def card(html):
 def split_chat_dump(text):
     """Split a pasted group-chat dump into single messages. A line matching
     the inbox envelope (R23 [08:29] Priya: ...) starts a new message;
-    continuation lines belong to the previous one. One message -> [text]."""
+    continuation lines belong to the previous one; # comments and blank
+    lines are skipped. One message -> [text]."""
     msgs, current = [], None
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith("#"):
             continue
         if ENVELOPE.match(stripped):
             if current:
@@ -117,7 +136,7 @@ def render_candidates(decision):
     """Step 3 — candidate cards, chosen one highlighted."""
     if not decision.candidates:
         return
-    st.markdown("**候选车间**")
+    st.markdown("**🧭 候选车间**")
     for i, c in enumerate(decision.candidates[:3]):
         is_chosen = decision.chosen and c.workshop_id == decision.chosen.workshop_id
         slack = ""
@@ -143,13 +162,13 @@ def render_confirm(decision, desk):
         return
     if key in st.session_state:
         r = st.session_state[key]
-        st.success(f"已提交 {r.record_id} — {r.order_id} → {r.workshop_id}")
+        st.success(f"⚡ 已提交 {r.record_id} — {r.order_id} → {r.workshop_id}")
         return
-    st.markdown("**拍板（推荐只是参考，可改选）**")
+    st.markdown("**⚙️ 拍板（推荐只是参考，可改选）**")
     from dataclasses import replace
     for c in decision.candidates[:3]:
         is_chosen = decision.chosen and c.workshop_id == decision.chosen.workshop_id
-        label = f"✅ 确认 {c.name} ({c.workshop_id})" + (" ⭐ 系统推荐" if is_chosen else "")
+        label = f"▶ 确认 {c.name} ({c.workshop_id})" + (" ⭐ 系统推荐" if is_chosen else "")
         if st.button(label, use_container_width=True,
                      key=f"btn-{id(decision)}-{c.workshop_id}"):
             try:
@@ -166,12 +185,177 @@ def render_reply(decision):
     """Step 5 — ready-to-paste group-chat reply (st.code has a copy button)."""
     if not decision.explanation:
         return
-    st.markdown("**可复制回复**")
+    st.markdown("**📤 可复制回复**")
     st.code(decision.explanation, language=None)
 
 
+def _queue_input(text):
+    """Tappable option -> put the order id into the chat box on next rerun."""
+    st.session_state.queued_input = text
+
+
+def render_options(decision):
+    """ASK decisions carry tappable choices (journey step 6): one tap
+    answers the clarifying question instead of typing."""
+    if not decision.options:
+        return
+    st.markdown("**⌨️ 点选回复**")
+    for opt in decision.options:
+        st.button(f"▶ {opt}", use_container_width=True,
+                  key=f"opt-{id(decision)}-{opt}",
+                  on_click=_queue_input, args=(opt,))
+
+
+def render_decision(decision, desk):
+    render_understood(decision)
+    render_candidates(decision)
+    render_confirm(decision, desk)
+    render_options(decision)
+    render_reply(decision)
+
+
+def _budget_ok(extra=1):
+    """Per-session request cap (Risk 6): the hosted demo shares one key."""
+    n = st.session_state.get("n_sent", 0)
+    if n + extra > 40:
+        st.warning("本会话请求已达上限（40 条），请重新打开页面。")
+        return False
+    return True
+
+
+# ---------------- 🗂 inbox ----------------
+
+def _row_label(i, item):
+    d = item["decision"]
+    label, _ = BADGE[d.behaviour]
+    what = d.parsed.order_id or item["msg"][:24]
+    return f"#{i} · {what} · {label.split()[1]}"
+
+
+def render_inbox(desk):
+    st.caption("整段群聊粘贴进来，按 Rxx 前缀逐条调度（各条相互独立，"
+               "不共享上下文）。")
+    text = st.text_area("粘贴群聊消息", height=120,
+                        placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29.")
+    if st.button("🚀 调度", use_container_width=True, type="primary") and text.strip():
+        msgs = split_chat_dump(text.strip())
+        if _budget_ok(len(msgs)):
+            decisions = []
+            for i, msg in enumerate(msgs, 1):
+                desk.agent.new_conversation()  # inbox lines are independent
+                with st.spinner(f"调度中（{i}/{len(msgs)}：{msg[:40]}...）"):
+                    decisions.append(
+                        {"msg": msg,
+                         "decision": desk.handle_message(msg, requester="dispatcher")})
+            st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
+            st.session_state.decisions = decisions
+
+    items = st.session_state.get("decisions", [])
+    if not items:
+        st.info("收件箱为空。")
+        return
+
+    buckets = {
+        "⚠️ 需人工": [x for x in items if x["decision"].behaviour in NEEDS_HUMAN],
+        "⚡ 待拍板": [x for x in items if x["decision"].behaviour is Behaviour.ALLOCATE],
+        "💬 已答复": [x for x in items if x["decision"].behaviour is Behaviour.ANSWER],
+    }
+
+    # KPI row
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("⚠️ 需人工", len(buckets["⚠️ 需人工"]))
+    k2.metric("⚡ 待拍板", len(buckets["⚡ 待拍板"]))
+    k3.metric("✅ 已提交", len(desk.audit.load_all()))
+    k4.metric("🕒 总队列(天)", round(sum(desk.state.queues.values()), 1))
+
+    # compact worklist: one row per request, details behind an expander
+    n = 0
+    for bucket, bucket_items in buckets.items():
+        if not bucket_items:
+            continue
+        st.markdown(f"**{bucket}（{len(bucket_items)}）**")
+        for item in bucket_items:
+            n += 1
+            d = item["decision"]
+            with st.expander(_row_label(n, item),
+                             expanded=bucket == "⚠️ 需人工"):
+                st.caption(item["msg"])
+                render_decision(d, desk)
+
+
+# ---------------- 💬 chat ----------------
+
+def render_chat(desk):
+    st.markdown("**💬 对话（追问 / 补充）**")
+    top_l, top_r = st.columns([3, 1])
+    top_l.caption("追问与上文共用一个会话；点 ▶ 选项按钮自动填入。")
+    if top_r.button("🔄 新会话", use_container_width=True):
+        desk.agent.new_conversation()
+        st.session_state.turns = []
+
+    for turn in st.session_state.get("turns", []):
+        with st.chat_message("user", avatar="🧑‍🔧"):
+            st.write(turn["user"])
+        with st.chat_message("assistant", avatar="🤖"):
+            render_decision(turn["decision"], desk)
+
+    queued = st.session_state.pop("queued_input", None)
+    prompt = st.chat_input("补充说明，或点上方 ▶ 选项") or queued
+    if prompt and _budget_ok():
+        st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
+        with st.spinner("调度中..."):
+            decision = desk.handle_message(prompt, requester="dispatcher")
+        st.session_state.setdefault("turns", []).append(
+            {"user": prompt, "decision": decision})
+        st.rerun()
+
+
+# ---------------- 📊 dashboard ----------------
+
+def render_dashboard(desk):
+    st.caption("实时聊天侧队列 = 2026-04-01 快照 + 本会话已提交的单。"
+               "每次拍板后柱子会跳。")
+    import pandas as pd
+
+    names, snapshot, live, cost, defect = [], [], [], [], []
+    for wid, w in desk.workshops.workshops.items():
+        names.append(w.name)
+        snapshot.append(w.queue0)
+        live.append(round(desk.state.queues[wid], 2))
+        cost.append(w.cost)
+        defect.append(w.defect_rate)
+
+    st.markdown("**📡 车间队列水位**")
+    queues = pd.DataFrame({"workshop": names,
+                           "4/1 快照": snapshot, "实时队列": live})
+    st.bar_chart(queues, x="workshop", y=["4/1 快照", "实时队列"],
+                 x_label="车间", y_label="队列（天）")
+
+    st.markdown("**🧬 成本 × 缺陷率（点大小 = 当前队列）**")
+    trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
+                          "queue_days": live, "workshop": names})
+    st.scatter_chart(trade, x="cost_per_pc", y="defect_rate",
+                     size="queue_days", color="workshop",
+                     x_label="成本 ($/pc)", y_label="缺陷率")
+
+
+# ---------------- 🧾 records ----------------
+
 def render_recent(desk):
     """Step 7 — the record the group chat never had."""
+    top_l, top_r = st.columns([3, 1])
+    top_l.caption("审计日志是 append-only 文件，刷新不重置；同一订单重复"
+                  "提交会被拒绝（不会覆盖也不会加总）。演示要清零请用右侧按钮。")
+    if top_r.button("↺ 重置演示", use_container_width=True,
+                    help="归档当前审计日志，清空会话，队列回到 4/1 快照"):
+        import datetime as _dt
+        path = desk.audit.path
+        if path.exists():
+            stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+            path.rename(path.with_name(f"audit_log.{stamp}.bak.jsonl"))
+        st.session_state.clear()   # desk 重建 → 队列回快照
+        st.rerun()
+
     records = desk.audit.load_all()
     if not records:
         st.info("还没有已确认的记录。")
@@ -184,41 +368,23 @@ def render_recent(desk):
 
 
 def main():
-    st.set_page_config(page_title="Dispatch Desk", layout="centered",
+    st.set_page_config(page_title="Dispatch Desk", layout="wide",
                        initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
-    st.title("🧶 Dispatch Desk")
+    st.title("🛰️ Dispatch Desk")
 
     desk = get_desk()
-    tab_chat, tab_recent = st.tabs(["📨 处理请求", "📋 最近决定"])
+    tab_main, tab_dash, tab_recent = st.tabs(
+        ["🗂 收件箱", "📊 面板", "🧾 记录"])
 
-    with tab_chat:
-        text = st.text_area("粘贴群聊消息", height=140,
-                            placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29.\n"
-                                        "支持整段群聊粘贴，自动按 Rxx 前缀逐条调度")
-        if st.button("发送", use_container_width=True, type="primary") and text.strip():
-            n = st.session_state.get("n_sent", 0)
-            if n >= 40:
-                st.warning("本会话请求已达上限（40 条），请重新打开页面。")
-            else:
-                decisions = []
-                msgs = split_chat_dump(text.strip())
-                st.session_state.n_sent = n + len(msgs)
-                for i, msg in enumerate(msgs, 1):
-                    with st.spinner(f"调度中（{i}/{len(msgs)}：{msg[:40]}...）"):
-                        decisions.append(desk.handle_message(msg, requester="dispatcher"))
-                st.session_state.decisions = decisions
-
-        decisions = st.session_state.get("decisions", [])
-        for i, decision in enumerate(decisions, 1):
-            if len(decisions) > 1:
-                st.divider()
-                st.markdown(f"**#{i}** · `{decision.parsed.order_id or decision.behaviour.value}`")
-            render_understood(decision)
-            render_candidates(decision)
-            render_confirm(decision, desk)
-            render_reply(decision)
-
+    with tab_main:
+        col_inbox, col_chat = st.columns([5, 4])
+        with col_inbox:
+            render_inbox(desk)
+        with col_chat:
+            render_chat(desk)
+    with tab_dash:
+        render_dashboard(desk)
     with tab_recent:
         render_recent(desk)
 

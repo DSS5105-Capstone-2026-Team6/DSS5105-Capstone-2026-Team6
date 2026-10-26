@@ -52,7 +52,10 @@ DAY0 = date(2026, 1, 1)  # first order_date in orders.csv
 def est_turnaround(batch, w, queues):
     """The simulator's own formula: queue + processing + transport, in days."""
     return queues[w.workshop_id] + batch["pieces"] / w.capacity + w.lead_days
-
+#queues = {w: max(0.0, queue_free[w] - day) for w in self.workshops}
+#queue_free = {w_id: w.queue0 for w_id, w in self.workshops.items()}
+#queue0是 初始手中队列所需时间，queue_free是当前队列所需时间，queues是当前队列所需时间减去当前天数
+#queue_free, 是将w中的队列赋值入queue0；queue_free一直变动；后续queues是将queue_free减去当前天数，得到当前队列所需时间
 
 def eft(batch, workshops, queues):
     """Earliest estimated finish over eligible workshops. w = 1.0 hybrid."""
@@ -71,7 +74,7 @@ def eft_reserved(batch, workshops, queues):
         if feasible:
             return min(feasible, key=lambda w: est_turnaround(batch, w, queues)).workshop_id
     return eft(batch, workshops, queues)
-
+#≤slack 可视为一层额外约束，如果TOPs only的作坊能在due date前完成，可以将单留给对应作坊。否则便会普通EFT，选择最早完成的作坊。
 
 def defects_only(batch, workshops, queues):
     """Lowest defect rate, nothing else. The guardrail failure case (~95% late)."""
@@ -186,7 +189,7 @@ def split_table(w, seed, n_seeds, stages=False):
     ratios = [("3:2", 0.60), ("1:1", 0.50), ("3:1", 0.75),
               ("4:1", 0.80), ("defects only", 1.00), ("cost only", 0.00)]
     allocators = {name: make_hybrid_allocator(w, defect_share=ds)
-                  for name, ds in ratios}
+                  for name, ds in ratios}#重新调用defect share，w固定，defect_share变化
     allocators["EFT (w=1.0)"] = make_hybrid_allocator(1.0)
     normal = average_over_seeds(allocators, seeds, stages=stages)
     shock = average_over_seeds(allocators, seeds, shock=True, stages=stages)

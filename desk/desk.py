@@ -48,7 +48,8 @@ class DispatchDesk:
         log). No state moves here; that only happens in confirm().
         verbose=True streams each tool round to stdout."""
         reply = self.agent.chat(text, verbose=verbose)
-        decision = route(text, reply, self.agent.tool_log)
+        decision = route(text, reply, self.agent.tool_log,
+                         workshops=self.workshops)
         if request_id is not None:
             decision.request_id = request_id
         # the model may skip lookup_order and call rank_candidates directly;

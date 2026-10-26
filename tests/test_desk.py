@@ -167,6 +167,125 @@ def test_decision_never_allocates_on_error_results(desk):
     assert d.chosen is None
 
 
+# ---------------- router v2 ----------------
+
+def _found_lookup(oid, pieces="400", category="TOPS", due="2026-04-20"):
+    return ("lookup_order", {"order_id": oid},
+            {"status": "found", "matches": [{"order_id": oid, "pieces": pieces,
+              "category": category, "due_date": due}]})
+
+
+def _rank(oid, chosen="W6"):
+    return ("rank_candidates", {"order_id": oid},
+            {"chosen": chosen, "candidates": [
+                {"workshop_id": "W6", "name": "Nimble Needle",
+                 "estimated_finish": "2026-04-06", "days_late": 0, "cost": 480.0,
+                 "defect_risk": 0.05, "components": {}}]})
+
+
+def _elig(rows):
+    return ("check_eligibility", {"category": "TOPS", "pieces": 400},
+            {"category": "TOPS", "pieces": 400, "eligible_count": len(rows),
+             "workshops": rows})
+
+
+def _w(wid, name, eligible, reasons):
+    return {"workshop_id": wid, "name": name, "eligible": eligible,
+            "reasons": reasons}
+
+
+def test_refuse_on_ineligible_suggested_workshop(desk):
+    """R08: 'send ORD-073 to FreshStart' — FreshStart fails the cap check,
+    so the behaviour is REFUSE even though the rank picked an alternative."""
+    from desk.register import WorkshopStore
+    log = _log([
+        _found_lookup("ORD-073"),
+        _elig([_w("W8", "FreshStart", False,
+                  ["batch of 400 exceeds its 300-piece cap"])]),
+        _rank("ORD-073"),
+    ])
+    d = route("Send ORD-073 (400 hoodies) to FreshStart, their quote was good.",
+              "reply", log, workshops=WorkshopStore())
+    assert d.behaviour is Behaviour.REFUSE
+    assert d.parsed.suggested_workshop == "FreshStart"
+    assert d.chosen is None                    # nothing may be committed
+    assert len(d.candidates) == 1              # alternatives still listed
+
+
+def test_exclusion_does_not_trigger_refuse(desk):
+    """'not QuickStitch' is a constraint, not a refusal — an exclusion is
+    the only reason on the row, so ALLOCATE must stand."""
+    from desk.register import WorkshopStore
+    log = _log([
+        _found_lookup("ORD-053", pieces="300", due="2026-04-10"),
+        _elig([_w("W1", "QuickStitch", False, ["excluded by Boss"])]),
+        _rank("ORD-053"),
+    ])
+    d = route("Boss says ORD-053 must not go to QuickStitch.", "reply", log,
+              workshops=WorkshopStore())
+    assert d.behaviour is Behaviour.ALLOCATE
+
+
+def test_no_data_when_order_unknown_even_if_model_ranked_another(desk):
+    """R18: ORD-999 does not exist. If the model, after the failed lookup,
+    ranked a different order anyway, that rank must not produce ALLOCATE."""
+    log = _log([
+        ("lookup_order", {"order_id": "ORD-999"},
+         {"status": "not_found", "matches": []}),
+        _rank("ORD-061"),
+    ])
+    d = route("what's the status of ORD-999?", "reply", log)
+    assert d.behaviour is Behaviour.NO_DATA
+    assert d.parsed.order_id == "ORD-999"
+    assert d.chosen is None
+
+
+def test_ask_carries_tappable_options(desk):
+    """An ambiguous lookup makes the matches tappable choices (journey
+    step 6): the UI renders one button per matching order id."""
+    log = _log([("lookup_order", {"customer": "TrendCart"},
+                 {"status": "ambiguous", "matches": [
+                     {"order_id": "ORD-001"}, {"order_id": "ORD-002"},
+                     {"order_id": "ORD-003"}]})])
+    d = route("the TrendCart order", "reply", log)
+    assert d.behaviour is Behaviour.ASK
+    assert d.options == ["ORD-001", "ORD-002", "ORD-003"]
+
+
+def test_no_data_for_history_question_even_with_matches(desk):
+    """R02: 'Which workshop did we use last October?' — Harbor Knits orders
+    exist, but the question is about history the data doesn't hold."""
+    log = _log([("lookup_order", {"customer": "Harbor Knits"},
+                 {"status": "ambiguous", "matches": [
+                     {"order_id": "ORD-061"}, {"order_id": "ORD-108"}]})])
+    d = route("Which workshop did we use for the Harbor Knits batch last "
+              "October?", "reply", log)
+    assert d.behaviour is Behaviour.NO_DATA
+    assert d.options == []
+
+
+def test_no_data_for_quote_question(desk):
+    """R13: 'what price did we quote?' — the order exists (found lookup),
+    the quote does not, so this is NO_DATA, not ANSWER."""
+    log = _log([("lookup_order", {"order_id": "ORD-120"},
+                 {"status": "found", "matches": [{"order_id": "ORD-120",
+                  "pieces": "500", "category": "TOPS",
+                  "due_date": "2026-04-18"}]})])
+    d = route("Finance asks: what price did we quote TrendCart on ORD-120?",
+              "reply", log)
+    assert d.behaviour is Behaviour.NO_DATA
+
+
+def test_ambiguous_with_allocate_intent_stays_ask(desk):
+    """R03: 'Can we get the TrendCart order moving?' — allocate intent plus
+    several matches means ASK, not NO_DATA."""
+    log = _log([("lookup_order", {"customer": "TrendCart"},
+                 {"status": "ambiguous", "matches": [{"order_id": "ORD-001"}]})])
+    d = route("Can we get the TrendCart order moving? They are chasing.",
+              "reply", log)
+    assert d.behaviour is Behaviour.ASK
+
+
 def test_confirm_round_trip(desk):
     log = _log([
         ("lookup_order", {"order_id": "ORD-041"},
@@ -182,6 +301,19 @@ def test_confirm_round_trip(desk):
     record = desk.confirm(d, committed_by="dispatcher")
     assert record.order_id == "ORD-041" and record.workshop_id == "W6"
     assert record.committed_by == "dispatcher"
+
+
+def test_duplicate_commit_refused(desk):
+    """An order is dispatched exactly once: committing it again must not
+    double-count the queue. The refusal names the existing record."""
+    first = commit_allocation("ORD-041", "W6", desk=desk)
+    assert first["committed"] is True
+    before = desk.state.queues["W6"]
+    second = commit_allocation("ORD-041", "W2", desk=desk)
+    assert second["committed"] is False
+    assert "already committed" in second["error"] and "A-0001" in second["error"]
+    assert desk.state.queues["W6"] == before       # queue untouched
+    assert len(desk.audit.load_all()) == 1         # no second record
 
 
 if __name__ == "__main__":

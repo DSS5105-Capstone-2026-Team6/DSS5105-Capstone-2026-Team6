@@ -31,6 +31,22 @@ def test_text_is_verbatim():
     assert "…and keep it away from BudgetWorks" in r25["text"]
 
 
+def test_split_chat_dump_skips_comments_and_splits_envelopes():
+    """A pasted dump keeps its # header out of the messages and splits on
+    envelope lines; a wrapped line re-attaches to its message."""
+    from app.streamlit_app import split_chat_dump
+    dump = ("# Dispatch requests — 1 April 2026 (evaluation set, do not edit)\n"
+            "# kind: complete / impossible / constrained / ...\n"
+            "R01 [08:15] Chen: need the usual scarves\n"
+            "from Harbor Knits, asap\n"
+            "R02 [08:16] Priya: any updates on the TrendCart reorder?\n")
+    msgs = split_chat_dump(dump)
+    assert len(msgs) == 2
+    assert msgs[0].startswith("R01 [08:15] Chen:")
+    assert "asap" in msgs[0]                     # wrapped line re-attached
+    assert not any(m.startswith("#") for m in msgs)
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))

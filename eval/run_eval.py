@@ -84,6 +84,7 @@ def run_inbox(out_path=DEFAULT_OUT, limit=None, only=None, model=None,
                 if verbose:
                     print(f"\n===== {req['request_id']} [{req['time']}] "
                           f"{req['speaker']}: {req['text']}")
+                desk.agent.new_conversation()   # each request stands alone
                 decision = desk.handle_message(req["text"],
                                                requester=req["speaker"],
                                                request_id=req["request_id"],
