@@ -90,6 +90,35 @@ def test_record_ids_increment(desk):
     assert (a, b) == ("A-0001", "A-0002")
 
 
+# ---------------- live-queue propagation (Risk 4) ----------------
+
+def test_dispatch_injects_live_queues_into_tools(desk):
+    """After a commit, tools called through dispatch_tool must read the
+    desk's live chat-side queues, not the 2026-04-01 snapshot."""
+    from desk.tools import dispatch_tool
+    commit_allocation("ORD-041", "W6", desk=desk)   # 600 pcs onto Nimble Needle
+    expected = desk.state.queues["W6"]
+    assert expected > 1.0                            # snapshot was 1.0
+
+    q = dispatch_tool("get_queue", {"workshop_ids": ["W6"]}, desk=desk)
+    row = q["workshops"][0]
+    assert row["queue_days"] == pytest.approx(expected, abs=1e-2)
+    assert row["recent_change"] == pytest.approx(expected - 1.0, abs=1e-2)
+
+    rank = dispatch_tool("rank_candidates", {"order_id": "ORD-041"}, desk=desk)
+    w6 = next(c for c in rank["candidates"] if c["workshop_id"] == "W6")
+    assert w6["components"]["queue_days"] == pytest.approx(expected, abs=1e-2)
+
+
+def test_dispatch_without_desk_keeps_snapshot():
+    """No desk -> fresh stores, tools fall back to the snapshot, and the
+    committer refuses (nothing to commit to)."""
+    from desk.tools import dispatch_tool
+    q = dispatch_tool("get_queue", {"workshop_ids": ["W6"]})
+    assert q["workshops"][0]["queue_days"] == 1.0
+    assert q["workshops"][0]["recent_change"] == 0.0
+
+
 # ---------------- desk v1 routing ----------------
 
 def _log(entries):

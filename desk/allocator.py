@@ -69,12 +69,15 @@ def _sort_key(objective, row):
 
 
 def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
-                    excluded=None, *, orders=None, store=None):
+                    excluded=None, *, orders=None, store=None, queues=None):
     """Rank every eligible workshop for an order. Returns candidates sorted
     best-first plus the chosen id; an error dict for a bad order/objective;
-    empty candidates when no workshop can take it (never a silent pick)."""
+    empty candidates when no workshop can take it (never a silent pick).
+    `queues` overrides the 1 April snapshot (the desk passes its live
+    chat-side queues so earlier commits move later answers)."""
     orders = orders or OrderStore()
     store = store or WorkshopStore()
+    queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
     if objective not in OBJECTIVES:
         return {"error": f"objective must be one of {OBJECTIVES}, got {objective!r}"}
     rec = orders.by_id(order_id) if order_id else None
@@ -90,7 +93,6 @@ def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
     batch = {"category": rec["category"], "pieces": int(rec["pieces"]),
              "sent_date": CHAT_TODAY,
              "due_date": date.fromisoformat(rec["due_date"])}
-    queues = {wid: w.queue0 for wid, w in store.workshops.items()}
 
     ok = [w for w in eligible_workshops(batch, store.workshops)
           if w.workshop_id not in excluded_ids]
