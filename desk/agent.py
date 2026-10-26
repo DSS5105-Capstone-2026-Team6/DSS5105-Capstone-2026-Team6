@@ -74,14 +74,29 @@ class DispatchAgent:
         self.workshops = WorkshopStore(stages=stages)
         self.desk = None   # set by desk.DispatchDesk; tools then share its state
         self.tool_log = []   # [{"tool", "arguments", "result"}] per call
+        self.history = []    # the conversation so far (excl. system prompt)
+
+    def new_conversation(self):
+        """Forget the thread. Batch evaluation calls this between requests so
+        each of the 30 inbox messages is handled independently (Risk 4)."""
+        self.history = []
+
+    def _trim_history(self, max_messages=40):
+        """Keep the tail of the thread; cut only at a user message so no
+        tool result is left orphaned from its assistant tool_calls."""
+        while len(self.history) > max_messages:
+            for i, m in enumerate(self.history):
+                if i > 0 and m.get("role") == "user":
+                    self.history = self.history[i:]
+                    break
+            else:
+                self.history = self.history[len(self.history) - max_messages:]
 
     def chat(self, message, verbose=False):
         self.tool_log = []   # per message: route() and the faithfulness
                              # checker must never see a previous request's calls
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": message},
-        ]
+        self.history.append({"role": "user", "content": message})
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self.history]
         for round_no in range(1, MAX_TOOL_ROUNDS + 1):
             resp = self.client.chat.completions.create(
                 model=self.model, messages=messages,
@@ -91,6 +106,9 @@ class DispatchAgent:
             if not msg.tool_calls:
                 if verbose:
                     print(f"[round {round_no}] model replied (no tool call)")
+                # persist the turn: everything since the last user message
+                self.history.extend(messages[len(self.history) + 1:])
+                self._trim_history()
                 return msg.content
             for call in msg.tool_calls:
                 arguments = json.loads(call.function.arguments or "{}")

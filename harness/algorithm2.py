@@ -81,7 +81,7 @@ def expected_days_late(batch, w, queues):
     """First-constraint value: expected days past the due date."""
     slack = (batch["due_date"] - batch["sent_date"]).days
     return max(0.0, est_turnaround_expected(batch, w, queues) - slack)
-
+#estfinish - slac >0 为实际迟到天数，estfinish-slack <0 则说明提前完成；因此计算预计迟到天数时 应该将提前完成的情况视为0天迟到，故使用max(0, estfinish-slack)
 
 def make_hybrid_allocator(late_tol):
     """Lateness-first, defects second. Keep the plateau of eligible workshops

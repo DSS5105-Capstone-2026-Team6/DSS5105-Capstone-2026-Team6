@@ -501,6 +501,15 @@ def commit_allocation(order_id=None, workshop_id=None,
     if wid is None:
         return {"committed": False, "error": f"unknown workshop {workshop_id!r}"}
 
+    # an order is dispatched exactly once: a second commit would double-count
+    # the queue, so refuse with the existing record instead of overwriting
+    for old in desk.audit.load_all():
+        if old.order_id == order_id:
+            return {"committed": False,
+                    "error": f"{order_id} was already committed to "
+                             f"{old.workshop_id} ({old.record_id}). "
+                             "Refusing the duplicate commit."}
+
     result = desk.state.commit(rec, wid)
     if isinstance(result, dict):                    # eligibility re-check failed
         return {"committed": False, **result}

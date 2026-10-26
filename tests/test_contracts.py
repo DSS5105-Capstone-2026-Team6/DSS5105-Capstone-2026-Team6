@@ -72,6 +72,20 @@ def test_empty_records_use_defaults():
     assert a.queue_before == 0.0
 
 
+def test_decision_options_round_trip_and_backward_compat():
+    """options serialises through JSON; records written before the field
+    existed still load (default [])."""
+    from desk.contracts import decision_from_dict
+    d = Decision(request_id="R03", behaviour=Behaviour.ASK,
+                 options=["ORD-001", "ORD-002"])
+    back = decision_from_dict(json.loads(json.dumps(to_dict(d))))
+    assert back == d and back.options == ["ORD-001", "ORD-002"]
+
+    legacy = json.loads(json.dumps(to_dict(d)))
+    del legacy["options"]                  # an old record on disk
+    assert decision_from_dict(legacy).options == []
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -240,6 +240,52 @@ def test_no_data_when_order_unknown_even_if_model_ranked_another(desk):
     assert d.chosen is None
 
 
+def test_ask_carries_tappable_options(desk):
+    """An ambiguous lookup makes the matches tappable choices (journey
+    step 6): the UI renders one button per matching order id."""
+    log = _log([("lookup_order", {"customer": "TrendCart"},
+                 {"status": "ambiguous", "matches": [
+                     {"order_id": "ORD-001"}, {"order_id": "ORD-002"},
+                     {"order_id": "ORD-003"}]})])
+    d = route("the TrendCart order", "reply", log)
+    assert d.behaviour is Behaviour.ASK
+    assert d.options == ["ORD-001", "ORD-002", "ORD-003"]
+
+
+def test_no_data_for_history_question_even_with_matches(desk):
+    """R02: 'Which workshop did we use last October?' — Harbor Knits orders
+    exist, but the question is about history the data doesn't hold."""
+    log = _log([("lookup_order", {"customer": "Harbor Knits"},
+                 {"status": "ambiguous", "matches": [
+                     {"order_id": "ORD-061"}, {"order_id": "ORD-108"}]})])
+    d = route("Which workshop did we use for the Harbor Knits batch last "
+              "October?", "reply", log)
+    assert d.behaviour is Behaviour.NO_DATA
+    assert d.options == []
+
+
+def test_no_data_for_quote_question(desk):
+    """R13: 'what price did we quote?' — the order exists (found lookup),
+    the quote does not, so this is NO_DATA, not ANSWER."""
+    log = _log([("lookup_order", {"order_id": "ORD-120"},
+                 {"status": "found", "matches": [{"order_id": "ORD-120",
+                  "pieces": "500", "category": "TOPS",
+                  "due_date": "2026-04-18"}]})])
+    d = route("Finance asks: what price did we quote TrendCart on ORD-120?",
+              "reply", log)
+    assert d.behaviour is Behaviour.NO_DATA
+
+
+def test_ambiguous_with_allocate_intent_stays_ask(desk):
+    """R03: 'Can we get the TrendCart order moving?' — allocate intent plus
+    several matches means ASK, not NO_DATA."""
+    log = _log([("lookup_order", {"customer": "TrendCart"},
+                 {"status": "ambiguous", "matches": [{"order_id": "ORD-001"}]})])
+    d = route("Can we get the TrendCart order moving? They are chasing.",
+              "reply", log)
+    assert d.behaviour is Behaviour.ASK
+
+
 def test_confirm_round_trip(desk):
     log = _log([
         ("lookup_order", {"order_id": "ORD-041"},
@@ -255,6 +301,19 @@ def test_confirm_round_trip(desk):
     record = desk.confirm(d, committed_by="dispatcher")
     assert record.order_id == "ORD-041" and record.workshop_id == "W6"
     assert record.committed_by == "dispatcher"
+
+
+def test_duplicate_commit_refused(desk):
+    """An order is dispatched exactly once: committing it again must not
+    double-count the queue. The refusal names the existing record."""
+    first = commit_allocation("ORD-041", "W6", desk=desk)
+    assert first["committed"] is True
+    before = desk.state.queues["W6"]
+    second = commit_allocation("ORD-041", "W2", desk=desk)
+    assert second["committed"] is False
+    assert "already committed" in second["error"] and "A-0001" in second["error"]
+    assert desk.state.queues["W6"] == before       # queue untouched
+    assert len(desk.audit.load_all()) == 1         # no second record
 
 
 if __name__ == "__main__":

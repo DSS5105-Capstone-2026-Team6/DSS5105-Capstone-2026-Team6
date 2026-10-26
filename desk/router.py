@@ -29,6 +29,24 @@ except ImportError:  # run directly as a script
 _CANDIDATE_FIELDS = ("workshop_id", "name", "estimated_finish", "days_late",
                      "cost", "defect_risk", "components")
 
+# intent signals over the *message text* (never the reply prose): they only
+# separate ASK from NO_DATA — the safety cases still read the tool log only
+_QUERY_MARKERS = ("did we", "which workshop", "what price", "any movement",
+                  "history", "historical", "previously", "last october",
+                  "last month", "quote")
+_ALLOC_MARKERS = ("send", "sent", "need", "wants", "get ", "moving",
+                  "go out", "asap", "reorder", "dispatch", "book", "assign",
+                  "urgent", "allocate", "outside")
+
+
+def _looks_like_data_question(text):
+    """Asking about records the data may not hold (R02 history, R13 quotes),
+    rather than asking the desk to act. Code over the raw message, so the
+    outcome is deterministic."""
+    t = (text or "").lower()
+    return any(m in t for m in _QUERY_MARKERS) and \
+        not any(m in t for m in _ALLOC_MARKERS)
+
 
 def _suggested_workshop_id(text, workshops):
     """First workshop name that appears in the message (word-boundary,
@@ -60,7 +78,7 @@ def route(text, reply, log, workshops=None) -> Decision:
         return None
 
     parsed = ParsedRequest()
-    candidates, chosen, behaviour = [], None, Behaviour.ANSWER
+    candidates, chosen, behaviour, options = [], None, Behaviour.ANSWER, []
 
     lookup = last_ok("lookup_order")
     requested_id = lookup["arguments"].get("order_id") if lookup else None
@@ -112,19 +130,31 @@ def route(text, reply, log, workshops=None) -> Decision:
         if earliest and not (earliest["result"].get("meets_due_split")
                              or earliest["result"].get("meets_due_single")):
             behaviour = Behaviour.IMPOSSIBLE
-        # 4. ASK: several matches — ask which one, never guess
+        # 4. ASK: several matches — ask which one, never guess; the matches
+        #    become tappable options for the UI (guide journey step 6).
+        #    A history/quote question stays NO_DATA even when the customer
+        #    name resolves to current orders (R02).
         elif lookup and lookup["result"]["status"] == "ambiguous":
-            behaviour = Behaviour.ASK
+            if _looks_like_data_question(text):
+                behaviour = Behaviour.NO_DATA
+            else:
+                behaviour = Behaviour.ASK
+                options = [m.get("order_id") for m in lookup["result"]["matches"]
+                           if m.get("order_id")]
         # 5. NO_DATA: the message referenced something the data doesn't hold
         elif lookup and lookup["result"]["status"] == "not_found" and (
                 requested_id or lookup["arguments"].get("customer")
                 or lookup["arguments"].get("product")
                 or lookup["arguments"].get("category")):
             behaviour = Behaviour.NO_DATA
+        # 6. NO_DATA upgrade: the tools answered fine but the question is
+        #    about something outside the data (R13 customer quotes)
+        elif _looks_like_data_question(text):
+            behaviour = Behaviour.NO_DATA
 
     return Decision(request_id="", behaviour=behaviour, parsed=parsed,
                     candidates=candidates, chosen=chosen,
-                    explanation=reply, tool_log=list(log))
+                    explanation=reply, options=options, tool_log=list(log))
 
 
 if __name__ == "__main__":

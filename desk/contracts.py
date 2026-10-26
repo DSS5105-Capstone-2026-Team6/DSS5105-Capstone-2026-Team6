@@ -83,6 +83,7 @@ class Decision:
     candidates: list = field(default_factory=list)   # list[Candidate]
     chosen: Optional[Candidate] = None
     explanation: str = ""
+    options: list = field(default_factory=list)      # ASK: tappable choices (order ids)
     tool_log: list = field(default_factory=list)
     created_at: str = ""               # ISO timestamp
 
@@ -119,6 +120,7 @@ def to_dict(obj):
 def decision_from_dict(d):
     d = dict(d)
     d["behaviour"] = Behaviour(d["behaviour"])
+    d.setdefault("options", [])          # records from before the field existed
     parsed = dict(d["parsed"])
     parsed["constraints"] = [Constraint(**c)
                              for c in parsed.pop("constraints", [])]
