@@ -146,10 +146,17 @@ def split_chat_dump(text):
 
 # ---------------- chat log (sidebar) ----------------
 
-def _log_exchange(speaker, text, reply):
-    """Append one exchange to the sidebar's running log."""
+def _log_exchange(speaker, text, reply, link=None):
+    """Append one exchange to the sidebar's running log. `link` ties the
+    entry to its worklist card, for the scroll sync (see SCROLL_SYNC_JS)."""
     st.session_state.setdefault("chat_log", []).append(
-        {"speaker": speaker, "text": text, "reply": reply})
+        {"speaker": speaker, "text": text, "reply": reply, "link": link})
+
+
+def _sync_anchor(link):
+    """Invisible marker the scroll-sync script looks for."""
+    st.markdown(f'<span class="sync-anchor" data-sync="{link}"></span>',
+                unsafe_allow_html=True)
 
 
 def render_chat_log():
@@ -161,9 +168,83 @@ def render_chat_log():
     with st.container(height=420, border=False):
         for turn in log:
             with st.chat_message("user", avatar="🧑‍🔧"):
+                if turn.get("link"):
+                    _sync_anchor(turn["link"])
                 st.write(f"**{turn['speaker']}:** {turn['text']}")
             with st.chat_message("assistant", avatar="🤖"):
                 st.text(turn["reply"] if turn["reply"] else "(no reply)")
+
+
+# ---------------- scroll sync: worklist card -> chat log ----------------
+
+# Streamlit has no scroll events, so a tiny script is injected into the page
+# (components.html runs same-origin, so it can reach window.parent). On
+# every scroll of the main area it finds the worklist card nearest the top,
+# scrolls the sidebar chat log to the message with the same data-sync id and
+# flashes it grey twice. Installed once per page; reruns don't stack it.
+SCROLL_SYNC_JS = """
+(function () {
+  const w = window, doc = document;
+  if (w.__deskScrollSync) return;
+  w.__deskScrollSync = true;
+  const css = doc.createElement("style");
+  css.textContent = `
+    @keyframes desk-blink { 0%,50%,100% { background: transparent; }
+                            25%,75% { background: #e9ecef; } }
+    .desk-blink { animation: desk-blink 1.2s ease-in-out 1; border-radius: 8px; }`;
+  doc.head.appendChild(css);
+  let active = null, timer = null;
+  function scrollParent(el) {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const oy = w.getComputedStyle(p).overflowY;
+      if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight) return p;
+    }
+    return null;
+  }
+  function sync() {
+    const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    if (!sidebar) return;
+    const cards = [...doc.querySelectorAll(".sync-anchor")]
+      .filter(a => !sidebar.contains(a));
+    let link = null;
+    for (const a of cards) {
+      const box = (a.closest('[data-testid="stExpander"]') || a).getBoundingClientRect();
+      if (box.height && box.bottom > 120) { link = a.dataset.sync; break; }
+    }
+    if (!link || link === active) return;
+    const anchor = sidebar.querySelector('.sync-anchor[data-sync="' + link + '"]');
+    if (!anchor) return;
+    active = link;
+    const msg = anchor.closest('[data-testid="stChatMessage"]') || anchor.parentElement;
+    const box = scrollParent(msg);
+    if (box) box.scrollTo({ top: box.scrollTop + msg.getBoundingClientRect().top
+                                 - box.getBoundingClientRect().top - 8,
+                            behavior: "smooth" });
+    msg.classList.remove("desk-blink");
+    void msg.offsetWidth;            // restart the animation
+    msg.classList.add("desk-blink");
+  }
+  doc.addEventListener("scroll", e => {
+    const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    if (sidebar && e.target.nodeType === 1 && sidebar.contains(e.target)) return;
+    w.clearTimeout(timer);
+    timer = w.setTimeout(sync, 150);
+  }, true);
+})();
+"""
+
+
+def install_scroll_sync():
+    """Copy the script into the app page itself (not this component's
+    iframe), so it keeps running when Streamlit re-renders the iframe."""
+    import json
+    import streamlit.components.v1 as components
+    components.html(
+        "<script>const d = window.parent.document;"
+        "if (!window.parent.__deskScrollSync) {"
+        " const s = d.createElement('script');"
+        f" s.textContent = {json.dumps(SCROLL_SYNC_JS)};"
+        " d.head.appendChild(s); }</script>", height=0)
 
 
 # ---------------- per-item conversation (the 4th option) ----------------
@@ -358,8 +439,13 @@ def render_inbox(desk):
     st.caption("Paste the whole group-chat dump; lines are dispatched one by "
                "one (each stands alone, no shared context).")
     text = st.text_area("Paste group-chat messages", height=120,
-                        placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29.")
-    if st.button("🚀 Dispatch", use_container_width=True, type="primary") and text.strip():
+                        placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29.",
+                        key="paste_box")
+    b_send, b_clear = st.columns([5, 1])
+    # Clear empties the paste box only; results and the chat log stay
+    b_clear.button("🧹 Clear", use_container_width=True,
+                   on_click=lambda: st.session_state.update(paste_box=""))
+    if b_send.button("🚀 Dispatch", use_container_width=True, type="primary") and text.strip():
         msgs = split_chat_dump(text.strip())
         if _budget_ok(len(msgs)):
             decisions = []
@@ -372,7 +458,8 @@ def render_inbox(desk):
                     env = ENVELOPE.match(msg)
                     _log_exchange(env.group(3) if env else "chat",
                                   env.group(4) if env else msg,
-                                  decision.explanation)
+                                  decision.explanation,
+                                  link=f"d{id(decision)}")
             st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
 
@@ -420,6 +507,7 @@ def render_inbox(desk):
         d = item["decision"]
         committed = f"committed-{id(d)}" in st.session_state
         with st.expander(_row_label(n, item), expanded=not committed):
+            _sync_anchor(f"d{id(d)}")
             st.caption(item["msg"])
             render_decision(d, desk)
 
@@ -499,6 +587,7 @@ def main():
 
     with tab_main:
         render_inbox(desk)
+    install_scroll_sync()
     with tab_dash:
         render_dashboard(desk)
     with tab_recent:
