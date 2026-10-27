@@ -381,10 +381,17 @@ def render_inbox(desk):
         st.info("Inbox is empty.")
         return
 
-    # ALLOCATE items still waiting for a confirm tap (committed ones drop out)
-    to_confirm = sum(1 for x in items
-                     if x["decision"].behaviour is Behaviour.ALLOCATE
-                     and f"committed-{id(x['decision'])}" not in st.session_state)
+    def case_of(x):
+        """The filter a decision lives under (ANSWER is shown with NO DATA)."""
+        b = x["decision"].behaviour
+        return Behaviour.NO_DATA if b is Behaviour.ANSWER else b
+
+    # items per case still waiting on the dispatcher (committed ones drop out)
+    pending = {}
+    for x in items:
+        if f"committed-{id(x['decision'])}" not in st.session_state:
+            pending[case_of(x)] = pending.get(case_of(x), 0) + 1
+    to_confirm = pending.get(Behaviour.ALLOCATE, 0)
 
     # KPI row
     k1, k2, k3, k4 = st.columns(4)
@@ -398,13 +405,9 @@ def render_inbox(desk):
                Behaviour.ASK, Behaviour.NO_DATA]
     picked = st.segmented_control(
         "Case", options=FILTERS,
-        format_func=lambda b: (f"{BADGE[b][0]} ({to_confirm})"
-                               if b is Behaviour.ALLOCATE else BADGE[b][0]),
+        format_func=lambda b: f"{BADGE[b][0]} ({pending.get(b, 0)})",
         selection_mode="single", default=Behaviour.ALLOCATE)
-    shown = [x for x in items
-             if x["decision"].behaviour is picked
-             or (picked is Behaviour.NO_DATA
-                 and x["decision"].behaviour is Behaviour.ANSWER)]
+    shown = [x for x in items if case_of(x) is picked]
     st.markdown(f"**{BADGE[picked][0]} · {len(shown)} request(s)**")
     if not shown:
         st.info("Nothing in this case.")
