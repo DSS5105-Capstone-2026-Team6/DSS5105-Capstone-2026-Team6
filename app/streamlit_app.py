@@ -69,13 +69,25 @@ h1 { font-size: 1.4rem !important; }
 
 def get_desk():
     """One DispatchDesk per session, so chat-side queues survive reruns.
+    The sidebar picks the provider/model; when the pick changes the desk is
+    rebuilt (session state keyed on the choice).
     API key: locally from .env (load_api_key); on Streamlit Community Cloud
     from st.secrets, mirrored into os.environ. Locally there is no
     secrets.toml, and merely touching st.secrets raises — hence the guard.
     Hot-reload guard: a desk created before a code update may lack newer
     agent methods; rebuild it rather than crash."""
+    from desk.config import DEFAULT_PROVIDER, PROVIDERS
+    with st.sidebar:
+        provider = st.selectbox(
+            "Provider", options=list(PROVIDERS),
+            format_func=lambda k: PROVIDERS[k]["label"],
+            key="provider_sel")
+        model = st.selectbox("Model", options=PROVIDERS[provider]["models"],
+                             key="model_sel")
+    choice = (provider, model)
     desk = st.session_state.get("desk")
-    if desk is not None and not hasattr(desk.agent, "new_conversation"):
+    if desk is not None and (not hasattr(desk.agent, "new_conversation")
+                             or st.session_state.get("desk_choice") != choice):
         desk = None
     if desk is None:
         try:
@@ -83,11 +95,16 @@ def get_desk():
                 secrets = dict(st.secrets)
             except Exception:
                 secrets = {}
-            for var in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
+            key_vars = {v for spec in PROVIDERS.values()
+                        for v in spec["key_vars"]}
+            key_vars |= {"OPENAI_API_KEY", "DEEPSEEK_API_KEY",
+                         "ANTHROPIC_API_KEY"}
+            for var in key_vars:
                 if secrets.get(var) and not os.environ.get(var):
                     os.environ[var] = secrets[var]
-            desk = DispatchDesk()
+            desk = DispatchDesk(provider=provider, model=model)
             st.session_state.desk = desk
+            st.session_state.desk_choice = choice
         except Exception as exc:  # missing API key, unreadable data...
             st.error(f"Backend failed to start: {exc}")
             st.stop()
@@ -382,7 +399,7 @@ def render_recent(desk):
 
 def main():
     st.set_page_config(page_title="Dispatch Desk", layout="wide",
-                       initial_sidebar_state="collapsed")
+                       initial_sidebar_state="auto")
     st.markdown(CSS, unsafe_allow_html=True)
     st.title("🛰️ Dispatch Desk")
 

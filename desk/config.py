@@ -17,6 +17,35 @@ DEFAULT_MODEL = "deepseek-chat"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 MAX_TOOL_ROUNDS = 8
 
+# LLM provider presets. All three expose an OpenAI-compatible API, so one
+# SDK (openai) drives every provider: base_url None means the SDK default
+# (api.openai.com). key_vars are the environment / st.secrets names tried
+# in order when resolving the key.
+PROVIDERS = {
+    "deepseek": {
+        "label": "DeepSeek",
+        "base_url": "https://api.deepseek.com",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "key_vars": ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"),
+        "key_hint": 'DEEPSEEK_API_KEY = "sk-..."',
+    },
+    "openai": {
+        "label": "OpenAI (GPT)",
+        "base_url": None,                       # SDK default: api.openai.com
+        "models": ["gpt-4o-mini", "gpt-4o"],
+        "key_vars": ("OPENAI_API_KEY",),
+        "key_hint": 'OPENAI_API_KEY = "sk-..."',
+    },
+    "anthropic": {
+        "label": "Anthropic (Claude)",
+        "base_url": "https://api.anthropic.com/v1/",
+        "models": ["claude-haiku-4-5", "claude-sonnet-4-5"],
+        "key_vars": ("ANTHROPIC_API_KEY",),
+        "key_hint": 'ANTHROPIC_API_KEY = "sk-ant-..."',
+    },
+}
+DEFAULT_PROVIDER = "deepseek"
+
 
 if __name__ == "__main__":
     print(f"PROJECT_ROOT       = {PROJECT_ROOT}")
@@ -26,3 +55,5 @@ if __name__ == "__main__":
     print(f"DEFAULT_MODEL      = {DEFAULT_MODEL}")
     print(f"DEEPSEEK_BASE_URL  = {DEEPSEEK_BASE_URL}")
     print(f"MAX_TOOL_ROUNDS    = {MAX_TOOL_ROUNDS}")
+    for key, spec in PROVIDERS.items():
+        print(f"provider {key:<10} base_url={spec['base_url']} models={spec['models']}")
