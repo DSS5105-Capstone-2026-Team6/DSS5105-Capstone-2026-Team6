@@ -381,10 +381,15 @@ def render_inbox(desk):
         st.info("Inbox is empty.")
         return
 
+    # ALLOCATE items still waiting for a confirm tap (committed ones drop out)
+    to_confirm = sum(1 for x in items
+                     if x["decision"].behaviour is Behaviour.ALLOCATE
+                     and f"committed-{id(x['decision'])}" not in st.session_state)
+
     # KPI row
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("⚠️ Needs you", sum(1 for x in items if x["decision"].behaviour in NEEDS_HUMAN))
-    k2.metric("🟢 To confirm", sum(1 for x in items if x["decision"].behaviour is Behaviour.ALLOCATE))
+    k2.metric("🟢 To confirm", to_confirm)
     k3.metric("✅ Committed", len(desk.audit.load_all()))
     k4.metric("🕒 Total queue (days)", round(sum(desk.state.queues.values()), 1))
 
@@ -393,7 +398,8 @@ def render_inbox(desk):
                Behaviour.ASK, Behaviour.NO_DATA]
     picked = st.segmented_control(
         "Case", options=FILTERS,
-        format_func=lambda b: BADGE[b][0],
+        format_func=lambda b: (f"{BADGE[b][0]} ({to_confirm})"
+                               if b is Behaviour.ALLOCATE else BADGE[b][0]),
         selection_mode="single", default=Behaviour.ALLOCATE)
     shown = [x for x in items
              if x["decision"].behaviour is picked
