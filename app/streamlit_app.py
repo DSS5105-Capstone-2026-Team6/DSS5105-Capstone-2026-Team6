@@ -6,9 +6,11 @@ turns one chat line into a Decision, confirm() commits it and writes the
 audit record. This file renders Decisions and captures taps; it holds no
 business logic.
 
-Layout: tab 🗂 desk = worklist (left) + chat log (right). Every handled
-message lands in the chat log; the worklist holds the actionable part
-(candidates, confirm buttons) and collapses to a one-liner once committed.
+Layout: tab 🗂 desk = one full-width worklist, one row per request. The
+copyable reply lives under its own dispatch item. A fourth option beside
+the candidate buttons — "Other option (tell me)" — pops open a per-item
+conversation: ask anything, or name ANY candidate with an action word
+("commit to W2") to dispatch it without an extra LLM round.
 
 Run from the project root:
 
@@ -138,74 +140,70 @@ def split_chat_dump(text):
     return msgs or [text]
 
 
-# ---------------- chat log (right rail) ----------------
+# ---------------- per-item conversation (the 4th option) ----------------
 
-def _log_exchange(speaker, text, reply, badge):
-    """Append one customer/agent exchange to the persistent chat log."""
-    st.session_state.setdefault("chat_log", []).append(
-        {"speaker": speaker, "text": text, "reply": reply, "behaviour": badge})
-
-
-def _track_pending(decision):
-    """The newest uncommitted recommendation is the commit target: a bare
-    'yes' in the chat box confirms it without another LLM round."""
-    key = f"committed-{id(decision)}"
-    if (decision.chosen is not None and decision.parsed.order_id
-            and decision.candidates and key not in st.session_state):
-        st.session_state["pending"] = decision
-    elif st.session_state.get("pending") is decision and key in st.session_state:
-        st.session_state.pop("pending", None)
+def _norm_msg(m):
+    """OpenAI SDK message objects -> plain dicts for session_state."""
+    if hasattr(m, "model_dump"):
+        return m.model_dump()
+    return dict(m)
 
 
-def render_chat_log(desk):
-    """The right-hand rail: every message the desk has handled, in order.
-    This is the record of what was said — actions live in the worklist."""
-    from desk.desk import looks_like_confirmation
-    st.markdown("**💬 Chat log**")
-    top_l, top_r = st.columns([3, 1])
-    top_l.caption(f"{len(st.session_state.get('chat_log', []))} messages")
-    if top_r.button("🔄 New chat", use_container_width=True,
-                    help="Start a fresh conversation context (the log stays)"):
-        desk.agent.new_conversation()
-        st.session_state.pop("pending", None)
+def _save_thread(decision, desk):
+    """Snapshot the agent's current thread as this item's conversation."""
+    st.session_state[f"conv-{id(decision)}"] = [_norm_msg(m)
+                                                for m in desk.agent.history]
 
-    with st.container(height=520, border=False):
-        for turn in st.session_state.get("chat_log", []):
-            with st.chat_message("user", avatar="🧑‍🔧"):
-                st.write(f"**{turn['speaker']}:** {turn['text']}")
-            with st.chat_message("assistant", avatar="🤖"):
-                st.text(turn["reply"] if turn["reply"] else "(no reply)")
 
-    # tappable choices from the latest reply (ambiguous orders, objectives...)
-    followup = st.session_state.get("last_followup")
-    if followup is not None and followup.options:
-        render_options(followup)
+def render_item_chat(decision, desk):
+    """The popover conversation bound to ONE dispatch item. Ask anything
+    about the order; or name ANY candidate with an action word ('commit to
+    W2', 'send it to Little Loom') to dispatch it — no extra LLM round for
+    the commit itself."""
+    from dataclasses import replace
+    from desk.desk import commit_intent_workshop
+    key = f"conv-{id(decision)}"
+    conv = st.session_state.setdefault(key, [])
 
-    queued = st.session_state.pop("queued_input", None)
-    prompt = st.chat_input("Follow up on the last request...") or queued
-    if prompt and _budget_ok():
+    with st.container(height=280, border=False):
+        for m in conv:
+            role, content = m.get("role"), m.get("content")
+            if role == "user":
+                with st.chat_message("user", avatar="🧑‍🔧"):
+                    st.text(content or "")
+            elif role == "assistant" and content:
+                with st.chat_message("assistant", avatar="🤖"):
+                    st.text(content)
+
+    queued = st.session_state.pop(f"queued-{id(decision)}", None)
+    prompt = queued or st.chat_input("Tell me — 'why not W4?', 'commit to W2'...",
+                                     key=f"chat-{id(decision)}")
+    if not prompt:
+        return
+    wid = commit_intent_workshop(prompt, decision)
+    if wid is not None and decision.parsed.order_id:
+        target = next((c for c in decision.candidates
+                       if c.workshop_id == wid), None)
+        try:
+            record = desk.confirm(replace(decision, chosen=target),
+                                  committed_by="dispatcher")
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        st.session_state[f"committed-{id(decision)}"] = record
+        conv.append({"role": "user", "content": prompt})
+        conv.append({"role": "assistant",
+                     "content": f"Committed {record.record_id} — "
+                                f"{record.order_id} → {record.workshop_id}."})
+    else:
+        if not _budget_ok():
+            return
         st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
-        pending = st.session_state.get("pending")
-        if pending is not None and looks_like_confirmation(prompt):
-            try:
-                record = desk.confirm(pending, committed_by="dispatcher")
-            except ValueError as exc:
-                st.error(str(exc))
-                return
-            st.session_state[f"committed-{id(pending)}"] = record
-            st.session_state.pop("pending", None)
-            st.session_state.pop("last_followup", None)
-            _log_exchange("dispatcher", prompt,
-                          f"Committed {record.record_id} — "
-                          f"{record.order_id} → {record.workshop_id}.", "🟢 COMMIT")
-        else:
-            with st.spinner("Working..."):
-                decision = desk.handle_message(prompt, requester="dispatcher")
-            st.session_state["last_followup"] = decision
-            _track_pending(decision)
-            _log_exchange("dispatcher", prompt, decision.explanation,
-                          BADGE[decision.behaviour][0])
-        st.rerun()
+        desk.agent.history = [dict(m) for m in conv]   # continue THIS thread
+        with st.spinner("Working..."):
+            desk.agent.chat(prompt)
+        st.session_state[key] = [_norm_msg(m) for m in desk.agent.history]
+    st.rerun()
 
 
 # ---------------- decision rendering (worklist) ----------------
@@ -251,10 +249,9 @@ def render_candidates(decision):
 
 
 def render_confirm(decision, desk):
-    """Step 4 — the system recommends (⭐), the human decides: every candidate
-    gets its own confirm button, not just the top pick. Once committed the
-    whole confirm section is gone: rerun lands in the committed branch of
-    render_decision, which shows a single line."""
+    """Step 4 — options 1-3: one confirm button per top candidate. Option 4:
+    'Other option (tell me)' pops open a conversation about this dispatch;
+    naming ANY candidate there with an action word commits it."""
     if not decision.candidates or decision.parsed.order_id is None:
         return
     st.markdown("**⚙️ Confirm (the recommendation is advisory — you may pick another)**")
@@ -272,31 +269,36 @@ def render_confirm(decision, desk):
                 return
             st.session_state[f"committed-{id(decision)}"] = record
             st.rerun()
+    with st.popover("💬 Other option (tell me)", use_container_width=True):
+        st.caption("Ask about this order — or name any candidate with an "
+                   "action ('commit to W2') to dispatch it.")
+        render_item_chat(decision, desk)
 
 
 def render_reply(decision):
-    """Step 5 — ready-to-paste group-chat reply (st.code has a copy button)."""
+    """Step 5 — ready-to-paste group-chat reply (st.code has a copy button).
+    Lives only under its own dispatch item, never in a shared log."""
     if not decision.explanation:
         return
     st.markdown("**📤 Copyable reply**")
     st.code(decision.explanation, language=None)
 
 
-def _queue_input(text):
-    """Tappable option -> put the order id into the chat box on next rerun."""
-    st.session_state.queued_input = text
+def _queue_input(item_id, text):
+    """Tappable option -> prefill THAT item's chat box with the answer."""
+    st.session_state[f"queued-{item_id}"] = text
 
 
 def render_options(decision):
     """ASK decisions carry tappable choices (journey step 6): one tap
-    answers the clarifying question instead of typing."""
+    prefills the item's chat box with that answer."""
     if not decision.options:
         return
     st.markdown("**⌨️ Tap to reply**")
     for opt in decision.options:
         st.button(f"▶ {opt}", use_container_width=True,
                   key=f"opt-{id(decision)}-{opt}",
-                  on_click=_queue_input, args=(opt,))
+                  on_click=_queue_input, args=(id(decision), opt))
 
 
 def render_decision(decision, desk):
@@ -306,10 +308,7 @@ def render_decision(decision, desk):
     r = st.session_state.get(f"committed-{id(decision)}")
     if r is not None:
         st.success(f"⚡ Committed {r.record_id} — {r.order_id} → {r.workshop_id}")
-        if st.session_state.get("pending") is decision:
-            st.session_state.pop("pending", None)
         return
-    _track_pending(decision)
     render_understood(decision)
     render_candidates(decision)
     render_confirm(decision, desk)
@@ -349,12 +348,7 @@ def render_inbox(desk):
                 with st.spinner(f"Dispatching ({i}/{len(msgs)}: {msg[:40]}...)"):
                     decision = desk.handle_message(msg, requester="dispatcher")
                     decisions.append({"msg": msg, "decision": decision})
-                    _track_pending(decision)
-                    env = ENVELOPE.match(msg)
-                    _log_exchange(env.group(3) if env else "chat",
-                                  env.group(4) if env else msg,
-                                  decision.explanation,
-                                  BADGE[decision.behaviour][0])
+                    _save_thread(decision, desk)   # per-item conversation seed
             st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
 
@@ -469,11 +463,7 @@ def main():
         ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
 
     with tab_main:
-        col_work, col_chat = st.columns([7, 3])
-        with col_work:
-            render_inbox(desk)
-        with col_chat:
-            render_chat_log(desk)
+        render_inbox(desk)
     with tab_dash:
         render_dashboard(desk)
     with tab_recent:
