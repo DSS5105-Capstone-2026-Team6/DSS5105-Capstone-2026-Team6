@@ -47,6 +47,22 @@ def test_split_chat_dump_skips_comments_and_splits_envelopes():
     assert not any(m.startswith("#") for m in msgs)
 
 
+def test_split_chat_dump_splits_heldout_ids():
+    """Held-out lines (H01 ...) split one per message, like R lines."""
+    from app.streamlit_app import split_chat_dump
+    dump = ("H01 [13:05] Ravi: Can we get ORD-036 out the door?\n"
+            "H02 [13:12] Boss: ORD-108 — 2000 scarves. Find someone.\n"
+            "H03 [13:20] Chen: The Bright Basics scarf order needs to get moving\n")
+    msgs = split_chat_dump(dump)
+    assert [m[:3] for m in msgs] == ["H01", "H02", "H03"]
+
+
+def test_parses_heldout_inbox():
+    from desk.config import DATA_DIR
+    requests = parse_inbox(DATA_DIR / "dispatch_requests_heldout.txt")
+    assert [r["request_id"] for r in requests] == [f"H{i:02d}" for i in range(1, 21)]
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))

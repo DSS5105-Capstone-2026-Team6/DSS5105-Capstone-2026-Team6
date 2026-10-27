@@ -44,7 +44,8 @@ except ImportError:  # run directly as a script: python eval/run_eval.py
 INBOX_PATH = DATA_DIR / "dispatch_requests.txt"
 DEFAULT_OUT = RESULTS_DIR / "inbox_run.jsonl"
 
-ENVELOPE = re.compile(r"^(R\d{2}) \[(\d{2}:\d{2})\] ([^:]+): (.*)$")
+# request id: R01-R30 in the inbox, H01-H20 in the held-out set
+ENVELOPE = re.compile(r"^([A-Z]\d{2}) \[(\d{2}:\d{2})\] ([^:]+): (.*)$")
 
 
 def parse_inbox(path=INBOX_PATH):
