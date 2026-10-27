@@ -10,10 +10,14 @@ scoring; it never enters the prompt.
 
 Usage:
 
-    python eval/run_eval.py                 # all 30 requests
+    python eval/run_eval.py                 # all 30 dev requests
     python eval/run_eval.py --limit 3       # smoke test
     python eval/run_eval.py --only R08 R20  # specific requests
     python eval/run_eval.py --only R08 -v   # also print each tool round
+    python eval/run_eval.py --inbox data/dispatch_requests_heldout.txt \
+        --out results/heldout_run.jsonl     # the held-out H01-H20 set,
+                                            # then: score_run.py --labels
+                                            # data/labels_heldout.json
 
 Output: one JSON object per line in the output file (default
 results/inbox_run.jsonl): the serialised Decision per request (behaviour,
@@ -62,9 +66,9 @@ def parse_inbox(path=INBOX_PATH):
     return requests
 
 
-def run_inbox(out_path=DEFAULT_OUT, limit=None, only=None, model=None,
-              provider=None, verbose=False):
-    requests = parse_inbox()
+def run_inbox(inbox_path=INBOX_PATH, out_path=DEFAULT_OUT, limit=None,
+              only=None, model=None, provider=None, verbose=False):
+    requests = parse_inbox(inbox_path)
     if only:
         requests = [r for r in requests if r["request_id"] in set(only)]
     if limit:
@@ -110,6 +114,9 @@ def run_inbox(out_path=DEFAULT_OUT, limit=None, only=None, model=None,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--inbox", default=str(INBOX_PATH),
+                        help="inbox file to run (e.g. data/dispatch_requests_"
+                             "heldout.txt for the held-out H01–H20 set)")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--only", nargs="+", default=None, metavar="R_ID")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
@@ -119,5 +126,6 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="print each request and every tool round live")
     args = parser.parse_args()
-    run_inbox(out_path=args.out, limit=args.limit, only=args.only,
-              model=args.model, provider=args.provider, verbose=args.verbose)
+    run_inbox(inbox_path=args.inbox, out_path=args.out, limit=args.limit,
+              only=args.only, model=args.model, provider=args.provider,
+              verbose=args.verbose)
