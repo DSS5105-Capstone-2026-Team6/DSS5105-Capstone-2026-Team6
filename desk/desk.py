@@ -32,8 +32,11 @@ except ImportError:  # run directly as a script
 
 
 class DispatchDesk:
-    def __init__(self, model=None, stages=False, audit_path=None):
-        self.agent = DispatchAgent(model=model, stages=stages)
+    def __init__(self, model=None, stages=False, audit_path=None,
+                 provider=None, api_key=None):
+        from desk.config import DEFAULT_PROVIDER
+        self.agent = DispatchAgent(model=model, stages=stages, api_key=api_key,
+                                   provider=provider or DEFAULT_PROVIDER)
         self.agent.desk = self                  # chat loop passes this to tools
         self.orders = OrderStore(stages=stages)
         self.workshops = self.agent.workshops   # shared with the agent

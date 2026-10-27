@@ -64,19 +64,20 @@ def parse_inbox(path=INBOX_PATH):
 
 
 def run_inbox(out_path=DEFAULT_OUT, limit=None, only=None, model=None,
-              verbose=False):
+              provider=None, verbose=False):
     requests = parse_inbox()
     if only:
         requests = [r for r in requests if r["request_id"] in set(only)]
     if limit:
         requests = requests[:limit]
 
-    desk = DispatchDesk(model=model) if model else DispatchDesk()
+    desk = DispatchDesk(model=model, provider=provider)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps({"meta": {"model": desk.agent.model,
+        f.write(json.dumps({"meta": {"provider": desk.agent.provider,
+                                     "model": desk.agent.model,
                                      "run_at": datetime.now().isoformat(timespec="seconds"),
                                      "n_requests": len(requests)}},
                            ensure_ascii=False) + "\n")
@@ -114,8 +115,10 @@ if __name__ == "__main__":
     parser.add_argument("--only", nargs="+", default=None, metavar="R_ID")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--model", default=None)
+    parser.add_argument("--provider", default=None,
+                        help="deepseek | openai | anthropic (default deepseek)")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="print each request and every tool round live")
     args = parser.parse_args()
     run_inbox(out_path=args.out, limit=args.limit, only=args.only,
-              model=args.model, verbose=args.verbose)
+              model=args.model, provider=args.provider, verbose=args.verbose)
