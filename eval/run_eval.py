@@ -25,7 +25,6 @@ queues stay at the 1 April snapshot throughout.
 
 import argparse
 import json
-import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -34,17 +33,17 @@ try:
     from desk.config import DATA_DIR, RESULTS_DIR
     from desk.desk import DispatchDesk
     from desk.contracts import to_dict
+    from desk.chat_dump import ENVELOPE
 except ImportError:  # run directly as a script: python eval/run_eval.py
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.config import DATA_DIR, RESULTS_DIR
     from desk.desk import DispatchDesk
     from desk.contracts import to_dict
+    from desk.chat_dump import ENVELOPE
 
 INBOX_PATH = DATA_DIR / "dispatch_requests.txt"
 DEFAULT_OUT = RESULTS_DIR / "inbox_run.jsonl"
-
-ENVELOPE = re.compile(r"^(R\d{2}) \[(\d{2}:\d{2})\] ([^:]+): (.*)$")
 
 
 def parse_inbox(path=INBOX_PATH):

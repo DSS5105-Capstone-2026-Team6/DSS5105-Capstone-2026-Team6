@@ -25,11 +25,13 @@ from pathlib import Path
 
 try:
     from desk.config import PROJECT_ROOT
+    from desk.chat_dump import split_chat_dump
     from adapter.session import (ChatSession, split_reply, strip_mention,
                                  wants_bot)
 except ImportError:  # run directly as a script
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.config import PROJECT_ROOT
+    from desk.chat_dump import split_chat_dump
     from adapter.session import (ChatSession, split_reply, strip_mention,
                                  wants_bot)
 
@@ -84,12 +86,17 @@ def build_application(token, make_session=None):
         text = msg.text if private else strip_mention(msg.text, username)
         who = (update.effective_user.full_name
                or update.effective_user.username or "member")
-        try:
-            reply, options = session_for(chat.id).handle(text, requester=who)
-        except Exception:
-            traceback.print_exc()
-            reply, options = "Something went wrong on my side — try again.", []
-        await send_reply(msg, reply, options)
+        session = session_for(chat.id)
+        # a pasted dump (numbered or bare chat lines) dispatches line by
+        # line, same as the Streamlit inbox; a single message stays one call
+        for line in split_chat_dump(text):
+            try:
+                reply, options = session.handle(line, requester=who)
+            except Exception:
+                traceback.print_exc()
+                reply, options = ("Something went wrong on my side — "
+                                  "try again."), []
+            await send_reply(msg, reply, options)
 
     async def on_option(update, context):
         """A tapped OPTIONS button re-enters the session as if the member had
