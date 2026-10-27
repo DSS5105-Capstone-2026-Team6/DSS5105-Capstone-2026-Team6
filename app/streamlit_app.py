@@ -179,13 +179,13 @@ def render_chat_log():
 
 # Streamlit has no scroll events, so a tiny script is injected into the page
 # (components.html runs same-origin, so it can reach window.parent). On
-# every scroll of the main area it finds the worklist card taking up most of
+# every scroll of the main area it finds the worklist card at the middle of
 # the screen, scrolls the sidebar chat log to the message with the same
 # data-sync id and flashes it grey twice. Installed once per page (versioned, so a newer
 # script replaces an older one); reruns don't stack it.
 SCROLL_SYNC_JS = """
 (function () {
-  const w = window, doc = document, VERSION = 2;
+  const w = window, doc = document, VERSION = 3;
   const old = w.__deskScrollSync;
   if (old && old.version === VERSION) return;
   if (old) doc.removeEventListener("scroll", old.onScroll, true);
@@ -209,12 +209,15 @@ SCROLL_SYNC_JS = """
     if (!sidebar) return;
     const cards = [...doc.querySelectorAll(".sync-anchor")]
       .filter(a => !sidebar.contains(a));
-    // the card taking up the most of the visible screen wins
-    let link = null, best = 0;
+    // the card at the middle of the screen wins (nearest one if the
+    // middle falls in a gap between cards)
+    const mid = w.innerHeight / 2;
+    let link = null, best = Infinity;
     for (const a of cards) {
       const box = (a.closest('[data-testid="stExpander"]') || a).getBoundingClientRect();
-      const shown = Math.min(box.bottom, w.innerHeight) - Math.max(box.top, 0);
-      if (shown > best) { best = shown; link = a.dataset.sync; }
+      if (!box.height) continue;
+      const dist = mid < box.top ? box.top - mid : mid > box.bottom ? mid - box.bottom : 0;
+      if (dist < best) { best = dist; link = a.dataset.sync; }
     }
     if (!link || link === active) return;
     const anchor = sidebar.querySelector('.sync-anchor[data-sync="' + link + '"]');
@@ -249,7 +252,7 @@ def install_scroll_sync():
     components.html(
         "<script>const d = window.parent.document;"
         "const cur = window.parent.__deskScrollSync;"
-        "if (!cur || cur.version !== 2) {"
+        "if (!cur || cur.version !== 3) {"
         " const s = d.createElement('script');"
         f" s.textContent = {json.dumps(SCROLL_SYNC_JS)};"
         " d.head.appendChild(s); }</script>", height=0)
