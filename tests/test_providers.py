@@ -22,14 +22,14 @@ def test_agent_defaults_to_deepseek():
 
 def test_agent_openai_uses_sdk_default_base_url():
     agent = DispatchAgent(provider="openai", api_key="test-key")
-    assert agent.model == "gpt-4o-mini"
+    assert agent.model == "gpt-6.1-terra"
     assert str(agent.client.base_url).startswith("https://api.openai.com")
 
 
 def test_agent_anthropic_openai_compatible_endpoint():
     agent = DispatchAgent(provider="anthropic", api_key="test-key",
-                          model="claude-sonnet-4-5")
-    assert agent.model == "claude-sonnet-4-5"
+                          model="claude-sonnet-5-5")
+    assert agent.model == "claude-sonnet-5-5"
     assert str(agent.client.base_url).startswith("https://api.anthropic.com")
 
 

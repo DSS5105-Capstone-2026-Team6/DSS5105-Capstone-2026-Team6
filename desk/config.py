@@ -32,14 +32,14 @@ PROVIDERS = {
     "openai": {
         "label": "OpenAI (GPT)",
         "base_url": None,                       # SDK default: api.openai.com
-        "models": ["gpt-4o-mini", "gpt-4o"],
+        "models": ["gpt-6.1-terra", "gpt-5.6-luna"],
         "key_vars": ("OPENAI_API_KEY",),
         "key_hint": 'OPENAI_API_KEY = "sk-..."',
     },
     "anthropic": {
         "label": "Anthropic (Claude)",
         "base_url": "https://api.anthropic.com/v1/",
-        "models": ["claude-haiku-4-5", "claude-sonnet-4-5"],
+        "models": ["claude-haiku-5-5", "claude-sonnet-5-5"],
         "key_vars": ("ANTHROPIC_API_KEY",),
         "key_hint": 'ANTHROPIC_API_KEY = "sk-ant-..."',
     },
