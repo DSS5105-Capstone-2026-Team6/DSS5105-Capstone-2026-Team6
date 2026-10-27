@@ -133,6 +133,24 @@ def build_application(token, make_session=None, proxy=None):
     return app
 
 
+def _serve_health(port):
+    """Minimal HTTP responder so hosts that require a bound port (Render
+    free web services) accept the deploy; also the UptimeRobot ping target
+    that keeps the free instance awake."""
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"dispatch bot alive")
+
+        def log_message(self, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+
+
 def main():
     from dotenv import load_dotenv
     load_dotenv(ENV_PATH)
@@ -140,6 +158,15 @@ def main():
     if not token:
         raise SystemExit(f"{TOKEN_VAR} not found in {ENV_PATH} — create it "
                          "via BotFather (/newbot), then rerun.")
+    # Render-style hosts inject PORT: a free web service must bind it or the
+    # deploy is killed. Answer 200 on any GET; polling does the real work.
+    # Locally PORT is absent and no health endpoint is opened.
+    port = int(os.environ.get("PORT", "0") or 0)
+    if port:
+        import threading
+        threading.Thread(target=_serve_health, args=(port,),
+                         daemon=True).start()
+        print(f"health endpoint on :{port}")
     # api.telegram.org is not reachable directly from some networks; the
     # proxy comes from .env (TELEGRAM_PROXY) or the shell (HTTPS_PROXY)
     proxy = (os.environ.get("TELEGRAM_PROXY") or os.environ.get("HTTPS_PROXY")

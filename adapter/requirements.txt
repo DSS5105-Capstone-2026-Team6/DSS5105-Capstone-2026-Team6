@@ -1,0 +1,5 @@
+# Bot-only dependency set (Render builds with: pip install -r adapter/requirements.txt)
+# All LLM providers go through the OpenAI-compatible SDK; no streamlit here.
+openai>=1.0
+python-dotenv>=1.0
+python-telegram-bot>=21

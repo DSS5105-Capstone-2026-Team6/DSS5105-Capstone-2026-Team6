@@ -1,0 +1,23 @@
+# Render blueprint: one free web service running the Telegram bot via long
+# polling. Secrets are set in the Render dashboard (sync: false never stores
+# values in the repo).
+#
+# Free tier caveats:
+# - the instance sleeps after ~15 min without HTTP traffic -> point a free
+#   UptimeRobot monitor (5-min interval) at https://<service>.onrender.com/
+# - the bot uses polling, so sleeping only delays replies, never loses them
+#   (Telegram queues undelivered updates)
+services:
+  - type: web
+    name: dispatch-desk-bot
+    runtime: python
+    plan: free
+    branch: bot
+    buildCommand: pip install -r adapter/requirements.txt
+    startCommand: python -m adapter.telegram_bot
+    healthCheckPath: /
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
