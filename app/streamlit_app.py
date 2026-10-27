@@ -86,8 +86,10 @@ def get_desk():
             "Provider", options=list(PROVIDERS),
             format_func=lambda k: PROVIDERS[k]["label"],
             key="provider_sel")
-        model = st.selectbox("Model", options=PROVIDERS[provider]["models"],
-                             key="model_sel")
+        model_entry = st.selectbox(
+            "Model", options=PROVIDERS[provider]["models"],
+            format_func=lambda m: m[1], key="model_sel")
+        model = model_entry[0]            # api id; [1] is the display label
     choice = (provider, model)
     desk = st.session_state.get("desk")
     if desk is not None and (not hasattr(desk.agent, "new_conversation")

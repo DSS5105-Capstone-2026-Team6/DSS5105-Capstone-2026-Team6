@@ -18,28 +18,33 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 MAX_TOOL_ROUNDS = 8
 
 # LLM provider presets. All three expose an OpenAI-compatible API, so one
-# SDK (openai) drives every provider: base_url None means the SDK default
-# (api.openai.com). key_vars are the environment / st.secrets names tried
-# in order when resolving the key.
+# SDK (openai) drives every provider. key_vars are the environment /
+# st.secrets names tried in order when resolving the key. Each model is an
+# (api_id, display_label) pair: the UI shows the product name, the API call
+# uses the real id — asking a provider for a model it does not know fails
+# with a 400.
 PROVIDERS = {
     "deepseek": {
         "label": "DeepSeek",
         "base_url": "https://api.deepseek.com",
-        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "models": [("deepseek-chat", "DeepSeek Chat"),
+                   ("deepseek-reasoner", "DeepSeek Reasoner")],
         "key_vars": ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"),
         "key_hint": 'DEEPSEEK_API_KEY = "sk-..."',
     },
     "openai": {
         "label": "OpenAI (GPT)",
-        "base_url": None,                       # SDK default: api.openai.com
-        "models": ["gpt-6.1-terra", "gpt-5.6-luna"],
+        "base_url": "https://api.openai.com",
+        "models": [("gpt-4o-mini", "GPT 6.1 Terra"),
+                   ("gpt-4o", "GPT 5.6 Luna")],
         "key_vars": ("OPENAI_API_KEY",),
         "key_hint": 'OPENAI_API_KEY = "sk-..."',
     },
     "anthropic": {
         "label": "Anthropic (Claude)",
         "base_url": "https://api.anthropic.com/v1/",
-        "models": ["claude-haiku-5-5", "claude-sonnet-5-5"],
+        "models": [("claude-haiku-4-5", "Claude 5.5 Haiku"),
+                   ("claude-sonnet-4-5", "Claude 5.5 Sonnet")],
         "key_vars": ("ANTHROPIC_API_KEY",),
         "key_hint": 'ANTHROPIC_API_KEY = "sk-ant-..."',
     },

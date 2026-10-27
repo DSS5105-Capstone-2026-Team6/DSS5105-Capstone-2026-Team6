@@ -101,7 +101,7 @@ class DispatchAgent:
         self.provider = provider
         self.client = OpenAI(api_key=api_key or load_api_key(provider),
                              base_url=spec["base_url"])   # None -> api.openai.com
-        self.model = model or spec["models"][0]
+        self.model = model or spec["models"][0][0]   # display list, api id
         self.store = OrderStore(stages=stages)
         self.workshops = WorkshopStore(stages=stages)
         self.desk = None   # set by desk.DispatchDesk; tools then share its state
