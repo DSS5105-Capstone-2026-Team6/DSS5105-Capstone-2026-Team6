@@ -179,15 +179,18 @@ def render_chat_log():
 
 # Streamlit has no scroll events, so a tiny script is injected into the page
 # (components.html runs same-origin, so it can reach window.parent). On
-# every scroll of the main area it finds the worklist card nearest the top,
-# scrolls the sidebar chat log to the message with the same data-sync id and
-# flashes it grey twice. Installed once per page; reruns don't stack it.
+# every scroll of the main area it finds the worklist card taking up most of
+# the screen, scrolls the sidebar chat log to the message with the same
+# data-sync id and flashes it grey twice. Installed once per page (versioned, so a newer
+# script replaces an older one); reruns don't stack it.
 SCROLL_SYNC_JS = """
 (function () {
-  const w = window, doc = document;
-  if (w.__deskScrollSync) return;
-  w.__deskScrollSync = true;
-  const css = doc.createElement("style");
+  const w = window, doc = document, VERSION = 2;
+  const old = w.__deskScrollSync;
+  if (old && old.version === VERSION) return;
+  if (old) doc.removeEventListener("scroll", old.onScroll, true);
+  const css = doc.getElementById("desk-sync-css") || doc.createElement("style");
+  css.id = "desk-sync-css";
   css.textContent = `
     @keyframes desk-blink { 0%,50%,100% { background: transparent; }
                             25%,75% { background: #e9ecef; } }
@@ -206,10 +209,12 @@ SCROLL_SYNC_JS = """
     if (!sidebar) return;
     const cards = [...doc.querySelectorAll(".sync-anchor")]
       .filter(a => !sidebar.contains(a));
-    let link = null;
+    // the card taking up the most of the visible screen wins
+    let link = null, best = 0;
     for (const a of cards) {
       const box = (a.closest('[data-testid="stExpander"]') || a).getBoundingClientRect();
-      if (box.height && box.bottom > 120) { link = a.dataset.sync; break; }
+      const shown = Math.min(box.bottom, w.innerHeight) - Math.max(box.top, 0);
+      if (shown > best) { best = shown; link = a.dataset.sync; }
     }
     if (!link || link === active) return;
     const anchor = sidebar.querySelector('.sync-anchor[data-sync="' + link + '"]');
@@ -224,12 +229,14 @@ SCROLL_SYNC_JS = """
     void msg.offsetWidth;            // restart the animation
     msg.classList.add("desk-blink");
   }
-  doc.addEventListener("scroll", e => {
+  function onScroll(e) {
     const sidebar = doc.querySelector('[data-testid="stSidebar"]');
     if (sidebar && e.target.nodeType === 1 && sidebar.contains(e.target)) return;
     w.clearTimeout(timer);
     timer = w.setTimeout(sync, 150);
-  }, true);
+  }
+  doc.addEventListener("scroll", onScroll, true);
+  w.__deskScrollSync = { version: VERSION, onScroll: onScroll };
 })();
 """
 
@@ -241,7 +248,8 @@ def install_scroll_sync():
     import streamlit.components.v1 as components
     components.html(
         "<script>const d = window.parent.document;"
-        "if (!window.parent.__deskScrollSync) {"
+        "const cur = window.parent.__deskScrollSync;"
+        "if (!cur || cur.version !== 2) {"
         " const s = d.createElement('script');"
         f" s.textContent = {json.dumps(SCROLL_SYNC_JS)};"
         " d.head.appendChild(s); }</script>", height=0)
