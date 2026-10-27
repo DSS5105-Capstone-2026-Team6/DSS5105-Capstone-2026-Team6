@@ -48,6 +48,27 @@ def looks_like_confirmation(text):
     return t in _YES_WORDS or t.startswith(("yes,", "yes do", "yes commit"))
 
 
+def commit_intent_workshop(text, decision):
+    """A follow-up that names a workshop together with an action word commits
+    THAT candidate ('commit to W2', 'send it to SteadyHands') — any candidate,
+    not just the buttoned top three. A bare affirmation commits the
+    recommended one. Returns a workshop_id, or None when the message is
+    conversation rather than an instruction."""
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    if looks_like_confirmation(t):
+        return decision.chosen.workshop_id if decision.chosen else None
+    action_words = ("commit", "confirm", "book", "send", "use", "go with",
+                    "place", "assign", "give", "确认", "定给", "就用", "派给")
+    if not any(w in t for w in action_words):
+        return None
+    for c in decision.candidates or []:
+        if c.workshop_id.lower() in t or c.name.lower() in t:
+            return c.workshop_id
+    return None
+
+
 def extract_options(explanation):
     """Split the machine-readable OPTIONS line off the reply. Returns
     (clean_explanation, options): 'OPTIONS: ORD-061 | ORD-108' becomes
