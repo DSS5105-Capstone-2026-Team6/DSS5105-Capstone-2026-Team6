@@ -22,22 +22,22 @@ def test_agent_defaults_to_deepseek():
 
 def test_agent_openai_uses_sdk_default_base_url():
     agent = DispatchAgent(provider="openai", api_key="test-key")
-    assert agent.model == "gpt-4o-mini"          # real api id, not the label
+    assert agent.model == "gpt-6.1-terra"        # real api id
     assert str(agent.client.base_url).startswith("https://api.openai.com")
 
 
 def test_model_labels_are_display_only():
     labels = dict(PROVIDERS["openai"]["models"])
-    assert labels["gpt-4o-mini"] == "GPT 6.1 Terra"
-    assert labels["gpt-4o"] == "GPT 5.6 Luna"
+    assert labels["gpt-6.1-terra"] == "GPT 6.1 Terra"
+    assert labels["gpt-5.6-luna"] == "GPT 5.6 Luna"
     claude = dict(PROVIDERS["anthropic"]["models"])
-    assert claude["claude-haiku-4-5"] == "Claude 5.5 Haiku"
+    assert claude["claude-haiku-5-5"] == "Claude 5.5 Haiku"
 
 
 def test_agent_anthropic_openai_compatible_endpoint():
     agent = DispatchAgent(provider="anthropic", api_key="test-key",
-                          model="claude-sonnet-4-5")
-    assert agent.model == "claude-sonnet-4-5"
+                          model="claude-sonnet-5-5")
+    assert agent.model == "claude-sonnet-5-5"
     assert str(agent.client.base_url).startswith("https://api.anthropic.com")
 
 
