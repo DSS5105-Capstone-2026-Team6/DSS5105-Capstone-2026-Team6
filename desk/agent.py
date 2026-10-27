@@ -129,10 +129,14 @@ class DispatchAgent:
                              # checker must never see a previous request's calls
         self.history.append({"role": "user", "content": message})
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self.history]
+        # OpenAI reasoning models reject function tools on /v1/chat/completions
+        # unless reasoning is switched off; DeepSeek and Claude don't need it
+        extra = ({"reasoning_effort": "none"} if self.provider == "openai"
+                 else {})
         for round_no in range(1, MAX_TOOL_ROUNDS + 1):
             resp = self.client.chat.completions.create(
                 model=self.model, messages=messages,
-                tools=tool_schemas(), temperature=0)
+                tools=tool_schemas(), temperature=0, **extra)
             msg = resp.choices[0].message
             messages.append(msg)
             if not msg.tool_calls:

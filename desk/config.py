@@ -34,7 +34,7 @@ PROVIDERS = {
     },
     "openai": {
         "label": "OpenAI (GPT)",
-        "base_url": "https://api.openai.com",
+        "base_url": "https://api.openai.com/v1",   # /v1 is required
         "models": [("gpt-6.1-terra", "GPT 6.1 Terra"),
                    ("gpt-5.6-luna", "GPT 5.6 Luna")],
         "key_vars": ("OPENAI_API_KEY",),
