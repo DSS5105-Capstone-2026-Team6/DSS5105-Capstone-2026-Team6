@@ -83,10 +83,11 @@ def extract_options(explanation):
 
 class DispatchDesk:
     def __init__(self, model=None, stages=False, audit_path=None,
-                 provider=None, api_key=None):
+                 provider=None, api_key=None, persona="dispatcher"):
         from desk.config import DEFAULT_PROVIDER
         self.agent = DispatchAgent(model=model, stages=stages, api_key=api_key,
-                                   provider=provider or DEFAULT_PROVIDER)
+                                   provider=provider or DEFAULT_PROVIDER,
+                                   persona=persona)
         self.agent.desk = self                  # chat loop passes this to tools
         self.orders = OrderStore(stages=stages)
         self.workshops = self.agent.workshops   # shared with the agent
