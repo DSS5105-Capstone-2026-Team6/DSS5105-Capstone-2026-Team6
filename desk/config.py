@@ -31,7 +31,7 @@ PROVIDERS = {
     },
     "openai": {
         "label": "OpenAI (GPT)",
-        "base_url": None,                       # SDK default: api.openai.com
+        "base_url": "https://api.openai.com",                       # SDK default: api.openai.com
         "models": ["gpt-6.1-terra", "gpt-5.6-luna"],
         "key_vars": ("OPENAI_API_KEY",),
         "key_hint": 'OPENAI_API_KEY = "sk-..."',
