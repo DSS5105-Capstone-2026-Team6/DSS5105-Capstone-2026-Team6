@@ -27,15 +27,19 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 │   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
 │   ├── agent.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
 │   ├── router.py                # code-assigned behaviour: tool log -> Decision
-│   ├── prompts/system.txt       # the system prompt (plain text)
+│   ├── prompts/dispatcher.txt   # system prompt, dispatcher persona (Streamlit desk)
+│   ├── prompts/group.txt        # system prompt, group-chat persona (Telegram bot)
 │   ├── state.py                 # DeskState: chat-side queues (1 Apr snapshot, commits only)
 │   ├── audit.py                 # AuditLog: append-only JSONL audit trail
 │   └── desk.py                  # DispatchDesk: handle_message() -> Decision, confirm() -> record
+├── adapter/                   # Telegram bot shell around DispatchDesk (bot branch)
+│   ├── session.py             # per-chat session: trigger filter + confirmation gate (pure, tested)
+│   └── telegram_bot.py        # python-telegram-bot wiring; zero business logic
 ├── eval/
 │   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
-├── tests/                     # pytest suite: one failure case per tool (74 tests)
+├── tests/                     # pytest suite: one failure case per feature (132 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 

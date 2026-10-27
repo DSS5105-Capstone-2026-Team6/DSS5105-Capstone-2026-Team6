@@ -12,8 +12,10 @@ drives every provider through the openai SDK. The DeepSeek key may live under
 OPENAI_API_KEY (this project's .env convention) — key resolution tries the
 provider's key_vars in order, from the environment, st.secrets, then .env.
 
-The system prompt lives in desk/prompts/system.txt (plain text, read at
-import time) so prompt tuning needs no code changes.
+The system prompt lives in desk/prompts/<persona>.txt (plain text, read at
+import time) so prompt tuning needs no code changes. The default persona is
+"dispatcher" (the Streamlit desk); the Telegram adapter (adapter/) uses
+"group" — same rules, but addressing the chat member instead of a dispatcher.
 
 Run directly for a manual smoke test:
 
@@ -40,8 +42,16 @@ except ImportError:  # run directly as a script: python desk/agent.py
     from desk.register import OrderStore, WorkshopStore
     from desk.tools import dispatch_tool, tool_schemas
 
-SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.txt"
-                 ).read_text(encoding="utf-8")
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+def load_system_prompt(persona="dispatcher"):
+    """Read desk/prompts/<persona>.txt. An unknown persona fails loudly here
+    (FileNotFoundError) instead of mid-chat."""
+    return (PROMPTS_DIR / f"{persona}.txt").read_text(encoding="utf-8")
+
+
+SYSTEM_PROMPT = load_system_prompt()   # default persona, kept for compat
 
 
 def load_api_key(provider=DEFAULT_PROVIDER, env_path=PROJECT_ROOT / ".env"):
@@ -96,8 +106,11 @@ class DispatchAgent:
     arguments, and a truncated result."""
 
     def __init__(self, model=None, stages=False, api_key=None,
-                 provider=DEFAULT_PROVIDER):
+                 provider=DEFAULT_PROVIDER, persona="dispatcher"):
         spec = PROVIDERS[provider]
+        self.provider = provider
+        self.persona = persona
+        self.system_prompt = load_system_prompt(persona)
         self.provider = provider
         self.client = OpenAI(api_key=api_key or load_api_key(provider),
                              base_url=spec["base_url"])   # None -> api.openai.com
@@ -128,7 +141,8 @@ class DispatchAgent:
         self.tool_log = []   # per message: route() and the faithfulness
                              # checker must never see a previous request's calls
         self.history.append({"role": "user", "content": message})
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self.history]
+        messages = [{"role": "system", "content": self.system_prompt},
+                    *self.history]
         # OpenAI reasoning models reject function tools on /v1/chat/completions
         # unless reasoning is switched off; DeepSeek and Claude don't need it
         extra = ({"reasoning_effort": "none"} if self.provider == "openai"

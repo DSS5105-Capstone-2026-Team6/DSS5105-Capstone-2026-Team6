@@ -29,7 +29,7 @@ import streamlit as st
 
 from desk.contracts import Behaviour, to_dict
 from desk.desk import DispatchDesk
-from eval.run_eval import ENVELOPE
+from desk.chat_dump import ENVELOPE, split_chat_dump
 
 # behaviour badge chips: text + tint. Semantics come first (green/red/
 # orange/blue); everything else in the UI stays in the light-blue family.
@@ -119,29 +119,6 @@ def get_desk():
 
 def card(html):
     st.markdown(f'<div class="card">{html}</div>', unsafe_allow_html=True)
-
-
-def split_chat_dump(text):
-    """Split a pasted group-chat dump into single messages. A line matching
-    the inbox envelope (R23 [08:29] Priya: ...) starts a new message;
-    continuation lines belong to the previous one; # comments and blank
-    lines are skipped. One message -> [text]."""
-    msgs, current = [], None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if ENVELOPE.match(stripped):
-            if current:
-                msgs.append(current)
-            current = stripped
-        elif current is None:
-            current = stripped
-        else:
-            current += " " + stripped
-    if current:
-        msgs.append(current)
-    return msgs or [text]
 
 
 # ---------------- chat log (sidebar) ----------------
