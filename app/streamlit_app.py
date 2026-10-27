@@ -8,11 +8,11 @@ business logic.
 
 Layout: tab 🗂 desk = one full-width worklist, one row per request. The
 copyable reply lives under its own dispatch item. A fourth option beside
-the candidate buttons — "Other option (tell me)" — pops open a per-item
-conversation: ask anything, or name ANY candidate with an action word
-("commit to W2") to dispatch it without an extra LLM round. The sidebar
-carries the provider/model selectors and a running chat log of every
-exchange the desk has handled.
+the candidate buttons — "Other option (tell me)" — expands a per-item
+conversation: it opens with every eligible workshop and its LIVE queue,
+then takes free text; naming ANY candidate with an action word ("commit
+to W2") dispatches it without an extra LLM round. The sidebar carries the
+provider/model selectors and a running chat log of every exchange.
 
 Run from the project root:
 
@@ -182,16 +182,26 @@ def _save_thread(decision, desk):
 
 
 def render_item_chat(decision, desk):
-    """The popover conversation bound to ONE dispatch item. Ask anything
-    about the order; or name ANY candidate with an action word ('commit to
-    W2', 'send it to Little Loom') to dispatch it — no extra LLM round for
-    the commit itself."""
-    from dataclasses import replace
+    """The 4th-option conversation bound to ONE dispatch item. First shows
+    every eligible workshop with its LIVE queue (re-read on each rerun, so
+    the numbers move as soon as another dispatch commits); then the chat:
+    ask anything, or name ANY candidate with an action word ('commit to
+    W2', 'send it to Little Loom') to dispatch it — no LLM round."""
     from desk.desk import commit_intent_workshop
     key = f"conv-{id(decision)}"
     conv = st.session_state.setdefault(key, [])
 
-    with st.container(height=280, border=False):
+    if decision.candidates:
+        st.markdown("**🧭 All candidates · live queue**")
+        for c in decision.candidates:
+            live_q = desk.state.queues.get(c.workshop_id, 0.0)
+            star = " ⭐" if (decision.chosen
+                             and c.workshop_id == decision.chosen.workshop_id) else ""
+            st.markdown(f"- **{c.name} ({c.workshop_id})**{star} — "
+                        f"queue {live_q:.1f} d · finish {c.estimated_finish} · "
+                        f"cost {c.cost:.2f} · defect {c.defect_risk:.2f}")
+
+    with st.container(height=240, border=False):
         for m in conv:
             role, content = m.get("role"), m.get("content")
             if role == "user":
@@ -201,13 +211,18 @@ def render_item_chat(decision, desk):
                 with st.chat_message("assistant", avatar="🤖"):
                     st.text(content)
 
-    queued = st.session_state.pop(f"queued-{id(decision)}", None)
-    prompt = queued or st.chat_input("Tell me — 'why not W4?', 'commit to W2'...",
-                                     key=f"chat-{id(decision)}")
-    if not prompt:
+    with st.form(key=f"form-{id(decision)}", clear_on_submit=True):
+        queued = st.session_state.pop(f"queued-{id(decision)}", None)
+        prompt = st.text_input("Tell me", value=queued or "",
+                               label_visibility="collapsed",
+                               placeholder="Tell me — 'why not W4?', 'commit to W2'...")
+        sent = st.form_submit_button("Send")
+    if not (sent and prompt):
         return
     wid = commit_intent_workshop(prompt, decision)
-    if wid is not None and decision.parsed.order_id:
+    if (wid is not None and decision.candidates
+            and decision.parsed.order_id):
+        from dataclasses import replace
         target = next((c for c in decision.candidates
                        if c.workshop_id == wid), None)
         try:
@@ -217,13 +232,11 @@ def render_item_chat(decision, desk):
             st.error(str(exc))
             return
         st.session_state[f"committed-{id(decision)}"] = record
+        line = (f"Committed {record.record_id} — "
+                f"{record.order_id} → {record.workshop_id}.")
         conv.append({"role": "user", "content": prompt})
-        conv.append({"role": "assistant",
-                     "content": f"Committed {record.record_id} — "
-                                f"{record.order_id} → {record.workshop_id}."})
-        _log_exchange("dispatcher", prompt,
-                      f"Committed {record.record_id} — "
-                      f"{record.order_id} → {record.workshop_id}.")
+        conv.append({"role": "assistant", "content": line})
+        _log_exchange("dispatcher", prompt, line)
     else:
         if not _budget_ok():
             return
@@ -279,9 +292,9 @@ def render_candidates(decision):
 
 
 def render_confirm(decision, desk):
-    """Step 4 — options 1-3: one confirm button per top candidate. Option 4:
-    'Other option (tell me)' pops open a conversation about this dispatch;
-    naming ANY candidate there with an action word commits it."""
+    """Step 4 — one confirm button per top candidate (the recommendation is
+    advisory). The fourth option lives in render_decision, not here, so it
+    is available even when there are no candidates (ASK flows)."""
     if not decision.candidates or decision.parsed.order_id is None:
         return
     st.markdown("**⚙️ Confirm (the recommendation is advisory — you may pick another)**")
@@ -298,11 +311,11 @@ def render_confirm(decision, desk):
                 st.error(str(exc))
                 return
             st.session_state[f"committed-{id(decision)}"] = record
+            line = (f"Committed {record.record_id} — "
+                    f"{record.order_id} → {record.workshop_id}.")
+            _log_exchange("dispatcher", f"(button) {c.name} ({c.workshop_id})",
+                          line)
             st.rerun()
-    with st.popover("💬 Other option (tell me)", use_container_width=True):
-        st.caption("Ask about this order — or name any candidate with an "
-                   "action ('commit to W2') to dispatch it.")
-        render_item_chat(decision, desk)
 
 
 def render_reply(decision):
@@ -343,6 +356,11 @@ def render_decision(decision, desk):
     render_candidates(decision)
     render_confirm(decision, desk)
     render_options(decision)
+    # the 4th option, available on every uncommitted item (incl. ASK items
+    # with no candidates): an expander — st.chat_input/popover cannot hold
+    # a working chat input, so the dialog uses a text form
+    with st.expander("💬 Other option (tell me)"):
+        render_item_chat(decision, desk)
     render_reply(decision)
 
 
