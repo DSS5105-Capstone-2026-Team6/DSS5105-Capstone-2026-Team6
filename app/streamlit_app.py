@@ -10,7 +10,9 @@ Layout: tab 🗂 desk = one full-width worklist, one row per request. The
 copyable reply lives under its own dispatch item. A fourth option beside
 the candidate buttons — "Other option (tell me)" — pops open a per-item
 conversation: ask anything, or name ANY candidate with an action word
-("commit to W2") to dispatch it without an extra LLM round.
+("commit to W2") to dispatch it without an extra LLM round. The sidebar
+carries the provider/model selectors and a running chat log of every
+exchange the desk has handled.
 
 Run from the project root:
 
@@ -140,6 +142,28 @@ def split_chat_dump(text):
     return msgs or [text]
 
 
+# ---------------- chat log (sidebar) ----------------
+
+def _log_exchange(speaker, text, reply):
+    """Append one exchange to the sidebar's running log."""
+    st.session_state.setdefault("chat_log", []).append(
+        {"speaker": speaker, "text": text, "reply": reply})
+
+
+def render_chat_log():
+    """Sidebar record of everything the desk has handled, newest at the
+    bottom. Read-only — actions live in the worklist."""
+    log = st.session_state.get("chat_log", [])
+    st.markdown("**💬 Chat log**")
+    st.caption(f"{len(log)} messages")
+    with st.container(height=420, border=False):
+        for turn in log:
+            with st.chat_message("user", avatar="🧑‍🔧"):
+                st.write(f"**{turn['speaker']}:** {turn['text']}")
+            with st.chat_message("assistant", avatar="🤖"):
+                st.text(turn["reply"] if turn["reply"] else "(no reply)")
+
+
 # ---------------- per-item conversation (the 4th option) ----------------
 
 def _norm_msg(m):
@@ -195,14 +219,18 @@ def render_item_chat(decision, desk):
         conv.append({"role": "assistant",
                      "content": f"Committed {record.record_id} — "
                                 f"{record.order_id} → {record.workshop_id}."})
+        _log_exchange("dispatcher", prompt,
+                      f"Committed {record.record_id} — "
+                      f"{record.order_id} → {record.workshop_id}.")
     else:
         if not _budget_ok():
             return
         st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
         desk.agent.history = [dict(m) for m in conv]   # continue THIS thread
         with st.spinner("Working..."):
-            desk.agent.chat(prompt)
+            reply = desk.agent.chat(prompt)
         st.session_state[key] = [_norm_msg(m) for m in desk.agent.history]
+        _log_exchange("dispatcher", prompt, reply or "")
     st.rerun()
 
 
@@ -349,6 +377,10 @@ def render_inbox(desk):
                     decision = desk.handle_message(msg, requester="dispatcher")
                     decisions.append({"msg": msg, "decision": decision})
                     _save_thread(decision, desk)   # per-item conversation seed
+                    env = ENVELOPE.match(msg)
+                    _log_exchange(env.group(3) if env else "chat",
+                                  env.group(4) if env else msg,
+                                  decision.explanation)
             st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
 
@@ -459,6 +491,8 @@ def main():
     st.title("🛰️ Dispatch Desk")
 
     desk = get_desk()
+    with st.sidebar:
+        render_chat_log()
     tab_main, tab_dash, tab_recent = st.tabs(
         ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
 
