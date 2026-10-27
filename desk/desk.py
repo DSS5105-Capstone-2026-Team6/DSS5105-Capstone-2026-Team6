@@ -30,6 +30,35 @@ except ImportError:  # run directly as a script
     from desk.state import DeskState
     from desk.audit import AuditLog
 
+import re
+
+_YES_WORDS = ("yes", "y", "yep", "yes please", "ok", "okay", "sure",
+              "commit", "confirm", "confirmed", "go ahead", "please do",
+              "do it", "sounds good", "确认", "好的", "行", "可以")
+
+_OPTIONS_LINE = re.compile(r"(?im)^OPTIONS:\s*(.+?)\s*$")
+
+
+def looks_like_confirmation(text):
+    """Deterministic yes-detector for follow-up messages: when the agent has
+    just asked 'Reply yes to commit ...', a bare affirmation commits without
+    another LLM round-trip. Deliberately conservative — anything with a
+    'but' or a question mark is a conversation, not a confirmation."""
+    t = (text or "").strip().lower().rstrip(".!。")
+    return t in _YES_WORDS or t.startswith(("yes,", "yes do", "yes commit"))
+
+
+def extract_options(explanation):
+    """Split the machine-readable OPTIONS line off the reply. Returns
+    (clean_explanation, options): 'OPTIONS: ORD-061 | ORD-108' becomes
+    buttons in the UI; tapping one sends that text back as the follow-up."""
+    m = _OPTIONS_LINE.search(explanation or "")
+    if not m:
+        return (explanation or "").strip(), []
+    options = [o.strip() for o in m.group(1).split("|") if o.strip()]
+    clean = _OPTIONS_LINE.sub("", explanation).strip()
+    return clean, options
+
 
 class DispatchDesk:
     def __init__(self, model=None, stages=False, audit_path=None,
@@ -55,6 +84,11 @@ class DispatchDesk:
                          workshops=self.workshops)
         if request_id is not None:
             decision.request_id = request_id
+        # an OPTIONS line in the reply becomes tappable choices (unless the
+        # router already attached some, e.g. ambiguous lookup matches)
+        if not decision.options:
+            decision.explanation, decision.options = extract_options(
+                decision.explanation)
         # the model may skip lookup_order and call rank_candidates directly;
         # fill any missing parsed fields from the register so the UI card and
         # slack math never show blanks

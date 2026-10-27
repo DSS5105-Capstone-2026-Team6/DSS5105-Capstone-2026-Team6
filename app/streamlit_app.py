@@ -140,37 +140,71 @@ def split_chat_dump(text):
 
 # ---------------- chat log (right rail) ----------------
 
-def _log_exchange(speaker, text, decision):
+def _log_exchange(speaker, text, reply, badge):
     """Append one customer/agent exchange to the persistent chat log."""
     st.session_state.setdefault("chat_log", []).append(
-        {"speaker": speaker, "text": text, "reply": decision.explanation,
-         "behaviour": BADGE[decision.behaviour][0]})
+        {"speaker": speaker, "text": text, "reply": reply, "behaviour": badge})
+
+
+def _track_pending(decision):
+    """The newest uncommitted recommendation is the commit target: a bare
+    'yes' in the chat box confirms it without another LLM round."""
+    key = f"committed-{id(decision)}"
+    if (decision.chosen is not None and decision.parsed.order_id
+            and decision.candidates and key not in st.session_state):
+        st.session_state["pending"] = decision
+    elif st.session_state.get("pending") is decision and key in st.session_state:
+        st.session_state.pop("pending", None)
 
 
 def render_chat_log(desk):
     """The right-hand rail: every message the desk has handled, in order.
     This is the record of what was said — actions live in the worklist."""
+    from desk.desk import looks_like_confirmation
     st.markdown("**💬 Chat log**")
     top_l, top_r = st.columns([3, 1])
     top_l.caption(f"{len(st.session_state.get('chat_log', []))} messages")
     if top_r.button("🔄 New chat", use_container_width=True,
                     help="Start a fresh conversation context (the log stays)"):
         desk.agent.new_conversation()
+        st.session_state.pop("pending", None)
 
     with st.container(height=520, border=False):
         for turn in st.session_state.get("chat_log", []):
             with st.chat_message("user", avatar="🧑‍🔧"):
                 st.write(f"**{turn['speaker']}:** {turn['text']}")
             with st.chat_message("assistant", avatar="🤖"):
-                st.write(turn["reply"] if turn["reply"] else "(no reply)")
+                st.text(turn["reply"] if turn["reply"] else "(no reply)")
+
+    # tappable choices from the latest reply (ambiguous orders, objectives...)
+    followup = st.session_state.get("last_followup")
+    if followup is not None and followup.options:
+        render_options(followup)
 
     queued = st.session_state.pop("queued_input", None)
     prompt = st.chat_input("Follow up on the last request...") or queued
     if prompt and _budget_ok():
         st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
-        with st.spinner("Working..."):
-            decision = desk.handle_message(prompt, requester="dispatcher")
-        _log_exchange("dispatcher", prompt, decision)
+        pending = st.session_state.get("pending")
+        if pending is not None and looks_like_confirmation(prompt):
+            try:
+                record = desk.confirm(pending, committed_by="dispatcher")
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+            st.session_state[f"committed-{id(pending)}"] = record
+            st.session_state.pop("pending", None)
+            st.session_state.pop("last_followup", None)
+            _log_exchange("dispatcher", prompt,
+                          f"Committed {record.record_id} — "
+                          f"{record.order_id} → {record.workshop_id}.", "🟢 COMMIT")
+        else:
+            with st.spinner("Working..."):
+                decision = desk.handle_message(prompt, requester="dispatcher")
+            st.session_state["last_followup"] = decision
+            _track_pending(decision)
+            _log_exchange("dispatcher", prompt, decision.explanation,
+                          BADGE[decision.behaviour][0])
         st.rerun()
 
 
@@ -272,7 +306,10 @@ def render_decision(decision, desk):
     r = st.session_state.get(f"committed-{id(decision)}")
     if r is not None:
         st.success(f"⚡ Committed {r.record_id} — {r.order_id} → {r.workshop_id}")
+        if st.session_state.get("pending") is decision:
+            st.session_state.pop("pending", None)
         return
+    _track_pending(decision)
     render_understood(decision)
     render_candidates(decision)
     render_confirm(decision, desk)
@@ -312,9 +349,12 @@ def render_inbox(desk):
                 with st.spinner(f"Dispatching ({i}/{len(msgs)}: {msg[:40]}...)"):
                     decision = desk.handle_message(msg, requester="dispatcher")
                     decisions.append({"msg": msg, "decision": decision})
-                    _log_exchange(ENVELOPE.match(msg).group(3) if ENVELOPE.match(msg) else "chat",
-                                  ENVELOPE.match(msg).group(4) if ENVELOPE.match(msg) else msg,
-                                  decision)
+                    _track_pending(decision)
+                    env = ENVELOPE.match(msg)
+                    _log_exchange(env.group(3) if env else "chat",
+                                  env.group(4) if env else msg,
+                                  decision.explanation,
+                                  BADGE[decision.behaviour][0])
             st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
 
