@@ -323,34 +323,38 @@ def render_inbox(desk):
         st.info("Inbox is empty.")
         return
 
-    buckets = {
-        "⚠️ Needs you": [x for x in items if x["decision"].behaviour in NEEDS_HUMAN],
-        "⚡ To confirm": [x for x in items if x["decision"].behaviour is Behaviour.ALLOCATE],
-        "💬 Answered": [x for x in items if x["decision"].behaviour is Behaviour.ANSWER],
-    }
-
     # KPI row
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("⚠️ Needs you", len(buckets["⚠️ Needs you"]))
-    k2.metric("⚡ To confirm", len(buckets["⚡ To confirm"]))
+    k1.metric("⚠️ Needs you", sum(1 for x in items if x["decision"].behaviour in NEEDS_HUMAN))
+    k2.metric("🟢 To confirm", sum(1 for x in items if x["decision"].behaviour is Behaviour.ALLOCATE))
     k3.metric("✅ Committed", len(desk.audit.load_all()))
     k4.metric("🕒 Total queue (days)", round(sum(desk.state.queues.values()), 1))
 
-    # compact worklist: pending items expanded (read before you confirm),
-    # committed items collapse to their one-line record
+    # one tap = one behaviour: the five cases never stack on the page
+    FILTERS = [Behaviour.ALLOCATE, Behaviour.REFUSE, Behaviour.IMPOSSIBLE,
+               Behaviour.ASK, Behaviour.NO_DATA]
+    picked = st.segmented_control(
+        "Case", options=FILTERS,
+        format_func=lambda b: BADGE[b][0],
+        selection_mode="single", default=Behaviour.ALLOCATE)
+    shown = [x for x in items
+             if x["decision"].behaviour is picked
+             or (picked is Behaviour.NO_DATA
+                 and x["decision"].behaviour is Behaviour.ANSWER)]
+    st.markdown(f"**{BADGE[picked][0]} · {len(shown)} request(s)**")
+    if not shown:
+        st.info("Nothing in this case.")
+
+    # pending items expanded (read before you confirm), committed items
+    # collapse to their one-line record
     n = 0
-    for bucket, bucket_items in buckets.items():
-        if not bucket_items:
-            continue
-        st.markdown(f"**{bucket} ({len(bucket_items)})**")
-        for item in bucket_items:
-            n += 1
-            d = item["decision"]
-            committed = f"committed-{id(d)}" in st.session_state
-            with st.expander(_row_label(n, item),
-                             expanded=not committed):
-                st.caption(item["msg"])
-                render_decision(d, desk)
+    for item in shown:
+        n += 1
+        d = item["decision"]
+        committed = f"committed-{id(d)}" in st.session_state
+        with st.expander(_row_label(n, item), expanded=not committed):
+            st.caption(item["msg"])
+            render_decision(d, desk)
 
 
 # ---------------- 📊 dashboard ----------------
