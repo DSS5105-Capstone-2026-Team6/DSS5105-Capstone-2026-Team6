@@ -212,8 +212,7 @@ def render_item_chat(decision, desk):
                     st.text(content)
 
     with st.form(key=f"form-{id(decision)}", clear_on_submit=True):
-        queued = st.session_state.pop(f"queued-{id(decision)}", None)
-        prompt = st.text_input("Tell me", value=queued or "",
+        prompt = st.text_input("Tell me",
                                label_visibility="collapsed",
                                placeholder="Tell me — 'why not W4?', 'commit to W2'...")
         sent = st.form_submit_button("Send")
@@ -318,35 +317,10 @@ def render_confirm(decision, desk):
             st.rerun()
 
 
-def render_reply(decision):
-    """Step 5 — ready-to-paste group-chat reply (st.code has a copy button).
-    Lives only under its own dispatch item, never in a shared log."""
-    if not decision.explanation:
-        return
-    st.markdown("**📤 Copyable reply**")
-    st.code(decision.explanation, language=None)
-
-
-def _queue_input(item_id, text):
-    """Tappable option -> prefill THAT item's chat box with the answer."""
-    st.session_state[f"queued-{item_id}"] = text
-
-
-def render_options(decision):
-    """ASK decisions carry tappable choices (journey step 6): one tap
-    prefills the item's chat box with that answer."""
-    if not decision.options:
-        return
-    st.markdown("**⌨️ Tap to reply**")
-    for opt in decision.options:
-        st.button(f"▶ {opt}", use_container_width=True,
-                  key=f"opt-{id(decision)}-{opt}",
-                  on_click=_queue_input, args=(id(decision), opt))
-
-
 def render_decision(decision, desk):
-    """Pre-commit: full conversation (understood / candidates / confirm /
-    options / reply), expanded so the human reads it BEFORE deciding.
+    """Pre-commit: understood / candidates / confirm buttons, plus the 4th
+    option — an expander with the live candidate board and the per-item
+    conversation (the agent's reply shows there, first bubble).
     Post-commit: a single line — the confirm UI deletes itself."""
     r = st.session_state.get(f"committed-{id(decision)}")
     if r is not None:
@@ -355,13 +329,11 @@ def render_decision(decision, desk):
     render_understood(decision)
     render_candidates(decision)
     render_confirm(decision, desk)
-    render_options(decision)
     # the 4th option, available on every uncommitted item (incl. ASK items
     # with no candidates): an expander — st.chat_input/popover cannot hold
     # a working chat input, so the dialog uses a text form
     with st.expander("💬 Other option (tell me)"):
         render_item_chat(decision, desk)
-    render_reply(decision)
 
 
 # ---------------- 🗂 inbox worklist ----------------
