@@ -15,7 +15,9 @@ Setup:
     3. Run:  uv run python -m adapter.telegram_bot
 
 One DispatchDesk per chat, so two groups never share queues (adapter/session.py).
-Behind a local proxy set HTTPS_PROXY — httpx picks it up like the LLM calls.
+api.telegram.org is not directly reachable on some networks: put
+TELEGRAM_PROXY = "http://127.0.0.1:7890" in .env (or export HTTPS_PROXY) and
+both the bot API and the polling connection go through it.
 """
 
 import os
@@ -44,9 +46,11 @@ def _session_factory():
     return DispatchDesk(persona="group")
 
 
-def build_application(token, make_session=None):
+def build_application(token, make_session=None, proxy=None):
     """Wire handlers. make_session is injectable for tests; production builds
-    a ChatSession wrapping a group-persona DispatchDesk."""
+    a ChatSession wrapping a group-persona DispatchDesk. proxy routes both
+    the bot API and the polling connection (api.telegram.org is not directly
+    reachable on some networks)."""
     from telegram.ext import (ApplicationBuilder, CallbackQueryHandler,
                               CommandHandler, MessageHandler, filters)
 
@@ -118,7 +122,10 @@ def build_application(token, make_session=None):
             reply, options = "Something went wrong on my side — try again.", []
         await send_reply(query.message, reply, options)
 
-    app = (ApplicationBuilder().token(token).build())
+    builder = ApplicationBuilder().token(token)
+    if proxy:
+        builder = builder.proxy(proxy).get_updates_proxy(proxy)
+    app = builder.build()
     app.add_handler(CommandHandler("start", on_start))
     app.add_handler(CallbackQueryHandler(on_option))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
@@ -133,8 +140,21 @@ def main():
     if not token:
         raise SystemExit(f"{TOKEN_VAR} not found in {ENV_PATH} — create it "
                          "via BotFather (/newbot), then rerun.")
-    print("Dispatch bot polling…  (Ctrl+C to stop)")
-    build_application(token).run_polling(drop_pending_updates=True)
+    # api.telegram.org is not reachable directly from some networks; the
+    # proxy comes from .env (TELEGRAM_PROXY) or the shell (HTTPS_PROXY)
+    proxy = (os.environ.get("TELEGRAM_PROXY") or os.environ.get("HTTPS_PROXY")
+             or os.environ.get("https_proxy") or "").strip()
+    app = build_application(token, proxy=proxy)
+    print(f"Dispatch bot polling…{' (proxy ' + proxy + ')' if proxy else ''}  "
+          "(Ctrl+C to stop)")
+    try:
+        app.run_polling(drop_pending_updates=True)
+    except Exception as exc:
+        hint = ("" if proxy else
+                f"\nNo proxy configured. If api.telegram.org is unreachable "
+                f"directly, add TELEGRAM_PROXY = \"http://127.0.0.1:7890\" "
+                f"to {ENV_PATH} (use your proxy client's HTTP port).")
+        raise SystemExit(f"Bot failed: {exc}{hint}")
 
 
 if __name__ == "__main__":
