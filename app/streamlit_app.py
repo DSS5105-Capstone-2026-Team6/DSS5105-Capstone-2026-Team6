@@ -6,9 +6,9 @@ turns one chat line into a Decision, confirm() commits it and writes the
 audit record. This file renders Decisions and captures taps; it holds no
 business logic.
 
-Layout: three tabs — 🗂 inbox (batch worklist, bucketed by behaviour),
-📊 dashboard (live queue charts), 🧾 records (append-only audit feed);
-the chat panel rides next to the inbox for multi-turn follow-ups.
+Layout: tab 🗂 desk = worklist (left) + chat log (right). Every handled
+message lands in the chat log; the worklist holds the actionable part
+(candidates, confirm buttons) and collapses to a one-liner once committed.
 
 Run from the project root:
 
@@ -138,6 +138,44 @@ def split_chat_dump(text):
     return msgs or [text]
 
 
+# ---------------- chat log (right rail) ----------------
+
+def _log_exchange(speaker, text, decision):
+    """Append one customer/agent exchange to the persistent chat log."""
+    st.session_state.setdefault("chat_log", []).append(
+        {"speaker": speaker, "text": text, "reply": decision.explanation,
+         "behaviour": BADGE[decision.behaviour][0]})
+
+
+def render_chat_log(desk):
+    """The right-hand rail: every message the desk has handled, in order.
+    This is the record of what was said — actions live in the worklist."""
+    st.markdown("**💬 Chat log**")
+    top_l, top_r = st.columns([3, 1])
+    top_l.caption(f"{len(st.session_state.get('chat_log', []))} messages")
+    if top_r.button("🔄 New chat", use_container_width=True,
+                    help="Start a fresh conversation context (the log stays)"):
+        desk.agent.new_conversation()
+
+    with st.container(height=520, border=False):
+        for turn in st.session_state.get("chat_log", []):
+            with st.chat_message("user", avatar="🧑‍🔧"):
+                st.write(f"**{turn['speaker']}:** {turn['text']}")
+            with st.chat_message("assistant", avatar="🤖"):
+                st.write(turn["reply"] if turn["reply"] else "(no reply)")
+
+    queued = st.session_state.pop("queued_input", None)
+    prompt = st.chat_input("Follow up on the last request...") or queued
+    if prompt and _budget_ok():
+        st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
+        with st.spinner("Working..."):
+            decision = desk.handle_message(prompt, requester="dispatcher")
+        _log_exchange("dispatcher", prompt, decision)
+        st.rerun()
+
+
+# ---------------- decision rendering (worklist) ----------------
+
 def render_understood(decision):
     """Step 2 — 'Here's what I understood'."""
     p = decision.parsed
@@ -180,14 +218,10 @@ def render_candidates(decision):
 
 def render_confirm(decision, desk):
     """Step 4 — the system recommends (⭐), the human decides: every candidate
-    gets its own confirm button, not just the top pick. A rerun never
-    commits twice."""
-    key = f"committed-{id(decision)}"
+    gets its own confirm button, not just the top pick. Once committed the
+    whole confirm section is gone: rerun lands in the committed branch of
+    render_decision, which shows a single line."""
     if not decision.candidates or decision.parsed.order_id is None:
-        return
-    if key in st.session_state:
-        r = st.session_state[key]
-        st.success(f"⚡ Committed {r.record_id} — {r.order_id} → {r.workshop_id}")
         return
     st.markdown("**⚙️ Confirm (the recommendation is advisory — you may pick another)**")
     from dataclasses import replace
@@ -202,7 +236,7 @@ def render_confirm(decision, desk):
             except ValueError as exc:
                 st.error(str(exc))
                 return
-            st.session_state[key] = record
+            st.session_state[f"committed-{id(decision)}"] = record
             st.rerun()
 
 
@@ -232,12 +266,21 @@ def render_options(decision):
 
 
 def render_decision(decision, desk):
+    """Pre-commit: full conversation (understood / candidates / confirm /
+    options / reply), expanded so the human reads it BEFORE deciding.
+    Post-commit: a single line — the confirm UI deletes itself."""
+    r = st.session_state.get(f"committed-{id(decision)}")
+    if r is not None:
+        st.success(f"⚡ Committed {r.record_id} — {r.order_id} → {r.workshop_id}")
+        return
     render_understood(decision)
     render_candidates(decision)
     render_confirm(decision, desk)
     render_options(decision)
     render_reply(decision)
 
+
+# ---------------- 🗂 inbox worklist ----------------
 
 def _budget_ok(extra=1):
     """Per-session request cap (Risk 6): the hosted demo shares one key."""
@@ -247,8 +290,6 @@ def _budget_ok(extra=1):
         return False
     return True
 
-
-# ---------------- 🗂 inbox ----------------
 
 def _row_label(i, item):
     d = item["decision"]
@@ -269,9 +310,11 @@ def render_inbox(desk):
             for i, msg in enumerate(msgs, 1):
                 desk.agent.new_conversation()  # inbox lines are independent
                 with st.spinner(f"Dispatching ({i}/{len(msgs)}: {msg[:40]}...)"):
-                    decisions.append(
-                        {"msg": msg,
-                         "decision": desk.handle_message(msg, requester="dispatcher")})
+                    decision = desk.handle_message(msg, requester="dispatcher")
+                    decisions.append({"msg": msg, "decision": decision})
+                    _log_exchange(ENVELOPE.match(msg).group(3) if ENVELOPE.match(msg) else "chat",
+                                  ENVELOPE.match(msg).group(4) if ENVELOPE.match(msg) else msg,
+                                  decision)
             st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
 
@@ -293,7 +336,8 @@ def render_inbox(desk):
     k3.metric("✅ Committed", len(desk.audit.load_all()))
     k4.metric("🕒 Total queue (days)", round(sum(desk.state.queues.values()), 1))
 
-    # compact worklist: one row per request, details behind an expander
+    # compact worklist: pending items expanded (read before you confirm),
+    # committed items collapse to their one-line record
     n = 0
     for bucket, bucket_items in buckets.items():
         if not bucket_items:
@@ -302,38 +346,11 @@ def render_inbox(desk):
         for item in bucket_items:
             n += 1
             d = item["decision"]
+            committed = f"committed-{id(d)}" in st.session_state
             with st.expander(_row_label(n, item),
-                             expanded=bucket == "⚠️ Needs you"):
+                             expanded=not committed):
                 st.caption(item["msg"])
                 render_decision(d, desk)
-
-
-# ---------------- 💬 chat ----------------
-
-def render_chat(desk):
-    st.markdown("**💬 Chat (follow-ups / clarifications)**")
-    top_l, top_r = st.columns([3, 1])
-    top_l.caption("Follow-ups share one conversation with the messages above; "
-                  "tapping a ▶ option fills the box.")
-    if top_r.button("🔄 New chat", use_container_width=True):
-        desk.agent.new_conversation()
-        st.session_state.turns = []
-
-    for turn in st.session_state.get("turns", []):
-        with st.chat_message("user", avatar="🧑‍🔧"):
-            st.write(turn["user"])
-        with st.chat_message("assistant", avatar="🤖"):
-            render_decision(turn["decision"], desk)
-
-    queued = st.session_state.pop("queued_input", None)
-    prompt = st.chat_input("Follow up, or tap a ▶ option above") or queued
-    if prompt and _budget_ok():
-        st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
-        with st.spinner("Working..."):
-            decision = desk.handle_message(prompt, requester="dispatcher")
-        st.session_state.setdefault("turns", []).append(
-            {"user": prompt, "decision": decision})
-        st.rerun()
 
 
 # ---------------- 📊 dashboard ----------------
@@ -405,14 +422,14 @@ def main():
 
     desk = get_desk()
     tab_main, tab_dash, tab_recent = st.tabs(
-        ["🗂 Inbox", "📊 Dashboard", "🧾 Records"])
+        ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
 
     with tab_main:
-        col_inbox, col_chat = st.columns([5, 4])
-        with col_inbox:
+        col_work, col_chat = st.columns([7, 3])
+        with col_work:
             render_inbox(desk)
         with col_chat:
-            render_chat(desk)
+            render_chat_log(desk)
     with tab_dash:
         render_dashboard(desk)
     with tab_recent:
