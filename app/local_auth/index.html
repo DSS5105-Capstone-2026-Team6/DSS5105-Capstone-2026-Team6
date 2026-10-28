@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Tiny two-way Streamlit component: reads (and on request saves or
+     clears) the remember-me token in this browser's localStorage and sends
+     the stored value back to Python. Raw component protocol, no build step. -->
+<html><body><script>
+function send(type, data) {
+  window.parent.postMessage(Object.assign({isStreamlitMessage: true, type: type}, data), "*");
+}
+window.addEventListener("message", function (event) {
+  if (!event.data || event.data.type !== "streamlit:render") return;
+  var args = event.data.args || {};
+  var value = "";
+  try {
+    if (args.action === "set") localStorage.setItem(args.name, args.token);
+    if (args.action === "forget") localStorage.removeItem(args.name);
+    value = localStorage.getItem(args.name) || "";
+  } catch (e) {}
+  send("streamlit:setComponentValue", {value: value, dataType: "json"});
+});
+send("streamlit:componentReady", {apiVersion: 1});
+send("streamlit:setFrameHeight", {height: 0});
+</script></body></html>
