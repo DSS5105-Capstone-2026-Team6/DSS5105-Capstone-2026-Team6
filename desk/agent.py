@@ -42,6 +42,7 @@ except ImportError:  # run directly as a script: python desk/agent.py
 
 from desk.budget import CallBudget
 from desk.confirmation import validate_intent
+from desk.contracts import canonical_order_id
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -208,6 +209,8 @@ class DispatchAgent:
                     arguments = json.loads(call.function.arguments or "{}")
                     if not isinstance(arguments, dict):
                         raise ValueError("Tool arguments must be an object")
+                    if isinstance(arguments.get("order_id"), str):
+                        arguments["order_id"] = canonical_order_id(arguments["order_id"])
                     result = dispatch_tool(call.function.name, arguments, desk=self.desk)
                 except (TypeError, ValueError):
                     arguments, result = {}, {"error": "Invalid tool arguments. Please retry with a JSON object."}

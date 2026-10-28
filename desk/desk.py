@@ -34,7 +34,7 @@ from desk.confirmation import (commit_intent_workshop, fast_intent,
                            looks_like_confirmation)
 from desk.audit import StaleAllocation
 from desk.allocator import rank_candidates
-from desk.contracts import Constraint
+from desk.contracts import Constraint, canonical_order_id
 
 _OPTIONS_LINE = re.compile(r"(?im)^OPTIONS:\s*(.+?)\s*$")
 
@@ -56,6 +56,19 @@ def extract_options(explanation):
     options = [o.strip() for o in m.group(1).split("|") if o.strip()]
     clean = _OPTIONS_LINE.sub("", explanation).strip()
     return clean, options
+
+
+def _restore_user_text(agent, wrapped, text):
+    """The conversation history (which the UI renders) records the user's
+    own words, not the internal context a follow-up wraps around them."""
+    history = getattr(agent, "history", None)
+    if not isinstance(history, list):
+        return
+    for i in range(len(history) - 1, -1, -1):
+        m = history[i]
+        if isinstance(m, dict) and m.get("role") == "user" and m.get("content") == wrapped:
+            history[i] = {**m, "content": text}
+            return
 
 
 class DispatchDesk:
@@ -140,6 +153,13 @@ class DispatchDesk:
         A missing decision invalidates all old confirm buttons. Both adapters
         use this entry point; the language model never owns a write capability.
         """
+        if not decision.candidates and (not decision.parsed.order_id
+                                        or self.orders.by_id(decision.parsed.order_id) is None):
+            # Nothing real to preserve (e.g. the order was not found): treat the
+            # follow-up as a fresh message instead of a proposal for a
+            # non-existent order.
+            fresh = self.handle_message(text, requester=requester)
+            return fresh, None, fresh.explanation
         intent = fast_intent(text, decision)
         if intent is None:
             intent = self.agent.classify_followup(text, decision)
@@ -174,8 +194,9 @@ class DispatchDesk:
             updated = self.handle_message(context, requester=requester)
         finally:
             self._ranking_context = None
+            _restore_user_text(self.agent, context, text)
         if updated.candidates:
-            explicit_ids = {x.upper() for x in re.findall(r"\bORD-\d+\b", text, flags=re.I)}
+            explicit_ids = {canonical_order_id(x) for x in re.findall(r"\bORD[\s_-]*\d+\b", text, flags=re.I)}
             if (updated.parsed.order_id != decision.parsed.order_id
                     and updated.parsed.order_id not in explicit_ids):
                 return None, None, "The response referred to another order. Please specify the order and request a new proposal."
