@@ -4,6 +4,9 @@
 
 The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
 
+## Deployed Apps
+Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app/
+Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 ## Project Structure
 
 ```
@@ -35,6 +38,8 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 ├── adapter/                   # Telegram bot shell around DispatchDesk (bot branch)
 │   ├── session.py             # per-chat session: trigger filter + confirmation gate (pure, tested)
 │   └── telegram_bot.py        # python-telegram-bot wiring; zero business logic
+├── app/
+│   ├── streamlit_app.py       # Dispatcher UI: candidates + estimated dates → human confirms → audit record written
 ├── eval/
 │   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
