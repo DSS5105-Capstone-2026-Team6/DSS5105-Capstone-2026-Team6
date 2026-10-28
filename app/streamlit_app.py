@@ -524,7 +524,7 @@ def render_dashboard(desk):
     # Altair, not st.bar_chart: bars side by side (st.bar_chart stacks
     # them, which doubled the height) and every label horizontal
     import altair as alt
-    series = ["April 1 snapshot", "Live queue"]
+    series = ["Starting queue (Apr 1)", "Live queue"]
     queues = pd.DataFrame({"workshop": names * 2,
                            "series": [series[0]] * len(names)
                                      + [series[1]] * len(names),
@@ -562,7 +562,7 @@ def render_recent(desk):
                   "on the right to zero the demo.")
     if top_r.button("↺ Reset demo", use_container_width=True,
                     help="Archive the current audit log, clear the session, "
-                         "and reset queues to the April 1 snapshot"):
+                         "and reset queues to the starting queue (Apr 1)"):
         import datetime as _dt
         path = desk.audit.path
         if path.exists():
