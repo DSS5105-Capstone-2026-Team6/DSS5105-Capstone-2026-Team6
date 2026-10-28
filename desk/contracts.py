@@ -18,6 +18,19 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from uuid import uuid4
 from typing import Optional
+import re
+
+_ORDER_ID = re.compile(r"ORD[\s_-]*0*(\d+)", re.I)
+
+
+def canonical_order_id(order_id):
+    """'ord-63', 'ORD 63' or 'ORD-0063' -> 'ORD-063' (the register's
+    three-digit form). Only the spelling changes, never the number, so this
+    is not a nearest-match guess. Anything else is returned stripped."""
+    if not isinstance(order_id, str):
+        return order_id
+    m = _ORDER_ID.fullmatch(order_id.strip())
+    return f"ORD-{int(m.group(1)):03d}" if m else order_id.strip()
 
 
 class Behaviour(Enum):

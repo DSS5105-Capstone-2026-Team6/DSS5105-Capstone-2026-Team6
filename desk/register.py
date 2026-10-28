@@ -15,11 +15,13 @@ from pathlib import Path
 
 try:
     from desk.config import DATA_DIR
+    from desk.contracts import canonical_order_id
     from harness.simulate import load_workshops
 except ImportError:  # run directly as a script: python desk/register.py
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.config import DATA_DIR
+    from desk.contracts import canonical_order_id
     from harness.simulate import load_workshops
 
 ORDER_FIELDS = [
@@ -40,7 +42,7 @@ class OrderStore:
         self._by_id = {r["order_id"]: r for r in self.orders}
 
     def by_id(self, order_id):
-        return self._by_id.get(order_id)
+        return self._by_id.get(canonical_order_id(order_id))
 
     def row(self, record):
         """Project a raw CSV row to the public shape (all values strings)."""

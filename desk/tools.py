@@ -65,7 +65,7 @@ def lookup_order(order_id=None, customer=None, product=None, category=None,
             return {"status": "not_found", "matches": [],
                     "message": f"No order with id {order_id} exists in orders.csv."}
         return {"status": "found", "matches": [store.row(rec)],
-                "message": f"Found {order_id}."}
+                "message": f"Found {rec['order_id']}."}
 
     if customer is None and product is None and category is None:
         return {"status": "not_found", "matches": [],

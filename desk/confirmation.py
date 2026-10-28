@@ -2,6 +2,8 @@
 import re
 from dataclasses import dataclass
 
+from desk.contracts import canonical_order_id
+
 YES = {'yes', 'y', 'yep', 'yes please', 'ok', 'okay', 'sure', 'commit', 'confirm',
        'confirmed', 'go ahead', 'please do', 'do it', 'sounds good', '确认', '好的',
        '行', '可以', '就这样', '确认吧', '好', '就这么办', '没问题'}
@@ -83,8 +85,10 @@ def validate_intent(payload, text, decision):
     wid = payload.get('workshop_id')
     if intent == 'confirm':
         ids = {c.workshop_id for c in decision.candidates}
-        mentioned_orders = re.findall(r'\bORD-\d+\b', text, flags=re.I)
-        if (BLOCKERS.search(text) or changes or any(edits) or payload.get('order_id') != decision.parsed.order_id
-                or not isinstance(wid, str) or wid not in ids or any(x.upper() != decision.parsed.order_id for x in mentioned_orders)):
+        mentioned_orders = re.findall(r'\bORD[\s_-]*\d+\b', text, flags=re.I)
+        if (BLOCKERS.search(text) or changes or any(edits)
+                or canonical_order_id(payload.get('order_id')) != decision.parsed.order_id
+                or not isinstance(wid, str) or wid not in ids
+                or any(canonical_order_id(x) != decision.parsed.order_id for x in mentioned_orders)):
             return FollowupIntent('other')
     return FollowupIntent(intent, wid, tuple(changes), *edits)

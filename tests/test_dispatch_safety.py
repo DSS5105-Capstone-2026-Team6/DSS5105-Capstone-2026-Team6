@@ -18,7 +18,7 @@ from desk.agent import DispatchAgent, load_api_key
 from desk.audit import AuditLog
 from desk.budget import BudgetExceeded, CallBudget
 from desk.confirmation import FollowupIntent, commit_intent_workshop, validate_intent
-from desk.contracts import Behaviour, Decision, ParsedRequest, to_dict
+from desk.contracts import Behaviour, Decision, ParsedRequest, canonical_order_id, to_dict
 from desk.desk import DispatchDesk, ProposalChanged
 from desk.tools import dispatch_tool, tool_schemas
 from eval.score_run import score_run
@@ -376,6 +376,53 @@ class SafetyTests(unittest.TestCase):
         with patch('time.time',return_value=10000+31*86400):
             self.assertFalse(ns['_valid_auth_token'](token,'test-password'))
 
+
+    # ---------------- follow-up display and order ids ----------------
+
+    def test_followup_history_records_user_words_not_internal_context(self):
+        desk=self.desk(); desk.agent.excluded=['W2']
+        d=self.proposal(desk)
+        desk.agent.intent=FollowupIntent('question')
+        desk.follow_up('why this workshop?',d)
+        users=[m['content'] for m in desk.agent.history if m['role']=='user']
+        self.assertEqual(users[-1],'why this workshop?')
+        self.assertFalse(any('Current proposal' in u for u in users))
+
+    def test_order_id_spellings_resolve_without_guessing(self):
+        for raw,want in [('ORD-63','ORD-063'),('ord 63','ORD-063'),('ORD-0063','ORD-063'),
+                         ('ORD63','ORD-063'),(' ORD-063 ','ORD-063'),('ORD-999','ORD-999'),
+                         ('W2','W2'),(None,None)]:
+            with self.subTest(raw=raw):
+                self.assertEqual(canonical_order_id(raw),want)
+        found=dispatch_tool('lookup_order',{'order_id':'ORD-63'})
+        self.assertEqual(found['status'],'found')
+        self.assertEqual(found['matches'][0]['order_id'],'ORD-063')
+        self.assertEqual(dispatch_tool('lookup_order',{'order_id':'ORD-999'})['status'],'not_found')
+
+    def test_agent_logs_canonical_order_id_for_tool_calls(self):
+        class Msg(SimpleNamespace):
+            def model_dump(self): return {'role':'assistant','content':self.content}
+        call=SimpleNamespace(id='c1',function=SimpleNamespace(
+            name='lookup_order',arguments=json.dumps({'order_id':'ORD-63'})))
+        replies=iter([Msg(content=None,tool_calls=[call]),Msg(content='Found it.',tool_calls=None)])
+        create=lambda **kw:SimpleNamespace(choices=[SimpleNamespace(message=next(replies))])
+        agent=DispatchAgent(client=SimpleNamespace(chat=SimpleNamespace(
+            completions=SimpleNamespace(create=create))))
+        agent.chat('ORD-63, sent')
+        self.assertEqual(agent.tool_log[0]['arguments']['order_id'],'ORD-063')
+        self.assertEqual(agent.tool_log[0]['result']['status'],'found')
+
+    def test_followup_on_unknown_order_starts_fresh(self):
+        desk=self.desk()
+        d=Decision('',Behaviour.NO_DATA,parsed=ParsedRequest(order_id='ORD-999'),
+                   explanation='No such order.')
+        desk.agent.classify_followup=lambda *a: self.fail('no proposal to classify against')
+        desk.agent.next_order='ORD-041'
+        updated,record,_=desk.follow_up('what orders do you have?',d)
+        self.assertIsNone(record)
+        self.assertEqual(updated.parsed.order_id,'ORD-041')
+        users=[m['content'] for m in desk.agent.history if m['role']=='user']
+        self.assertEqual(users,['what orders do you have?'])
 
 if __name__=='__main__':
     unittest.main()
