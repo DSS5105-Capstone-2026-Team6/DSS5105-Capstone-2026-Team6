@@ -521,8 +521,10 @@ def render_dashboard(desk):
         defect.append(w.defect_rate)
 
     st.markdown("**📡 Workshop queue levels**")
-    # one stacked column per workshop: the April 1 queue at the bottom,
-    # what this session committed on top, so the full height = live queue
+    # Same spec st.bar_chart builds (grid, legend, tooltip, zoom/pan),
+    # except: one stacked column (April 1 queue at the bottom, what this
+    # session committed on top, so the full height = live queue) and
+    # horizontal labels
     import altair as alt
     series = ["Starting queue (Apr 1)", "Added this session"]
     added = [round(max(0.0, lv - s0), 2) for lv, s0 in zip(live, snapshot)]
@@ -530,34 +532,38 @@ def render_dashboard(desk):
                            "series": [series[0]] * len(names)
                                      + [series[1]] * len(names),
                            "order": [0] * len(names) + [1] * len(names),
-                           "days": snapshot + added,
-                           "live": live * 2})
+                           "value": snapshot + added})
     chart = alt.Chart(queues).mark_bar().encode(
-        x=alt.X("workshop:N", sort=names, title="Workshop",
-                axis=alt.Axis(labelAngle=0)),
-        y=alt.Y("sum(days):Q", title="Queue (days)",
-                axis=alt.Axis(titleAngle=0, titleAlign="left",
+        x=alt.X("workshop:O", sort=None, title="Workshop",
+                axis=alt.Axis(grid=False, labelAngle=0)),
+        y=alt.Y("value:Q", title="Queue (days)",
+                axis=alt.Axis(grid=True, titleAngle=0, titleAlign="left",
                               titleY=-10, titleX=0)),
-        color=alt.Color("series:N", sort=series, title=None,
+        color=alt.Color("series:N", title=" ",
                         scale=alt.Scale(domain=series,
                                         range=[BLUE_PALE, BLUE_DEEP]),
-                        legend=alt.Legend(orient="bottom")),
+                        legend=alt.Legend(orient="bottom", offset=5,
+                                          titlePadding=5)),
         order=alt.Order("order:Q", sort="ascending"),
-        tooltip=["workshop", "series", "days",
-                 alt.Tooltip("live", title="live queue")])
-    # .interactive(): scroll to zoom, drag to pan, like st.bar_chart
+        tooltip=["workshop:N", alt.Tooltip("value:Q", title="value"),
+                 alt.Tooltip("series:N", title="color")])
     st.altair_chart(chart.interactive(), use_container_width=True)
 
     st.markdown("**🧬 Cost × defect rate (bubble = live queue)**")
     trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
                           "queue_days": live, "workshop": names})
-    # Altair, not st.scatter_chart, only so each bubble can carry its name
+    # Same spec st.scatter_chart builds, plus a name beside each bubble
     base = alt.Chart(trade).encode(
-        x=alt.X("cost_per_pc:Q", title="Cost ($/pc)"),
-        y=alt.Y("defect_rate:Q", title="Defect rate"))
+        x=alt.X("cost_per_pc:Q", title="Cost ($/pc)",
+                axis=alt.Axis(grid=False)),
+        y=alt.Y("defect_rate:Q", title="Defect rate",
+                axis=alt.Axis(grid=True)))
     bubbles = base.mark_circle(color=BLUE_SOFT).encode(
-        size=alt.Size("queue_days:Q", legend=alt.Legend(orient="bottom")),
-        tooltip=["workshop", "cost_per_pc", "defect_rate", "queue_days"])
+        size=alt.Size("queue_days:Q", title="queue_days",
+                      legend=alt.Legend(orient="bottom", offset=5,
+                                        titlePadding=0.5)),
+        tooltip=["workshop:N", "cost_per_pc:Q", "defect_rate:Q",
+                 "queue_days:Q"])
     labels = base.mark_text(align="left", dx=10).encode(text="workshop:N")
     st.altair_chart((bubbles + labels).interactive(),
                     use_container_width=True)
