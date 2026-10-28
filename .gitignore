@@ -183,6 +183,9 @@ temp/
 .streamlit/secrets.toml
 .env.*
 !.env.example
-results/
+results/*
+# but keep the evaluation run artefacts — they are the README's evidence
+!results/inbox_*.jsonl
+!results/inbox_*.json
 *.sqlite3
 *.sqlite3-*

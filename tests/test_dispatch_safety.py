@@ -208,7 +208,7 @@ class SafetyTests(unittest.TestCase):
                 load_api_key('deepseek',env_path=Path(self.temp.name)/'missing')
 
     def test_missing_results_count_as_failures(self):
-        labels=json.loads(Path('data/labels_inbox.json').read_text())
+        labels=json.loads(Path('data/labels_inbox.json').read_text(encoding="utf-8"))
         label=labels[0]; path=Path(self.temp.name)/'run.jsonl'
         path.write_text(json.dumps({'request_id':label['request_id'],'behaviour':label['behaviour'],
                                    'explanation':'','tool_log':[]})+'\n')
@@ -240,7 +240,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_streamlit_replace_item_invalidates_old_card(self):
         # Exercise the UI state helper without importing/starting Streamlit.
-        source=Path('app/streamlit_app.py').read_text()
+        source=Path('app/streamlit_app.py').read_text(encoding="utf-8")
         node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='_replace_item')
         old=Decision('',Behaviour.ALLOCATE)
         state={'decisions':[{'decision':old}]}
@@ -332,7 +332,7 @@ class SafetyTests(unittest.TestCase):
             warning=lambda *a,**kw:None,error=lambda *a,**kw:None)
         names={'_replace_item','render_item_chat','_budget_ok','_norm_msg','_log_exchange',
                '_auth_token','_valid_auth_token'}
-        nodes=[n for n in ast.parse(Path('app/streamlit_app.py').read_text()).body
+        nodes=[n for n in ast.parse(Path('app/streamlit_app.py').read_text(encoding="utf-8")).body
                if isinstance(n,ast.FunctionDef) and n.name in names]
         import hmac,hashlib
         namespace={'st':ui,'Decision':Decision,'Behaviour':Behaviour,'AUTH_DAYS':30,

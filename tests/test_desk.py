@@ -317,6 +317,71 @@ def test_duplicate_commit_refused(desk):
     assert len(desk.audit.load_all()) == 1         # no second record
 
 
+# ---------------- router v2.2 ----------------
+
+def _late_rank(oid, chosen="W6"):
+    """A rank where EVERY candidate lands after the due date."""
+    return ("rank_candidates", {"order_id": oid},
+            {"chosen": chosen, "candidates": [
+                {"workshop_id": "W6", "name": "Nimble Needle",
+                 "estimated_finish": "2026-04-11", "days_late": 6.0,
+                 "cost": 2250.0, "defect_risk": 0.05, "components": {}},
+                {"workshop_id": "W5", "name": "GiantWeave",
+                 "estimated_finish": "2026-04-12", "days_late": 7.0,
+                 "cost": 1650.0, "defect_risk": 0.06, "components": {}}]})
+
+
+def test_rank_all_late_is_impossible_not_allocate(desk):
+    """v2.2 failure pin: a rank whose every candidate misses the due date is
+    IMPOSSIBLE — recommending a late workshop is not an allocation."""
+    log = _log([_found_lookup("ORD-099", pieces="1500", due="2026-04-05"),
+                _late_rank("ORD-099")])
+    d = route("Sending ORD-002 outside — who has room this week?", "reply",
+              log)
+    assert d.behaviour is Behaviour.IMPOSSIBLE
+    assert d.chosen.workshop_id == "W6"     # best-late option still shown
+    assert len(d.candidates) == 2
+
+
+def test_rank_with_any_ontime_candidate_stays_allocate(desk):
+    """Only ALL-late downgrades; one on-time candidate keeps ALLOCATE."""
+    log = _log([_found_lookup("ORD-041"), _rank("ORD-041")])
+    d = route("t", "r", log)
+    assert d.behaviour is Behaviour.ALLOCATE
+
+
+def test_dispatch_intent_without_completed_flow_asks_not_answers(desk):
+    """v2.2 failure pin: 'send it / need it moving' with no rank and no
+    feasibility check must not fall through to ANSWER — the desk asks."""
+    d = route("New rush coming in — details to follow, but book capacity "
+              "somewhere warm.", "reply", _log([]))
+    assert d.behaviour is Behaviour.ASK
+
+
+def test_non_dispatch_chat_still_answers(desk):
+    """A pure register question keeps ANSWER (no alloc markers)."""
+    d = route("How many pieces does ORD-041 have?", "reply", _log([]))
+    assert d.behaviour is Behaviour.ANSWER
+
+
+def test_data_question_not_hijacked_by_ask_rule(desk):
+    """History questions stay NO_DATA — alloc markers absent, query markers
+    present, even though v2.2 added an ASK fallback."""
+    d = route("Which workshop did we use for the Harbor Knits batch last "
+              "October?", "reply", _log([]))
+    assert d.behaviour is Behaviour.NO_DATA
+
+
+def test_estimate_delivery_does_not_invite_per_workshop_loops():
+    """v2.2: R21/R23 showed the model looping estimate_delivery over every
+    workshop instead of calling rank_candidates once — the tool description
+    was literally telling it to. Pin the new guidance."""
+    from desk.tools import ESTIMATE_DELIVERY_SCHEMA
+    desc = ESTIMATE_DELIVERY_SCHEMA["function"]["description"]
+    assert "rank_candidates" in desc
+    assert "for every candidate" not in desc
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-v"]))

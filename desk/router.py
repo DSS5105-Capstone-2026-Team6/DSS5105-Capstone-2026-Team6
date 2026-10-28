@@ -10,8 +10,12 @@ outcome of the hard cases cannot depend on the LLM's wording. v2 priority:
     ALLOCATE    a successful rank_candidates whose order is the one the
                 message asked about (a rank for a *different* order — e.g.
                 the model guessed one after a not_found lookup — is ignored)
-    IMPOSSIBLE  earliest_feasible shows even the split misses the due date
-    ASK         lookup_order returned several matches (ask, don't guess)
+    IMPOSSIBLE  earliest_feasible shows even the split misses the due date;
+                v2.2: or a rank whose EVERY candidate finishes late — a
+                late recommendation is not an allocation
+    ASK         lookup_order returned several matches (ask, don't guess);
+                v2.2: or a dispatch-intent message whose tool flow never
+                completed (no rank, no feasibility check)
     NO_DATA     lookup_order found nothing for the id/filters the message gave
     ANSWER      everything else (register questions, missing-info asks)
 """
@@ -46,6 +50,15 @@ def _looks_like_data_question(text):
     t = (text or "").lower()
     return any(m in t for m in _QUERY_MARKERS) and \
         not any(m in t for m in _ALLOC_MARKERS)
+
+
+def _looks_like_alloc_request(text):
+    """The message wants something dispatched ("send", "need", "asap")
+    without being a pure data question. Used to keep half-finished dispatch
+    flows out of the ANSWER fallback (v2.2)."""
+    t = (text or "").lower()
+    return any(m in t for m in _ALLOC_MARKERS) and \
+        not any(m in t for m in _QUERY_MARKERS)
 
 
 def _suggested_workshop_id(text, workshops):
@@ -113,17 +126,21 @@ def route(text, reply, log, workshops=None) -> Decision:
                 parsed.suggested_workshop = row["name"]
 
     # 2. ALLOCATE from a consistent rank (candidates also attach to REFUSE
-    #    as the alternatives the reply offers)
+    #    as the alternatives the reply offers). v2.2: when EVERY candidate
+    #    lands after the due date this is not an allocation but an
+    #    IMPOSSIBLE — the best-late option still shows as `chosen`.
     if rank_relevant:
         parsed.order_id = parsed.order_id or rank["arguments"].get("order_id")
         rows = rank["result"]["candidates"]
         candidates = [Candidate(**{k: row[k] for k in _CANDIDATE_FIELDS})
                       for row in rows]
         if behaviour is not Behaviour.REFUSE:
-            behaviour = Behaviour.ALLOCATE
             top = next(r for r in rows
                        if r["workshop_id"] == rank["result"]["chosen"])
             chosen = Candidate(**{k: top[k] for k in _CANDIDATE_FIELDS})
+            behaviour = (Behaviour.IMPOSSIBLE
+                         if rows and all(r["days_late"] > 0 for r in rows)
+                         else Behaviour.ALLOCATE)
 
     if behaviour is Behaviour.ANSWER:
         # 3. IMPOSSIBLE: even the split misses the due date
@@ -151,6 +168,11 @@ def route(text, reply, log, workshops=None) -> Decision:
         #    about something outside the data (R13 customer quotes)
         elif _looks_like_data_question(text):
             behaviour = Behaviour.NO_DATA
+        # 7. v2.2: a dispatch-intent message whose tool flow never completed
+        #    (no rank, no feasibility check) must not fall through to
+        #    ANSWER — the desk asks for the missing piece instead
+        elif _looks_like_alloc_request(text):
+            behaviour = Behaviour.ASK
 
     return Decision(request_id="", behaviour=behaviour, parsed=parsed,
                     candidates=candidates, chosen=chosen,
