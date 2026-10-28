@@ -16,6 +16,7 @@ Desk layer layout:
 
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
+from uuid import uuid4
 from typing import Optional
 
 
@@ -86,6 +87,10 @@ class Decision:
     options: list = field(default_factory=list)      # ASK: tappable choices (order ids)
     tool_log: list = field(default_factory=list)
     created_at: str = ""               # ISO timestamp
+    decision_id: str = field(default_factory=lambda: uuid4().hex)
+    state_version: Optional[str] = None
+    objective: str = "lateness"
+    excluded: list = field(default_factory=list)
 
 
 @dataclass
@@ -100,7 +105,8 @@ class AllocationRecord:
     committed_by: str                  # the human who confirmed
     committed_at: str                  # ISO timestamp
     queue_before: float = 0.0          # workshop queue (days) before commit
-    queue_after: float = 0.0           # after: before + pieces / capacity
+    queue_after: float = 0.0           # after: before + expected work
+    evidence: dict = field(default_factory=dict)
 
 
 def to_dict(obj):

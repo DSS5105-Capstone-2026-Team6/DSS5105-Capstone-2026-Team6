@@ -5,16 +5,14 @@ The chat agent (desk/agent.py) is the mouth and hands; the desk is the brain
 and memory. handle_message() runs one message through the agent and hands
 the tool log to desk/router.py, which assembles the structured Decision the
 UI renders and the evaluation scores; confirm() is the only path that moves
-state, and it goes through commit_allocation.
+state through the transactional allocation ledger.
 """
 
 try:
     from desk.agent import DispatchAgent
     from desk.register import OrderStore
-    from desk.tools import commit_allocation
     from desk.router import route
-    from .contracts import (Behaviour, Candidate, Decision, ParsedRequest,
-                            allocation_from_dict, to_dict)
+    from .contracts import to_dict
     from .state import DeskState
     from .audit import AuditLog
 except ImportError:  # run directly as a script
@@ -23,50 +21,29 @@ except ImportError:  # run directly as a script
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.agent import DispatchAgent
     from desk.register import OrderStore
-    from desk.tools import commit_allocation
     from desk.router import route
-    from desk.contracts import (Behaviour, Candidate, Decision, ParsedRequest,
-                                allocation_from_dict, to_dict)
+    from desk.contracts import to_dict
     from desk.state import DeskState
     from desk.audit import AuditLog
 
 import re
 
-_YES_WORDS = ("yes", "y", "yep", "yes please", "ok", "okay", "sure",
-              "commit", "confirm", "confirmed", "go ahead", "please do",
-              "do it", "sounds good", "确认", "好的", "行", "可以")
+from dataclasses import replace
+from datetime import datetime, timezone
+from desk.confirmation import (commit_intent_workshop, fast_intent,
+                           looks_like_confirmation)
+from desk.audit import StaleAllocation
+from desk.allocator import rank_candidates
+from desk.contracts import Constraint
 
 _OPTIONS_LINE = re.compile(r"(?im)^OPTIONS:\s*(.+?)\s*$")
 
 
-def looks_like_confirmation(text):
-    """Deterministic yes-detector for follow-up messages: when the agent has
-    just asked 'Reply yes to commit ...', a bare affirmation commits without
-    another LLM round-trip. Deliberately conservative — anything with a
-    'but' or a question mark is a conversation, not a confirmation."""
-    t = (text or "").strip().lower().rstrip(".!。")
-    return t in _YES_WORDS or t.startswith(("yes,", "yes do", "yes commit"))
+class ProposalChanged(ValueError):
+    def __init__(self, decision):
+        super().__init__("Queues changed. Review the updated proposal and confirm again.")
+        self.decision = decision
 
-
-def commit_intent_workshop(text, decision):
-    """A follow-up that names a workshop together with an action word commits
-    THAT candidate ('commit to W2', 'send it to SteadyHands') — any candidate,
-    not just the buttoned top three. A bare affirmation commits the
-    recommended one. Returns a workshop_id, or None when the message is
-    conversation rather than an instruction."""
-    t = (text or "").strip().lower()
-    if not t:
-        return None
-    if looks_like_confirmation(t):
-        return decision.chosen.workshop_id if decision.chosen else None
-    action_words = ("commit", "confirm", "book", "send", "use", "go with",
-                    "place", "assign", "give", "确认", "定给", "就用", "派给")
-    if not any(w in t for w in action_words):
-        return None
-    for c in decision.candidates or []:
-        if c.workshop_id.lower() in t or c.name.lower() in t:
-            return c.workshop_id
-    return None
 
 
 def extract_options(explanation):
@@ -83,16 +60,18 @@ def extract_options(explanation):
 
 class DispatchDesk:
     def __init__(self, model=None, stages=False, audit_path=None,
-                 provider=None, api_key=None, persona="dispatcher"):
+                 provider=None, api_key=None, persona="dispatcher", agent=None):
         from desk.config import DEFAULT_PROVIDER
-        self.agent = DispatchAgent(model=model, stages=stages, api_key=api_key,
+        self.agent = agent or DispatchAgent(model=model, stages=stages, api_key=api_key,
                                    provider=provider or DEFAULT_PROVIDER,
                                    persona=persona)
         self.agent.desk = self                  # chat loop passes this to tools
         self.orders = OrderStore(stages=stages)
         self.workshops = self.agent.workshops   # shared with the agent
         self.state = DeskState(stages=stages)
-        self.audit = AuditLog(audit_path) if audit_path else AuditLog()
+        audit_kwargs = {"initial_queues": self.state.queues}
+        self.audit = AuditLog(audit_path, **audit_kwargs) if audit_path else AuditLog(**audit_kwargs)
+        self.state.audit = self.audit
 
     # ---------------- conversation ----------------
 
@@ -101,6 +80,7 @@ class DispatchDesk:
         """One chat message -> Decision (candidates + explanation + tool
         log). No state moves here; that only happens in confirm().
         verbose=True streams each tool round to stdout."""
+        version = self.audit.version
         reply = self.agent.chat(text, verbose=verbose)
         decision = route(text, reply, self.agent.tool_log,
                          workshops=self.workshops)
@@ -121,7 +101,96 @@ class DispatchDesk:
                 p.pieces = int(rec["pieces"])
                 p.category = rec["category"]
                 p.due_date = rec["due_date"]
+        decision.state_version = version
+        decision.created_at = datetime.now(timezone.utc).isoformat()
+        self._attach_ranking(decision, requester or "dispatcher")
         return decision
+
+    def _attach_ranking(self, decision, requester):
+        ranks = [x for x in decision.tool_log if x["tool"] == "rank_candidates"
+                 and "error" not in x["result"]
+                 and x["arguments"].get("order_id") == decision.parsed.order_id]
+        if ranks:
+            args = ranks[-1]["arguments"]
+            decision.objective = args.get("objective", "lateness")
+            decision.excluded = list(ranks[-1]["result"].get("excluded", args.get("excluded")) or [])
+            decision.parsed.constraints = [Constraint("exclude", requester, x)
+                                           for x in decision.excluded]
+
+    def refresh(self, decision):
+        version = self.audit.version
+        result = rank_candidates(decision.parsed.order_id, decision.objective,
+                                 excluded=decision.excluded, orders=self.orders,
+                                 store=self.workshops, queues=self.state.queues)
+        fresh = route("", "Queues changed. Please review these updated candidates and confirm again.",
+                      [{"tool": "rank_candidates",
+                        "arguments": {"order_id": decision.parsed.order_id,
+                                      "objective": decision.objective,
+                                      "excluded": decision.excluded}, "result": result}],
+                      workshops=self.workshops)
+        fresh.parsed = replace(decision.parsed)
+        fresh.objective, fresh.excluded = decision.objective, list(decision.excluded)
+        fresh.state_version = version
+        fresh.created_at = datetime.now(timezone.utc).isoformat()
+        return fresh
+
+    def follow_up(self, text, decision, requester="dispatcher"):
+        """Return (updated decision or None, committed record or None, reply).
+
+        A missing decision invalidates all old confirm buttons. Both adapters
+        use this entry point; the language model never owns a write capability.
+        """
+        intent = fast_intent(text, decision)
+        if intent is None:
+            intent = self.agent.classify_followup(text, decision)
+        if intent.intent == "cancel":
+            return None, None, "Cancelled the pending proposal. Nothing was allocated."
+        if intent.intent == "confirm":
+            target = next((c for c in decision.candidates if c.workshop_id == intent.workshop_id), None)
+            if target is not None:
+                try:
+                    record = self.confirm(replace(decision, chosen=target), committed_by=requester)
+                except ProposalChanged as exc:
+                    return exc.decision, None, str(exc)
+                return None, record, f"Committed {record.record_id} — {record.order_id} → {record.workshop_id}."
+        if any(x in intent.changes for x in ("pieces", "due_date", "other")):
+            return None, None, ("This changes the source order. Update the order register and reload the desk first, "
+                                "then request a new proposal; nothing has been allocated.")
+        # Supply existing constraints on every follow-up, so an explanation or
+        # a new objective does not accidentally drop an earlier exclusion.
+        context = (f"Current proposal: order {decision.parsed.order_id}; "
+                   f"objective {decision.objective}; exclusions {decision.excluded}. "
+                   "Preserve these constraints unless the user explicitly changes them. "
+                   "For an allocation change, call rank_candidates again.\nUser follow-up: " + text)
+        additions = {self.workshops.resolve(x) for x in intent.exclude_add}
+        removals = {self.workshops.resolve(x) for x in intent.exclude_remove}
+        if None in additions or None in removals:
+            return None, None, "Unknown workshop in the changed constraints. Please request a new proposal."
+        inherited = {self.workshops.resolve(x) for x in decision.excluded} - removals
+        self._ranking_context = {"order_id": decision.parsed.order_id,
+                                 "required": sorted((inherited | additions) - {None}),
+                                 "removed": removals}
+        try:
+            updated = self.handle_message(context, requester=requester)
+        finally:
+            self._ranking_context = None
+        if updated.candidates:
+            explicit_ids = {x.upper() for x in re.findall(r"\bORD-\d+\b", text, flags=re.I)}
+            if (updated.parsed.order_id != decision.parsed.order_id
+                    and updated.parsed.order_id not in explicit_ids):
+                return None, None, "The response referred to another order. Please specify the order and request a new proposal."
+            # Preserve who originally imposed each surviving constraint.
+            old_constraints = {self.workshops.resolve(c.target): c
+                               for c in decision.parsed.constraints if c.kind == "exclude"}
+            updated.parsed.constraints = [
+                old_constraints.get(self.workshops.resolve(c.target)) or c
+                for c in updated.parsed.constraints]
+            return updated, None, updated.explanation
+        if intent.intent == "question":
+            # A read-only answer can keep the same proposal. Do not change its
+            # version: concurrent commits must still trigger a refresh.
+            return decision, None, updated.explanation
+        return None, None, updated.explanation
 
     # ---------------- confirmation ----------------
 
@@ -130,13 +199,35 @@ class DispatchDesk:
         audit record. The decision must carry an order and a choice."""
         if decision.chosen is None or not decision.parsed.order_id:
             raise ValueError("nothing to commit: decision has no chosen workshop")
-        result = commit_allocation(decision.parsed.order_id,
-                                   decision.chosen.workshop_id,
-                                   committed_by=committed_by,
-                                   orders=self.orders, desk=self)
-        if not result["committed"]:
-            raise ValueError(result["error"])
-        return allocation_from_dict(result["record"])
+        ids = {c.workshop_id for c in decision.candidates}
+        if decision.chosen.workshop_id not in ids:
+            raise ValueError("Chosen workshop is not in this proposal")
+        if decision.state_version is None:
+            raise ValueError("Proposal has no state version. Request a new proposal.")
+        if decision.state_version != self.audit.version:
+            raise ProposalChanged(self.refresh(decision))
+        order = self.orders.by_id(decision.parsed.order_id)
+        if order is None:
+            raise ValueError("Order no longer exists")
+        wid = decision.chosen.workshop_id
+        excluded_ids = {self.workshops.resolve(x) for x in decision.excluded}
+        if wid in excluded_ids:
+            raise ValueError("Workshop is excluded by this proposal")
+        error = self.state.validate(order, wid)
+        if error:
+            raise ValueError(error["error"])
+        try:
+            return self.audit.allocate(order, self.workshops.workshops[wid],
+                committed_by=committed_by, expected_version=decision.state_version,
+                decision_id=decision.decision_id,
+                evidence={"objective": decision.objective, "excluded": decision.excluded,
+                          "constraints": to_dict(decision.parsed.constraints),
+                          "reason": decision.explanation, "chosen": to_dict(decision.chosen),
+                          "candidates": to_dict(decision.candidates),
+                          "tool_log": decision.tool_log})
+        except StaleAllocation:
+            raise ProposalChanged(self.refresh(decision)) from None
+
 
 
 if __name__ == "__main__":

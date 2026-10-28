@@ -1,7 +1,7 @@
 """
 tools — the deterministic tool layer the LLM calls through.
 
-The seven core tools (roadmap Table 4) live here with their JSON schemas;
+The read-only tools live here with their JSON schemas;
 rank_candidates (the allocator) is implemented in desk/allocator.py and
 exposed through the same registry. TOOL_REGISTRY maps each tool to its
 schema (sent to the model) and its Python function (executed locally, no
@@ -16,23 +16,23 @@ Tool index:
     estimate_delivery   finish date, slack, cost, defect risk (one order x workshop)
     probe_overload      read-only what-if overload probe
     earliest_feasible   earliest date, single batch or split
-    commit_allocation   audited commit (re-checks eligibility first)
+    commit_allocation   backend-only compatibility endpoint; not a model tool
     rank_candidates     the allocator (desk/allocator.py)
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 try:
     from desk.register import OrderStore, WorkshopStore
     from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
-    from desk.contracts import AllocationRecord, to_dict
+    from desk.contracts import to_dict
 except ImportError:  # run directly as a script: python desk/tools.py
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.register import OrderStore, WorkshopStore
     from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
-    from desk.contracts import AllocationRecord, to_dict
+    from desk.contracts import to_dict
 
 # algorithm2.py is a script-style module (imports `simulate` flat), so its
 # directory must be importable whether we run as a package or directly.
@@ -501,50 +501,16 @@ def commit_allocation(order_id=None, workshop_id=None,
     if wid is None:
         return {"committed": False, "error": f"unknown workshop {workshop_id!r}"}
 
-    # an order is dispatched exactly once: a second commit would double-count
-    # the queue, so refuse with the existing record instead of overwriting
-    for old in desk.audit.load_all():
-        if old.order_id == order_id:
-            return {"committed": False,
-                    "error": f"{order_id} was already committed to "
-                             f"{old.workshop_id} ({old.record_id}). "
-                             "Refusing the duplicate commit."}
-
-    result = desk.state.commit(rec, wid)
-    if isinstance(result, dict):                    # eligibility re-check failed
-        return {"committed": False, **result}
-    queue_before, queue_after = result
-
-    record = AllocationRecord(
-        record_id=f"A-{len(desk.audit.load_all()) + 1:04d}",
-        decision_id=order_id, order_id=order_id, workshop_id=wid,
-        pieces=int(rec["pieces"]), committed_by=committed_by,
-        committed_at=datetime.now().isoformat(timespec="seconds"),
-        queue_before=round(queue_before, 2), queue_after=round(queue_after, 2))
-    desk.audit.append(record)
+    error = desk.state.validate(rec, wid)
+    if error:
+        return {"committed": False, **error}
+    try:
+        record = desk.audit.allocate(rec, desk.workshops.workshops[wid],
+                                     committed_by=committed_by)
+    except ValueError as exc:
+        return {"committed": False, "error": str(exc)}
     return {"committed": True, "record": to_dict(record)}
 
-
-COMMIT_ALLOCATION_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "commit_allocation",
-        "description": "Commit an allocation after the human dispatcher "
-                       "confirms: re-checks eligibility, updates the queue "
-                       "and writes the append-only audit record. Never call "
-                       "it without an explicit confirmation.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string"},
-                "workshop_id": {"type": "string"},
-                "committed_by": {"type": "string",
-                                 "description": "who confirmed"},
-            },
-            "required": ["order_id", "workshop_id"],
-        },
-    },
-}
 
 
 # ---------------- registry ----------------
@@ -561,8 +527,6 @@ TOOL_REGISTRY = {
     "probe_overload": {"schema": PROBE_OVERLOAD_SCHEMA, "func": probe_overload},
     "earliest_feasible": {"schema": EARLIEST_FEASIBLE_SCHEMA,
                           "func": earliest_feasible},
-    "commit_allocation": {"schema": COMMIT_ALLOCATION_SCHEMA,
-                          "func": commit_allocation},
 }
 
 # which store each kwarg receives ("orders" = OrderStore, "workshops" =
@@ -592,24 +556,25 @@ def tool_schemas():
 def dispatch_tool(name, arguments, *, desk=None):
     """Execute one tool call from the model. Returns the tool's result dict
     (or an error dict the model can read and relay). With a desk, tools read
-    its shared stores and live queues, and commit_allocation can write state;
-    without one, fresh stores are built and the committer refuses (nothing
-    to commit to)."""
+    its shared stores and live queues. All registered tools are read-only;
+    commit_allocation is a backend compatibility function, never an agent tool."""
     entry = TOOL_REGISTRY.get(name)
+    if name == "commit_allocation":
+        return {"error": "Allocations require the human confirmation endpoint; this tool is read-only."}
     if entry is None:
         return {"error": f"unknown tool {name!r}"}
     kwargs = dict(arguments or {})
-    if name == "commit_allocation":
-        kwargs["orders"] = desk.orders if desk else None
-        kwargs["desk"] = desk
-    else:
-        for param, kind in _STORE_KWARGS.get(name, {}).items():
-            if desk is not None:
-                kwargs[param] = getattr(desk, kind)
-            else:
-                kwargs[param] = _FACTORIES[kind]()
-        if desk is not None and name in _QUEUES_TOOLS:
-            kwargs["queues"] = desk.state.queues
+    for param, kind in _STORE_KWARGS.get(name, {}).items():
+        kwargs[param] = getattr(desk, kind) if desk is not None else _FACTORIES[kind]()
+    if desk is not None and name in _QUEUES_TOOLS:
+        kwargs["queues"] = desk.state.queues
+    context = getattr(desk, "_ranking_context", None)
+    if name == "rank_candidates" and context and kwargs.get("order_id") == context["order_id"]:
+        excluded = kwargs.get("excluded") or []
+        if not isinstance(excluded, list):
+            return {"error": "excluded must be a list"}
+        kwargs["excluded"] = [x for x in excluded if desk.workshops.resolve(x) not in context["removed"]]
+        kwargs["excluded"] += context["required"]
     try:
         return entry["func"](**kwargs)
     except (TypeError, ValueError) as exc:

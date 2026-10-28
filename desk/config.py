@@ -29,7 +29,7 @@ PROVIDERS = {
         "base_url": "https://api.deepseek.com",
         "models": [("deepseek-chat", "DeepSeek Chat"),
                    ("deepseek-reasoner", "DeepSeek Reasoner")],
-        "key_vars": ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"),
+        "key_vars": ("DEEPSEEK_API_KEY",),
         "key_hint": 'DEEPSEEK_API_KEY = "sk-..."',
     },
     "openai": {

@@ -2,7 +2,7 @@
 adapter/session.py — one Telegram chat <-> one DispatchDesk.
 
 A ChatSession owns a DispatchDesk built with the "group" persona, so every
-group/private chat gets isolated queues, history and audit. It also owns the
+group/private chat has its own conversation and a shared allocation ledger. It also owns the
 confirmation gate: the desk never commits on its own, and neither does the
 adapter — a commit happens only when the member's follow-up text parses as
 an explicit confirmation (desk.commit_intent_workshop, the same deterministic
@@ -17,15 +17,8 @@ can drive it with a fake desk.
     reply, _ = session.handle("yes", "Priya")     # commits the recommendation
 """
 
-from dataclasses import replace
 
-try:
-    from desk.desk import commit_intent_workshop
-except ImportError:  # run directly as a script
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from desk.desk import commit_intent_workshop
+from uuid import uuid4
 
 MAX_MESSAGE_LEN = 4096   # Telegram's per-message ceiling
 
@@ -45,7 +38,8 @@ def strip_mention(text, bot_username):
     """Drop the '@bot' token from a group message, leaving the request."""
     if not bot_username:
         return (text or "").strip()
-    return (text or "").replace(f"@{bot_username}", "").strip()
+    import re
+    return re.sub(r"@" + re.escape(bot_username) + r"\b", "", text or "", flags=re.I).strip()
 
 
 def split_reply(text, limit=MAX_MESSAGE_LEN):
@@ -74,30 +68,27 @@ class ChatSession:
     def __init__(self, make_desk):
         self.desk = make_desk()
         self.pending = None   # last decision with candidates, awaiting confirm
+        self.options_token = uuid4().hex
+        self.options = []
 
     def handle(self, text, requester=""):
         """One incoming message -> (reply, options). Confirmation is checked
         first; anything that is not an explicit commit goes to the agent."""
         text = (text or "").strip()
+        self.options_token = uuid4().hex
+        self.options = []
         if self.pending is not None:
-            workshop_id = commit_intent_workshop(text, self.pending)
-            if workshop_id is not None:
-                return self._commit(workshop_id, requester)
+            previous, self.pending = self.pending, None
+            decision, record, reply = self.desk.follow_up(text, previous, requester or "group")
+            self.pending = decision if decision and decision.candidates else None
+            self.options = list(decision.options) if decision else []
+            return reply or "(no reply)", self.options
         decision = self.desk.handle_message(text, requester=requester or None)
-        if decision.candidates:
-            self.pending = decision
-        return decision.explanation or "(no reply)", list(decision.options)
+        self.pending = decision if decision.candidates else None
+        self.options = list(decision.options)
+        return decision.explanation or "(no reply)", self.options
 
-    def _commit(self, workshop_id, requester):
-        target = next((c for c in self.pending.candidates
-                       if c.workshop_id == workshop_id), None)
-        decision, self.pending = self.pending, None   # one shot, like the UI
-        if target is None:
-            return "That workshop is no longer among the candidates.", []
-        try:
-            record = self.desk.confirm(replace(decision, chosen=target),
-                                       committed_by=requester or "group")
-        except ValueError as exc:
-            return f"Commit failed: {exc}", []
-        return (f"Committed {record.record_id} — "
-                f"{record.order_id} → {record.workshop_id}."), []
+    def handle_option(self, token, index, requester=""):
+        if token != self.options_token or not 0 <= index < len(self.options):
+            return "This choice has expired. Please use the latest proposal.", []
+        return self.handle(self.options[index], requester)

@@ -114,14 +114,18 @@ def score_run(labels_path=DEFAULT_LABELS, results_path=DEFAULT_RESULTS):
         "labels": str(labels_path), "results": str(results_path),
         "n_requests": n,
         "errors": n - len(scored),
+        "completion_rate": round(len(scored) / n, 3) if n else None,
+        "overall_behaviour_accuracy": round(sum(r["behaviour_ok"] for r in scored) / n, 3) if n else None,
+        "successful_behaviour_accuracy": round(sum(r["behaviour_ok"] for r in scored) / len(scored), 3) if scored else None,
+        "overall_faithfulness": round(sum(1 for r in scored if r["faithful"]) / n, 3) if n else None,
         "behaviour_accuracy": round(sum(r["behaviour_ok"] for r in scored)
-                                    / len(scored), 3) if scored else None,
+                                    / n, 3) if n else None,
         "workshop_accuracy": round(
             sum(1 for r in scored if r["workshop_ok"])
-            / sum(1 for r in scored if r["workshop_ok"] is not None), 3)
-            if any(r["workshop_ok"] is not None for r in scored) else None,
+            / sum(1 for label in labels.values() if label["workshop"]), 3)
+            if any(label["workshop"] for label in labels.values()) else None,
         "faithfulness": round(sum(1 for r in scored if r["faithful"])
-                              / len(scored), 3) if scored else None,
+                              / n, 3) if n else None,
         "mean_latency_s": round(sum(latencies) / len(latencies), 2)
                           if latencies else None,
         "per_kind_behaviour": {

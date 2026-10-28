@@ -1,48 +1,136 @@
-"""
-audit — the append-only JSONL audit log.
+"""Transactional allocation ledger shared by every desk in this deployment.
 
-One readable line per committed allocation (roadmap §1.3: "easy to inspect,
-diff and replay"). Append-only by construction: AuditLog has no update or
-delete method, and the file is opened in "a" mode only.
+Existing JSONL ledgers are imported once. SQLite is authoritative afterwards;
+set DISPATCH_DB_PATH to a durable volume for persistence across redeployments.
 """
-
 import json
+import os
+import sqlite3
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    from .contracts import AllocationRecord, allocation_from_dict, to_dict
-    from .config import DEFAULT_AUDIT_PATH
-except ImportError:  # run directly as a script
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from desk.contracts import AllocationRecord, allocation_from_dict, to_dict
-    from desk.config import DEFAULT_AUDIT_PATH
+from .config import DEFAULT_AUDIT_PATH
+from .contracts import AllocationRecord, allocation_from_dict, to_dict
 
 DEFAULT_PATH = DEFAULT_AUDIT_PATH
 
 
-class AuditLog:
-    def __init__(self, path=DEFAULT_PATH):
-        self.path = Path(path)
+class StaleAllocation(ValueError):
+    pass
 
-    def append(self, record: AllocationRecord):
+
+class AuditLog:
+    def __init__(self, path=DEFAULT_PATH, *, initial_queues=None):
+        legacy = Path(path)
+        configured = os.environ.get('DISPATCH_DB_PATH') if legacy == DEFAULT_PATH else None
+        self.path = Path(configured) if configured else legacy.with_suffix('.sqlite3')
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(to_dict(record), ensure_ascii=False) + "\n")
+        self.initial_queues = dict(initial_queues or {})
+        with self.connection() as db:
+            db.executescript('''
+                CREATE TABLE IF NOT EXISTS allocations (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id TEXT NOT NULL UNIQUE,
+                    record TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS ledger_meta (
+                    key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            ''')
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute("SELECT 1 FROM ledger_meta WHERE key='version'").fetchone():
+                db.execute("INSERT INTO ledger_meta VALUES ('version', ?)", (uuid.uuid4().hex,))
+            if not db.execute("SELECT 1 FROM ledger_meta WHERE key='legacy_imported'").fetchone():
+                if legacy.suffix == '.jsonl' and legacy.exists():
+                    # Malformed or duplicate legacy data aborts the whole import.
+                    for line in legacy.read_text(encoding='utf-8').splitlines():
+                        if line.strip():
+                            record = allocation_from_dict(json.loads(line))
+                            db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
+                                       (record.order_id, json.dumps(to_dict(record))))
+                db.execute("INSERT INTO ledger_meta VALUES ('legacy_imported', '1')")
+
+    @contextmanager
+    def connection(self):
+        db = sqlite3.connect(self.path, timeout=15)
+        try:
+            with db:
+                db.execute('PRAGMA busy_timeout=15000')
+                yield db
+        finally:
+            db.close()
+
+    @staticmethod
+    def _version(db):
+        return db.execute("SELECT value FROM ledger_meta WHERE key='version'").fetchone()[0]
+
+    @property
+    def version(self):
+        with self.connection() as db:
+            return self._version(db)
+
+    @staticmethod
+    def _records(db):
+        return [allocation_from_dict(json.loads(row[0])) for row in
+                db.execute('SELECT record FROM allocations ORDER BY seq')]
 
     def load_all(self):
-        if not self.path.exists():
-            return []
-        with open(self.path, encoding="utf-8") as f:
-            return [allocation_from_dict(json.loads(line))
-                    for line in f if line.strip()]
+        with self.connection() as db:
+            return self._records(db)
 
+    def _queues(self, db):
+        queues = dict(self.initial_queues)
+        for rec in self._records(db):
+            queues[rec.workshop_id] = (queues.get(rec.workshop_id, rec.queue_before)
+                                       + rec.queue_after - rec.queue_before)
+        return queues
 
-if __name__ == "__main__":
-    import datetime
-    log = AuditLog()
-    log.append(AllocationRecord(
-        record_id="A-0000", decision_id="SMOKE", order_id="ORD-000",
-        workshop_id="W6", pieces=1, committed_by="smoke-test",
-        committed_at=datetime.datetime.now().isoformat(timespec="seconds")))
-    print(f"appended; {len(log.load_all())} record(s) in {log.path}")
+    def queues(self):
+        with self.connection() as db:
+            return self._queues(db)
+
+    def append(self, record):
+        """Compatibility/import entry point; runtime commits use allocate()."""
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
+                       (record.order_id, json.dumps(to_dict(record), ensure_ascii=False)))
+            db.execute("UPDATE ledger_meta SET value=? WHERE key='version'", (uuid.uuid4().hex,))
+
+    def allocate(self, order, workshop, *, committed_by, expected_version=None,
+                 decision_id='', evidence=None):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            existing = db.execute('SELECT record FROM allocations WHERE order_id=?',
+                                  (order['order_id'],)).fetchone()
+            if existing:
+                old = json.loads(existing[0])
+                raise ValueError(f"{order['order_id']} was already committed to "
+                                 f"{old['workshop_id']} ({old['record_id']}). Refusing the duplicate commit.")
+            if expected_version is not None and expected_version != self._version(db):
+                raise StaleAllocation('Queues changed. Review the updated proposal before confirming.')
+            before = self._queues(db)[workshop.workshop_id]
+            added = int(order['pieces']) / workshop.capacity * (1 + .5 * workshop.defect_rate)
+            seq = db.execute("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='allocations'), 0) + 1").fetchone()[0]
+            record = AllocationRecord(
+                record_id=f'A-{seq:04d}', decision_id=decision_id or order['order_id'],
+                order_id=order['order_id'], workshop_id=workshop.workshop_id,
+                pieces=int(order['pieces']), committed_by=committed_by,
+                committed_at=datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                queue_before=before, queue_after=before + added,
+                evidence=evidence or {})
+            db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
+                       (record.order_id, json.dumps(to_dict(record), ensure_ascii=False)))
+            db.execute("UPDATE ledger_meta SET value=? WHERE key='version'", (uuid.uuid4().hex,))
+            return record
+
+    def reset(self):
+        """Reset demo allocations atomically, retaining API usage and old records."""
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('CREATE TABLE IF NOT EXISTS allocation_archive '
+                       '(archived_at TEXT NOT NULL, record TEXT NOT NULL)')
+            db.execute("INSERT INTO allocation_archive SELECT ?, record FROM allocations",
+                       (datetime.now(timezone.utc).isoformat(),))
+            db.execute('DELETE FROM allocations')
+            db.execute("UPDATE ledger_meta SET value=? WHERE key='version'", (uuid.uuid4().hex,))
