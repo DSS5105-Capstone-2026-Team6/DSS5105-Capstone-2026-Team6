@@ -6,6 +6,7 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 
 ## Deployed Apps
 Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
+
 Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 ## Project Structure
 
