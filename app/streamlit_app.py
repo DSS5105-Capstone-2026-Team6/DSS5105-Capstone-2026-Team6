@@ -625,7 +625,7 @@ AUTH_DAYS = 30
 
 
 def _auth_token(password):
-    """What the cookie holds: an HMAC of the password, never the password
+    """What the device stores: an HMAC of the password, never the password
     itself. Changing APP_PASSWORD makes every old cookie stop working."""
     import time
     import secrets
@@ -647,19 +647,40 @@ def _valid_auth_token(token, password):
 
 
 def _remember_device(token):
-    """Set the cookie on the app page (components.html is same-origin)."""
+    """Save the token in the browser's localStorage. Streamlit Cloud's proxy
+    does not pass page cookies through to st.context.cookies, so a cookie
+    was saved but never read back."""
     import streamlit.components.v1 as components
     components.html(
-        "<script>window.parent.document.cookie = "
-        f"'{AUTH_COOKIE}={token}; max-age={AUTH_DAYS * 86400}; path=/; "
-        "SameSite=Lax; Secure';</script>", height=0)
+        "<script>try { window.parent.localStorage.setItem("
+        f"'{AUTH_COOKIE}', '{token}'); }} catch (e) {{}}</script>", height=0)
+
+
+def _restore_device_login(forget=False):
+    """No server-side way to read localStorage, so hand a saved token to
+    Python once: reload the app page with ?auth=<token>. check_password()
+    validates it and strips it from the URL. forget=True drops a token
+    that failed (e.g. the password changed) so it never loops."""
+    import streamlit.components.v1 as components
+    if forget:
+        js = (f"try {{ window.parent.localStorage.removeItem('{AUTH_COOKIE}'); }}"
+              " catch (e) {}")
+    else:
+        js = ("try { const w = window.parent;"
+              f" const t = w.localStorage.getItem('{AUTH_COOKIE}');"
+              " const u = new URL(w.location.href);"
+              " if (t && !u.searchParams.has('auth')) {"
+              "  u.searchParams.set('auth', t); w.location.replace(u.toString()); }"
+              " } catch (e) {}")
+    components.html(f"<script>{js}</script>", height=0)
 
 
 def check_password():
     """Gate the desk behind APP_PASSWORD (st.secrets or env). Every
     Dispatch spends the owner's API key, so a public link must not be
     enough. No password configured fails closed unless local development
-    explicitly opts out. A correct password can be remembered via a cookie."""
+    explicitly opts out. A correct password is remembered on this device
+    (localStorage) for AUTH_DAYS."""
     if (Path(__file__).parent.parent / ".env").exists():
         from dotenv import load_dotenv
         load_dotenv(Path(__file__).parent.parent / ".env")
@@ -678,10 +699,13 @@ def check_password():
         if st.session_state.pop("remember_device", False):
             _remember_device(token)
         return True
-    cookies = getattr(getattr(st, "context", None), "cookies", None) or {}
-    if _valid_auth_token(str(cookies.get(AUTH_COOKIE, "")), expected):
-        st.session_state.authed = True
-        return True
+    saved = st.query_params.get("auth")
+    if saved is not None:
+        del st.query_params["auth"]     # never leave the token in the URL
+        if _valid_auth_token(str(saved), expected):
+            st.session_state.authed = True
+            return True
+    _restore_device_login(forget=saved is not None)
     pw = st.text_input("Password", type="password")
     if pw:
         from desk.budget import CallBudget, BudgetExceeded
