@@ -646,33 +646,16 @@ def _valid_auth_token(token, password):
         return False
 
 
-def _remember_device(token):
-    """Save the token in the browser's localStorage. Streamlit Cloud's proxy
-    does not pass page cookies through to st.context.cookies, so a cookie
-    was saved but never read back."""
+def _device_token(action="get", token=""):
+    """Read (or set / forget) the remember-me token in this browser's
+    localStorage through a tiny two-way component (app/local_auth). Cookies
+    don't work here: Streamlit Cloud's proxy never passes them to
+    st.context.cookies. Returns None until the browser has answered."""
     import streamlit.components.v1 as components
-    components.html(
-        "<script>try { window.parent.localStorage.setItem("
-        f"'{AUTH_COOKIE}', '{token}'); }} catch (e) {{}}</script>", height=0)
-
-
-def _restore_device_login(forget=False):
-    """No server-side way to read localStorage, so hand a saved token to
-    Python once: reload the app page with ?auth=<token>. check_password()
-    validates it and strips it from the URL. forget=True drops a token
-    that failed (e.g. the password changed) so it never loops."""
-    import streamlit.components.v1 as components
-    if forget:
-        js = (f"try {{ window.parent.localStorage.removeItem('{AUTH_COOKIE}'); }}"
-              " catch (e) {}")
-    else:
-        js = ("try { const w = window.parent;"
-              f" const t = w.localStorage.getItem('{AUTH_COOKIE}');"
-              " const u = new URL(w.location.href);"
-              " if (t && !u.searchParams.has('auth')) {"
-              "  u.searchParams.set('auth', t); w.location.replace(u.toString()); }"
-              " } catch (e) {}")
-    components.html(f"<script>{js}</script>", height=0)
+    local_auth = components.declare_component(
+        "local_auth", path=str(Path(__file__).parent / "local_auth"))
+    return local_auth(action=action, name=AUTH_COOKIE, token=token,
+                      key=f"local_auth_{action}", default=None)
 
 
 def check_password():
@@ -694,18 +677,17 @@ def check_password():
             return True
         st.error("APP_PASSWORD is required. Configure it in Streamlit Secrets before using this app.")
         return False
-    token = _auth_token(expected)
     if st.session_state.get("authed"):
-        if st.session_state.pop("remember_device", False):
-            _remember_device(token)
+        if st.session_state.get("remember_device"):
+            # keep rendering until the browser confirms the token is saved
+            saved = _device_token("set", st.session_state.remember_device)
+            if saved == st.session_state.remember_device:
+                del st.session_state["remember_device"]
         return True
-    saved = st.query_params.get("auth")
-    if saved is not None:
-        del st.query_params["auth"]     # never leave the token in the URL
-        if _valid_auth_token(str(saved), expected):
-            st.session_state.authed = True
-            return True
-    _restore_device_login(forget=saved is not None)
+    saved = _device_token("get")
+    if saved and _valid_auth_token(str(saved), expected):
+        st.session_state.authed = True
+        st.rerun()
     pw = st.text_input("Password", type="password")
     if pw:
         from desk.budget import CallBudget, BudgetExceeded
@@ -716,7 +698,7 @@ def check_password():
             return False
     if pw and hmac.compare_digest(pw.encode(), str(expected).encode()):
         st.session_state.authed = True
-        st.session_state.remember_device = True   # set after the rerun
+        st.session_state.remember_device = _auth_token(expected)
         st.rerun()
     if pw:
         st.error("Wrong password.")
