@@ -298,6 +298,7 @@ def test_confirm_round_trip(desk):
               "defect_risk": 0.05, "components": {}}]}),
     ])
     d = route("t", "r", log)
+    d.state_version = desk.audit.version
     record = desk.confirm(d, committed_by="dispatcher")
     assert record.order_id == "ORD-041" and record.workshop_id == "W6"
     assert record.committed_by == "dispatcher"

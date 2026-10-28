@@ -29,14 +29,13 @@ PROVIDERS = {
         "base_url": "https://api.deepseek.com",
         "models": [("deepseek-chat", "DeepSeek Chat"),
                    ("deepseek-reasoner", "DeepSeek Reasoner")],
-        "key_vars": ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"),
+        "key_vars": ("DEEPSEEK_API_KEY",),
         "key_hint": 'DEEPSEEK_API_KEY = "sk-..."',
     },
     "openai": {
         "label": "OpenAI (GPT)",
         "base_url": "https://api.openai.com/v1",   # /v1 is required
-        "models": [("gpt-6.1-terra", "GPT 6.1 Terra"),
-                   ("gpt-5.6-luna", "GPT 5.6 Luna")],
+        "models": [("gpt-6-luna", "GPT 6 Luna")],
         "key_vars": ("OPENAI_API_KEY",),
         "key_hint": 'OPENAI_API_KEY = "sk-..."',
     },

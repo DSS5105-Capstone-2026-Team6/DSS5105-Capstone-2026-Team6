@@ -26,12 +26,14 @@ import traceback
 from pathlib import Path
 
 try:
+    from desk.budget import BudgetExceeded
     from desk.config import PROJECT_ROOT
     from desk.chat_dump import split_chat_dump
     from adapter.session import (ChatSession, split_reply, strip_mention,
                                  wants_bot)
 except ImportError:  # run directly as a script
     sys.path.insert(0, str(Path(__file__).parent.parent))
+    from desk.budget import BudgetExceeded
     from desk.config import PROJECT_ROOT
     from desk.chat_dump import split_chat_dump
     from adapter.session import (ChatSession, split_reply, strip_mention,
@@ -62,12 +64,12 @@ def build_application(token, make_session=None, proxy=None):
             sessions[chat_id] = make_session()
         return sessions[chat_id]
 
-    async def send_reply(message, reply, options):
+    async def send_reply(message, reply, options, token=""):
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         markup = None
         if options:
-            rows = [[InlineKeyboardButton(o, callback_data=f"opt:{o}")]
-                    for o in options]
+            rows = [[InlineKeyboardButton(o, callback_data=f"opt:{token}:{i}")]
+                    for i, o in enumerate(options)]
             markup = InlineKeyboardMarkup(rows)
         chunks = split_reply(reply)
         for i, chunk in enumerate(chunks):
@@ -96,11 +98,13 @@ def build_application(token, make_session=None, proxy=None):
         for line in split_chat_dump(text):
             try:
                 reply, options = session.handle(line, requester=who)
+            except BudgetExceeded:
+                reply, options = "Request limit reached. Please try again later.", []
             except Exception:
                 traceback.print_exc()
                 reply, options = ("Something went wrong on my side — "
                                   "try again."), []
-            await send_reply(msg, reply, options)
+            await send_reply(msg, reply, options, session.options_token)
 
     async def on_option(update, context):
         """A tapped OPTIONS button re-enters the session as if the member had
@@ -116,11 +120,14 @@ def build_application(token, make_session=None, proxy=None):
         who = (query.from_user.full_name
                or query.from_user.username or "member")
         try:
-            reply, options = session.handle(query.data[4:], requester=who)
+            _, token, index = query.data.split(":", 2)
+            reply, options = session.handle_option(token, int(index), requester=who)
+        except BudgetExceeded:
+            reply, options = "Request limit reached. Please try again later.", []
         except Exception:
             traceback.print_exc()
             reply, options = "Something went wrong on my side — try again.", []
-        await send_reply(query.message, reply, options)
+        await send_reply(query.message, reply, options, session.options_token)
 
     builder = ApplicationBuilder().token(token)
     if proxy:

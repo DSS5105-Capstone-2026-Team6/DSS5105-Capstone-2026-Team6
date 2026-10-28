@@ -16,7 +16,21 @@ Desk layer layout:
 
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
+from uuid import uuid4
 from typing import Optional
+import re
+
+_ORDER_ID = re.compile(r"ORD[\s_-]*0*(\d+)", re.I)
+
+
+def canonical_order_id(order_id):
+    """'ord-63', 'ORD 63' or 'ORD-0063' -> 'ORD-063' (the register's
+    three-digit form). Only the spelling changes, never the number, so this
+    is not a nearest-match guess. Anything else is returned stripped."""
+    if not isinstance(order_id, str):
+        return order_id
+    m = _ORDER_ID.fullmatch(order_id.strip())
+    return f"ORD-{int(m.group(1)):03d}" if m else order_id.strip()
 
 
 class Behaviour(Enum):
@@ -86,6 +100,10 @@ class Decision:
     options: list = field(default_factory=list)      # ASK: tappable choices (order ids)
     tool_log: list = field(default_factory=list)
     created_at: str = ""               # ISO timestamp
+    decision_id: str = field(default_factory=lambda: uuid4().hex)
+    state_version: Optional[str] = None
+    objective: str = "lateness"
+    excluded: list = field(default_factory=list)
 
 
 @dataclass
@@ -100,7 +118,8 @@ class AllocationRecord:
     committed_by: str                  # the human who confirmed
     committed_at: str                  # ISO timestamp
     queue_before: float = 0.0          # workshop queue (days) before commit
-    queue_after: float = 0.0           # after: before + pieces / capacity
+    queue_after: float = 0.0           # after: before + expected work
+    evidence: dict = field(default_factory=dict)
 
 
 def to_dict(obj):

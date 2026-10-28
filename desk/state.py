@@ -36,7 +36,21 @@ class DeskState:
 
     def __init__(self, stages=False):
         self.workshops = WorkshopStore(stages)
-        self.queues = {wid: w.queue0 for wid, w in self.workshops.workshops.items()}
+        self._queues = {wid: w.queue0 for wid, w in self.workshops.workshops.items()}
+        self.audit = None
+
+    @property
+    def queues(self):
+        return self.audit.queues() if self.audit is not None else self._queues
+
+    def validate(self, order_rec, workshop_id):
+        batch = {"category": order_rec["category"], "pieces": int(order_rec["pieces"])}
+        if order_rec.get("dispatch_stage"):
+            batch["from_stage"] = order_rec["dispatch_stage"]
+        ok = {w.workshop_id for w in eligible_workshops(batch, self.workshops.workshops)}
+        if workshop_id not in ok:
+            return {"error": f"{workshop_id} cannot take this batch. Re-check eligibility before committing."}
+        return None
 
     def commit(self, order_rec, workshop_id):
         """Validate and apply one allocation. Returns (before, after) in
@@ -52,6 +66,8 @@ class DeskState:
                       else f"batch exceeds its {w.max_batch}-piece cap")
             return {"error": f"{workshop_id} cannot take this batch: {reason}. "
                              "Re-check eligibility before committing."}
+        if self.audit is not None:
+            raise ValueError("Use DispatchDesk.confirm() for a persistent desk")
         w = self.workshops.workshops[workshop_id]
         added = int(order_rec["pieces"]) / w.capacity * (1 + 0.5 * w.defect_rate)
         before = self.queues[workshop_id]

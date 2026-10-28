@@ -4,6 +4,10 @@
 
 The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
 
+## Deployed Apps
+Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
+
+Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 ## Project Structure
 
 ```
@@ -35,6 +39,8 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 ├── adapter/                   # Telegram bot shell around DispatchDesk (bot branch)
 │   ├── session.py             # per-chat session: trigger filter + confirmation gate (pure, tested)
 │   └── telegram_bot.py        # python-telegram-bot wiring; zero business logic
+├── app/
+│   ├── streamlit_app.py       # Dispatcher UI: candidates + estimated dates → human confirms → audit record written
 ├── eval/
 │   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
@@ -42,6 +48,19 @@ The factory (SweaterCo) farms out batches to 8 outside workshops when it is full
 ├── tests/                     # pytest suite: one failure case per feature (132 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
+
+## Safety and deployment
+
+See [deployment and migration notes](docs/DEPLOYMENT.md) before upgrading.
+The model tools are read-only. Human confirmation uses a transactionally shared
+SQLite allocation ledger; follow-ups update the pending proposal. Public
+Streamlit deployments require `APP_PASSWORD`, and every provider requires its
+own key (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Server-side
+API call budgets survive new sessions and Reset demo.
+
+SQLite shares state within one host; a separately hosted Telegram bot needs an
+external database to share state with Streamlit. Local cloud disk is not durable
+across all redeployments. Existing JSONL audit records are imported once.
 
 ## Quick Start
 
@@ -78,8 +97,8 @@ Tools (pure Python, no LLM) and where each gets its facts:
    ├─ rank_candidates     → the allocator's ranking logic, shared with the simulator
    ├─ probe_overload      → read-only queue arithmetic
    ├─ earliest_feasible   → earliest date, single batch or split
-   └─ commit_allocation   → writes the audit record + updates the chat-side queue,
-                            only after a human confirms
+   └─ application confirm endpoint (not a model tool)
+                          → validates the proposal and writes the shared ledger atomically
    │  structured results (numbers, reasons, candidates) go back to the agent
    ▼
 The LLM composes the reply, quoting only numbers the tools returned
@@ -106,4 +125,4 @@ scores the same way: `python eval/score_run.py --labels data/labels_heldout.json
 
 ## Team Members
 
-- 
+-
