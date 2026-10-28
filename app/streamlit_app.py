@@ -450,6 +450,9 @@ def render_inbox(desk):
                                   link=f"d{id(decision)}")
             st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
+            # the sidebar chat log was drawn before this loop ran; rerun so
+            # the new exchanges show up now, not after the next click
+            st.rerun()
 
     items = st.session_state.get("decisions", [])
     if not items:
