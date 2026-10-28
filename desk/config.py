@@ -17,6 +17,11 @@ DEFAULT_MODEL = "deepseek-chat"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 MAX_TOOL_ROUNDS = 8
 
+# The desk's world date: all business time math (queues, finishes, slack,
+# audit stamps) anchors here, not to the wall clock. (Becomes injectable
+# when the go-live date adaptation lands.)
+CHAT_AS_OF = "2026-04-01"
+
 # LLM provider presets. All three expose an OpenAI-compatible API, so one
 # SDK (openai) drives every provider. key_vars are the environment /
 # st.secrets names tried in order when resolving the key. Each model is an
