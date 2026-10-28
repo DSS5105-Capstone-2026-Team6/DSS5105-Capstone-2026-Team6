@@ -19,6 +19,8 @@ Run from the project root:
     uv run streamlit run app/streamlit_app.py
 """
 
+import hashlib
+import hmac
 import os
 import sys
 from pathlib import Path
@@ -564,11 +566,65 @@ def render_recent(desk):
              f"queue {r.queue_before} → {r.queue_after} d</span>")
 
 
+AUTH_COOKIE = "desk_auth"
+AUTH_DAYS = 30
+
+
+def _auth_token(password):
+    """What the cookie holds: an HMAC of the password, never the password
+    itself. Changing APP_PASSWORD makes every old cookie stop working."""
+    return hmac.new(str(password).encode(), b"dispatch-desk",
+                    hashlib.sha256).hexdigest()
+
+
+def _remember_device(token):
+    """Set the cookie on the app page (components.html is same-origin)."""
+    import streamlit.components.v1 as components
+    components.html(
+        "<script>window.parent.document.cookie = "
+        f"'{AUTH_COOKIE}={token}; max-age={AUTH_DAYS * 86400}; path=/; "
+        "SameSite=Lax; Secure';</script>", height=0)
+
+
+def check_password():
+    """Gate the desk behind APP_PASSWORD (st.secrets or env). Every
+    Dispatch spends the owner's API key, so a public link must not be
+    enough. No password configured -> open, as for local runs. A correct
+    password is remembered on this device for AUTH_DAYS via a cookie."""
+    try:
+        expected = st.secrets.get("APP_PASSWORD")
+    except Exception:          # no secrets.toml at all (local run)
+        expected = None
+    expected = expected or os.environ.get("APP_PASSWORD")
+    if not expected:
+        return True
+    token = _auth_token(expected)
+    if st.session_state.get("authed"):
+        if st.session_state.pop("remember_device", False):
+            _remember_device(token)
+        return True
+    cookies = getattr(getattr(st, "context", None), "cookies", None) or {}
+    if hmac.compare_digest(str(cookies.get(AUTH_COOKIE, "")).encode(),
+                           token.encode()):
+        st.session_state.authed = True
+        return True
+    pw = st.text_input("Password", type="password")
+    if pw and hmac.compare_digest(pw.encode(), str(expected).encode()):
+        st.session_state.authed = True
+        st.session_state.remember_device = True   # set after the rerun
+        st.rerun()
+    if pw:
+        st.error("Wrong password.")
+    return False
+
+
 def main():
     st.set_page_config(page_title="Dispatch Desk", layout="wide",
                        initial_sidebar_state="auto")
     st.markdown(CSS, unsafe_allow_html=True)
     st.title("🛰️ Dispatch Desk")
+    if not check_password():
+        st.stop()
 
     desk = get_desk()
     with st.sidebar:
