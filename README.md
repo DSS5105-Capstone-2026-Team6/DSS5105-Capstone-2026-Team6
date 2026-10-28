@@ -80,7 +80,8 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 │   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
 │   ├── config.py                # central constants: model, API and data/results paths
 │   ├── register.py              # OrderStore + WorkshopStore (shared data stores)
-│   ├── tools.py                 # the 8 deterministic tools (no LLM) + tool registry
+│   ├── tools.py                 # the 10 deterministic tools (no LLM) + tool registry
+│   ├── performance.py           # learned workshop performance (roadmap §1.6, SQLite-backed)
 │   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
 │   ├── agent.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
 │   ├── router.py                # code-assigned behaviour: tool log -> Decision
@@ -98,7 +99,7 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 │   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
-├── tests/                     # pytest suite: one failure case per feature (181 tests)
+├── tests/                     # pytest suite: one failure case per feature (189 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
