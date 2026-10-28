@@ -304,7 +304,9 @@ ESTIMATE_DELIVERY_SCHEMA = {
         "name": "estimate_delivery",
         "description": "Estimated finish date, slack against the due date, "
                        "cost and defect risk for one order at one workshop. "
-                       "Call it for every candidate before recommending.",
+                       "Use it to double-check a single named workshop; to "
+                       "compare workshops or pick one, call rank_candidates "
+                       "instead — never estimate workshops one by one.",
         "parameters": {
             "type": "object",
             "properties": {

@@ -126,7 +126,9 @@ RANK_CANDIDATES_SCHEMA = {
         "description": "The allocator: every eligible workshop ranked by the "
                        "objective (lateness first, or defects, or the hybrid "
                        "which keeps the lateness plateau and picks the lowest "
-                       "defect rate). Call it once per allocation request.",
+                       "defect rate). THE way to compare or choose workshops: "
+                       "call it once per allocation request, instead of "
+                       "estimating workshops one by one.",
         "parameters": {
             "type": "object",
             "properties": {
