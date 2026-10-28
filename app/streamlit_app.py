@@ -555,7 +555,7 @@ def render_dashboard(desk):
         x=alt.X("cost_per_pc:Q", title="Cost ($/pc)"),
         y=alt.Y("defect_rate:Q", title="Defect rate"))
     bubbles = base.mark_circle(color=BLUE_SOFT).encode(
-        size="queue_days:Q",
+        size=alt.Size("queue_days:Q", legend=alt.Legend(orient="bottom")),
         tooltip=["workshop", "cost_per_pc", "defect_rate", "queue_days"])
     labels = base.mark_text(align="left", dx=10).encode(text="workshop:N")
     st.altair_chart(bubbles + labels, use_container_width=True)
