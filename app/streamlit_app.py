@@ -526,7 +526,7 @@ def render_dashboard(desk):
     # session committed on top, so the full height = live queue) and
     # horizontal labels
     import altair as alt
-    series = ["Starting queue (Apr 1)", "Added this session"]
+    series = ["Queue on April 1", "Live queue"]
     added = [round(max(0.0, lv - s0), 2) for lv, s0 in zip(live, snapshot)]
     queues = pd.DataFrame({"workshop": names * 2,
                            "series": [series[0]] * len(names)
@@ -580,7 +580,7 @@ def render_recent(desk):
                   "on the right to zero the demo.")
     if top_r.button("↺ Reset demo", use_container_width=True,
                     help="Archive the current audit log, clear the session, "
-                         "and reset queues to the starting queue (Apr 1)"):
+                         "and reset queues to the queue on April 1"):
         import datetime as _dt
         path = desk.audit.path
         if path.exists():
