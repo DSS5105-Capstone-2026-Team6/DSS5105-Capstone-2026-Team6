@@ -85,6 +85,9 @@ class DispatchDesk:
         audit_kwargs = {"initial_queues": self.state.queues}
         self.audit = AuditLog(audit_path, **audit_kwargs) if audit_path else AuditLog(**audit_kwargs)
         self.state.audit = self.audit
+        from desk.performance import PerformanceStore
+        self.performance = PerformanceStore()   # learned shop performance,
+                                                # shared via the ledger db
 
     # ---------------- conversation ----------------
 

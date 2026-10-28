@@ -16,6 +16,8 @@ Tool index:
     estimate_delivery   finish date, slack, cost, defect risk (one order x workshop)
     probe_overload      read-only what-if overload probe
     earliest_feasible   earliest date, single batch or split
+    update_workshop_performance  learn from returned batches (roadmap §1.6)
+    flag_at_risk        committed batches projected to miss their due date
     commit_allocation   backend-only compatibility endpoint; not a model tool
     rank_candidates     the allocator (desk/allocator.py)
 """
@@ -26,6 +28,7 @@ try:
     from desk.register import OrderStore, WorkshopStore
     from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
     from desk.contracts import to_dict
+    from desk.performance import PerformanceStore, MIN_SAMPLES
 except ImportError:  # run directly as a script: python desk/tools.py
     import sys
     from pathlib import Path
@@ -33,6 +36,7 @@ except ImportError:  # run directly as a script: python desk/tools.py
     from desk.register import OrderStore, WorkshopStore
     from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
     from desk.contracts import to_dict
+    from desk.performance import PerformanceStore, MIN_SAMPLES
 
 # algorithm2.py is a script-style module (imports `simulate` flat), so its
 # directory must be importable whether we run as a package or directly.
@@ -256,7 +260,7 @@ GET_QUEUE_SCHEMA = {
 # ---------------- estimate_delivery ----------------
 
 def estimate_delivery(order_id=None, workshop_id=None, *,
-                      orders=None, store=None, queues=None):
+                      orders=None, store=None, queues=None, perf=None):
     """Estimate one order at one workshop. Returns an error dict for unknown
     ids — never a nearest match, mirroring lookup_order's guard. `queues`
     overrides the 1 April snapshot with the desk's live chat-side queues."""
@@ -281,21 +285,40 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
     batch = {"category": rec["category"], "pieces": pieces,
              "sent_date": CHAT_TODAY, "due_date": due_date}
 
-    total_days = est_turnaround_expected(batch, w, queues)
+    # learned performance (roadmap §1.6): once MIN_SAMPLES returned batches
+    # are on file, the estimate runs on the workshop's effective capacity and
+    # lead time instead of the profile card
+    learned = perf.learned(wid, profile=w) if perf else None
+    if learned:
+        work_days = pieces / learned["eff_capacity"] * (1 + 0.5 * w.defect_rate)
+        total_days = queues[wid] + work_days + learned["eff_lead_days"]
+    else:
+        total_days = est_turnaround_expected(batch, w, queues)
+        work_days = pieces / w.capacity * (1 + 0.5 * w.defect_rate)
     finish = CHAT_TODAY + timedelta(days=round(total_days))
-    work_days = pieces / w.capacity * (1 + 0.5 * w.defect_rate)
 
-    return {"order_id": order_id, "workshop_id": wid, "workshop_name": w.name,
-            "estimated_finish": finish.isoformat(),
-            "days_late": max(0, (finish - due_date).days),
-            "slack_days": (due_date - finish).days,
-            "cost": round(pieces * w.cost, 2),
-            "defect_risk": w.defect_rate,
-            "estimator": "profile_card",
-            "as_of": CHAT_TODAY.isoformat(),
-            "components": {"queue_days": round(queues[wid], 2),
-                           "work_days_expected": round(work_days, 2),
-                           "transport_days": w.lead_days}}
+    out = {"order_id": order_id, "workshop_id": wid, "workshop_name": w.name,
+           "estimated_finish": finish.isoformat(),
+           "days_late": max(0, (finish - due_date).days),
+           "slack_days": (due_date - finish).days,
+           "cost": round(pieces * w.cost, 2),
+           "defect_risk": w.defect_rate,
+           "estimator": "learned" if learned else "profile_card",
+           "as_of": CHAT_TODAY.isoformat(),
+           "components": {"queue_days": round(queues[wid], 2),
+                          "work_days_expected": round(work_days, 2),
+                          "transport_days": learned["eff_lead_days"] if learned
+                          else w.lead_days}}
+    # cautious estimate: the date the workshop meets in ~80% of observed
+    # batches, surfaced only when slack is tight (roadmap Table 5)
+    if learned and 0 <= out["slack_days"] <= 2:
+        cautious = CHAT_TODAY + timedelta(days=round(total_days
+                                                     + learned["p80_delay"]))
+        out["cautious"] = {"finish_p80": cautious.isoformat(),
+                           "p80_delay_days": learned["p80_delay"],
+                           "note": "tight slack: this workshop's 80th-"
+                                   "percentile delay puts the finish here"}
+    return out
 
 
 ESTIMATE_DELIVERY_SCHEMA = {
@@ -482,6 +505,116 @@ EARLIEST_FEASIBLE_SCHEMA = {
 }
 
 
+# ---------------- update_workshop_performance ----------------
+
+def update_workshop_performance(workshop_id=None, pieces=None,
+                                promised_date=None, actual_date=None, *,
+                                store=None, perf=None):
+    """Record one returned batch and update the workshop's learned
+    performance (roadmap Table 4). Read-only for allocations: it only makes
+    future estimates more accurate, it never moves work."""
+    store = store or WorkshopStore()
+    perf = perf or PerformanceStore()
+    if not workshop_id:
+        return {"error": "workshop_id is required"}
+    wid = store.resolve(workshop_id)
+    if wid is None:
+        return {"error": f"unknown workshop {workshop_id!r}"}
+    if not isinstance(pieces, int) or pieces <= 0:
+        return {"error": f"pieces must be a positive integer, got {pieces!r}"}
+    try:
+        result = perf.observe(wid, pieces, promised_date, actual_date)
+    except (TypeError, ValueError) as exc:
+        return {"error": f"bad dates (expected ISO YYYY-MM-DD): {exc}"}
+    if not result["active"]:
+        result["note"] = (f"recorded; learned estimates activate after "
+                          f"{MIN_SAMPLES} observed batches (currently "
+                          f"{result['observations']}) — profile card in use")
+    else:
+        result["note"] = ("learned estimates active: effective capacity "
+                          f"{result.get('eff_capacity')} pcs/day, p80 delay "
+                          f"{result.get('p80_delay')}d")
+    return result
+
+
+UPDATE_WORKSHOP_PERFORMANCE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "update_workshop_performance",
+        "description": "Record a returned batch (promised vs actual date) so "
+                       "the workshop's estimates learn from reality. Call it "
+                       "whenever a message reports a batch came back. Does "
+                       "not change any allocation.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "workshop_id": {"type": "string",
+                                "description": "workshop name or id"},
+                "pieces": {"type": "integer"},
+                "promised_date": {"type": "string",
+                                  "description": "ISO YYYY-MM-DD"},
+                "actual_date": {"type": "string",
+                                "description": "ISO YYYY-MM-DD"},
+            },
+            "required": ["workshop_id", "pieces", "promised_date",
+                         "actual_date"],
+        },
+    },
+}
+
+
+# ---------------- flag_at_risk ----------------
+
+def flag_at_risk(*, desk=None):
+    """Read-only early warning: every committed batch whose projected finish
+    (from the live queues) now lands after its due date. Never moves a batch;
+    reassignment remains a human decision (roadmap Table 4)."""
+    if desk is None:
+        return {"error": "flag_at_risk needs a desk context (audit + queues)"}
+    at_risk = []
+    for rec in desk.audit.load_all():
+        order = desk.orders.by_id(rec.order_id)
+        if order is None:
+            continue
+        due = date.fromisoformat(order["due_date"])
+        committed = date.fromisoformat(rec.committed_at[:10])
+        w = desk.workshops.workshops[rec.workshop_id]
+        work = rec.pieces / w.capacity * (1 + 0.5 * w.defect_rate)
+        # projection: the batch sat behind queue_before days of work at
+        # commit; elapsed days since commit drain it day by day
+        elapsed = (CHAT_TODAY - committed).days
+        remaining = max(0.0, rec.queue_before + work + w.lead_days - elapsed)
+        projected = CHAT_TODAY + timedelta(days=round(remaining))
+        if projected > due:
+            at_risk.append({
+                "order_id": rec.order_id, "record_id": rec.record_id,
+                "workshop_id": rec.workshop_id, "workshop_name": w.name,
+                "due_date": due.isoformat(),
+                "projected_finish": projected.isoformat(),
+                "projected_days_late": (projected - due).days})
+    at_risk.sort(key=lambda r: -r["projected_days_late"])
+    return {"as_of": CHAT_AS_OF, "at_risk": at_risk, "n_at_risk": len(at_risk),
+            "options": ["wait", "split the remainder", "reassign",
+                        "escalate"],
+            "read_only": True,
+            "note": "reassignment requires human confirmation; nothing here "
+                    "moves a batch"}
+
+
+FLAG_AT_RISK_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "flag_at_risk",
+        "description": "List committed batches now projected to miss their "
+                       "due date, with options (wait / split the remainder / "
+                       "reassign / escalate). Read-only early warning; call "
+                       "it when asked about risks, delays or anything "
+                       "slipping.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 # ---------------- commit_allocation ----------------
 
 def commit_allocation(order_id=None, workshop_id=None,
@@ -529,6 +662,9 @@ TOOL_REGISTRY = {
     "probe_overload": {"schema": PROBE_OVERLOAD_SCHEMA, "func": probe_overload},
     "earliest_feasible": {"schema": EARLIEST_FEASIBLE_SCHEMA,
                           "func": earliest_feasible},
+    "update_workshop_performance": {"schema": UPDATE_WORKSHOP_PERFORMANCE_SCHEMA,
+                                    "func": update_workshop_performance},
+    "flag_at_risk": {"schema": FLAG_AT_RISK_SCHEMA, "func": flag_at_risk},
 }
 
 # which store each kwarg receives ("orders" = OrderStore, "workshops" =
@@ -540,6 +676,7 @@ _STORE_KWARGS = {
     "estimate_delivery": {"orders": "orders", "store": "workshops"},
     "rank_candidates": {"orders": "orders", "store": "workshops"},
     "earliest_feasible": {"orders": "orders", "store": "workshops"},
+    "update_workshop_performance": {"store": "workshops"},
 }
 _FACTORIES = {"orders": OrderStore, "workshops": WorkshopStore}
 
@@ -548,6 +685,10 @@ _FACTORIES = {"orders": OrderStore, "workshops": WorkshopStore}
 # to the 2026-04-01 snapshot inside the tool
 _QUEUES_TOOLS = {"get_queue", "estimate_delivery", "rank_candidates",
                  "probe_overload", "earliest_feasible"}
+
+# tools that read the learned-performance store (desk injects its own, so UI
+# and bot learn from the same observations)
+_PERF_TOOLS = {"estimate_delivery", "update_workshop_performance"}
 
 
 def tool_schemas():
@@ -570,6 +711,10 @@ def dispatch_tool(name, arguments, *, desk=None):
         kwargs[param] = getattr(desk, kind) if desk is not None else _FACTORIES[kind]()
     if desk is not None and name in _QUEUES_TOOLS:
         kwargs["queues"] = desk.state.queues
+    if name in _PERF_TOOLS:
+        kwargs["perf"] = getattr(desk, "performance", None) or PerformanceStore()
+    if name == "flag_at_risk":
+        kwargs["desk"] = desk
     context = getattr(desk, "_ranking_context", None)
     if name == "rank_candidates" and context and kwargs.get("order_id") == context["order_id"]:
         excluded = kwargs.get("excluded") or []

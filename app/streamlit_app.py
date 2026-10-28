@@ -33,6 +33,7 @@ from desk.contracts import Behaviour, Decision, to_dict
 from desk.desk import DispatchDesk, ProposalChanged
 from desk.chat_dump import ENVELOPE, split_chat_dump
 from desk.budget import BudgetExceeded
+from desk.tools import flag_at_risk
 
 # behaviour badge chips: text + tint. Semantics come first (green/red/
 # orange/blue); everything else in the UI stays in the light-blue family.
@@ -124,7 +125,54 @@ def card(html):
     st.markdown(f'<div class="card">{html}</div>', unsafe_allow_html=True)
 
 
-# ---------------- chat log (sidebar) ----------------
+# ---------------- returned-batch recorder (sidebar) ----------------
+
+def render_performance_sidebar(desk):
+    """update_workshop_performance's UI face: record a returned batch so the
+    estimator learns (roadmap §1.6). Shows the learned-vs-profile state."""
+    from desk.performance import MIN_SAMPLES
+    from desk.tools import update_workshop_performance
+    with st.sidebar.expander("📥 Record a returned batch"):
+        workshops = sorted(desk.workshops.workshops.values(),
+                           key=lambda w: w.workshop_id)
+        with st.form("returned_batch", clear_on_submit=True):
+            ws = st.selectbox("Workshop", workshops,
+                              format_func=lambda w: f"{w.name} ({w.workshop_id})")
+            pieces = st.number_input("Pieces", min_value=1, value=400, step=50)
+            promised = st.date_input("Promised date")
+            actual = st.date_input("Actual return date")
+            submitted = st.form_submit_button("Record")
+        if submitted:
+            out = update_workshop_performance(
+                ws.workshop_id, int(pieces), promised.isoformat(),
+                actual.isoformat(), store=desk.workshops,
+                perf=desk.performance)
+            if "error" in out:
+                st.error(out["error"])
+            else:
+                st.success(f"Recorded ({out['delay_days']}d delay). "
+                           + out["note"])
+        # learned-vs-profile status line per workshop with observations
+        lines = []
+        for w in workshops:
+            learned = desk.performance.learned(w.workshop_id, profile=w)
+            if learned:
+                lines.append(f"**{w.workshop_id}**: learned "
+                             f"{learned['eff_capacity']} pcs/day "
+                             f"(profile {learned['profile_capacity']}), "
+                             f"p80 delay {learned['p80_delay']}d, "
+                             f"n={learned['observations']}")
+        if lines:
+            st.caption("Learned performance in use:")
+            for line in lines:
+                st.caption(line)
+        else:
+            st.caption(f"No learned performance yet — estimates use the "
+                       f"profile card until {MIN_SAMPLES} batches per "
+                       f"workshop are on file.")
+
+
+
 
 def _log_exchange(speaker, text, reply, link=None):
     """Append one exchange to the sidebar's running log. `link` ties the
@@ -498,11 +546,24 @@ def render_inbox(desk):
     to_confirm = pending.get(Behaviour.ALLOCATE, 0)
 
     # KPI row
-    k1, k2, k3, k4 = st.columns(4)
+    risk = flag_at_risk(desk=desk)
+    k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("⚠️ Needs you", sum(1 for x in items if x["decision"].behaviour in NEEDS_HUMAN))
     k2.metric("🟢 To confirm", to_confirm)
     k3.metric("✅ Committed", len(desk.audit.load_all()))
     k4.metric("🕒 Total queue (days)", round(sum(desk.state.queues.values()), 1))
+    k5.metric("🔴 At risk", risk["n_at_risk"])
+    if risk["n_at_risk"]:
+        with st.expander(f"🔴 {risk['n_at_risk']} committed batch(es) "
+                         "projected to miss the due date", expanded=True):
+            for r in risk["at_risk"]:
+                st.warning(
+                    f"**{r['order_id']}** @ {r['workshop_name']} — due "
+                    f"{r['due_date']}, projected {r['projected_finish']} "
+                    f"(+{r['projected_days_late']}d late). Options: "
+                    + " / ".join(risk["options"]))
+            st.caption("flag_at_risk is read-only; reassignment still goes "
+                       "through the normal human confirmation flow.")
 
     # one tap = one behaviour: the five cases never stack on the page
     FILTERS = [Behaviour.ALLOCATE, Behaviour.REFUSE, Behaviour.IMPOSSIBLE,
@@ -716,6 +777,7 @@ def main():
     desk = get_desk()
     with st.sidebar:
         render_chat_log()
+        render_performance_sidebar(desk)
     tab_main, tab_dash, tab_recent = st.tabs(
         ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
 
