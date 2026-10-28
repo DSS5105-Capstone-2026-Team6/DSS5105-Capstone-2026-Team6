@@ -177,3 +177,12 @@ tmp/
 temp/
 *.tmp
 *.temp
+
+
+# Local credentials and runtime state
+.streamlit/secrets.toml
+.env.*
+!.env.example
+results/
+*.sqlite3
+*.sqlite3-*

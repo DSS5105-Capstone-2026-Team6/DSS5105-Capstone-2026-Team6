@@ -87,12 +87,16 @@ def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
     excluded_ids = set()
     for name in excluded or []:
         wid = store.resolve(name)
-        if wid:
-            excluded_ids.add(wid)
+        if not wid:
+            return {"error": f"unknown excluded workshop {name!r}"}
+        excluded_ids.add(wid)
 
     batch = {"category": rec["category"], "pieces": int(rec["pieces"]),
              "sent_date": CHAT_TODAY,
              "due_date": date.fromisoformat(rec["due_date"])}
+
+    if rec.get("dispatch_stage"):
+        batch["from_stage"] = rec["dispatch_stage"]
 
     ok = [w for w in eligible_workshops(batch, store.workshops)
           if w.workshop_id not in excluded_ids]
@@ -112,7 +116,7 @@ def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
     else:
         rows = sorted(rows, key=lambda r: _sort_key(objective, r))
 
-    return {"order_id": order_id, "objective": objective,
+    return {"order_id": order_id, "objective": objective, "excluded": sorted(excluded_ids),
             "late_tol": late_tol if objective == "hybrid" else None,
             "chosen": rows[0]["workshop_id"] if rows else None,
             "candidates": rows,

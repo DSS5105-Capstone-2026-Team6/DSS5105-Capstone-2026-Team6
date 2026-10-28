@@ -8,6 +8,9 @@ question. The persona tests pin the group system prompt actually loading.
 """
 
 import pytest
+from types import SimpleNamespace
+from desk.desk import DispatchDesk
+from desk.confirmation import FollowupIntent
 
 from adapter.session import (ChatSession, split_reply, strip_mention,
                              wants_bot)
@@ -39,6 +42,9 @@ class FakeDesk:
         self.decision = decision
         self.commits = []
         self.messages = []
+        self.agent = SimpleNamespace(classify_followup=lambda *args: FollowupIntent("question"))
+
+    follow_up = DispatchDesk.follow_up
 
     def handle_message(self, text, requester=None):
         self.messages.append((text, requester))
@@ -132,7 +138,7 @@ def test_new_request_replaces_pending():
     session, fake = make_session()
     session.handle("first order", "Ravi")
     session.handle("actually, second order ORD-099", "Ravi")
-    assert fake.messages[-1][0].startswith("actually")
+    assert "actually, second order ORD-099" in fake.messages[-1][0]
 
 def test_no_candidates_nothing_pending():
     session, _ = make_session(FakeDesk(decision=None))

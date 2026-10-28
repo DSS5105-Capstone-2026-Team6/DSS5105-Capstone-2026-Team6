@@ -49,6 +49,19 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
+## Safety and deployment
+
+See [deployment and migration notes](docs/DEPLOYMENT.md) before upgrading.
+The model tools are read-only. Human confirmation uses a transactionally shared
+SQLite allocation ledger; follow-ups update the pending proposal. Public
+Streamlit deployments require `APP_PASSWORD`, and every provider requires its
+own key (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Server-side
+API call budgets survive new sessions and Reset demo.
+
+SQLite shares state within one host; a separately hosted Telegram bot needs an
+external database to share state with Streamlit. Local cloud disk is not durable
+across all redeployments. Existing JSONL audit records are imported once.
+
 ## Quick Start
 
 ```bash
@@ -84,8 +97,8 @@ Tools (pure Python, no LLM) and where each gets its facts:
    ├─ rank_candidates     → the allocator's ranking logic, shared with the simulator
    ├─ probe_overload      → read-only queue arithmetic
    ├─ earliest_feasible   → earliest date, single batch or split
-   └─ commit_allocation   → writes the audit record + updates the chat-side queue,
-                            only after a human confirms
+   └─ application confirm endpoint (not a model tool)
+                          → validates the proposal and writes the shared ledger atomically
    │  structured results (numbers, reasons, candidates) go back to the agent
    ▼
 The LLM composes the reply, quoting only numbers the tools returned
@@ -112,4 +125,4 @@ scores the same way: `python eval/score_run.py --labels data/labels_heldout.json
 
 ## Team Members
 
-- 
+-

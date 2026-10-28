@@ -30,6 +30,7 @@ queues stay at the 1 April snapshot throughout.
 import argparse
 import json
 import time
+from tempfile import TemporaryDirectory
 from datetime import datetime
 from pathlib import Path
 
@@ -74,42 +75,46 @@ def run_inbox(inbox_path=INBOX_PATH, out_path=DEFAULT_OUT, limit=None,
     if limit:
         requests = requests[:limit]
 
-    desk = DispatchDesk(model=model, provider=provider)
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Evaluation always starts from the fixture snapshot, independent of the live desk.
+    with TemporaryDirectory(prefix="dispatch-eval-") as ledger_dir:
+        desk = DispatchDesk(model=model, provider=provider,
+                            audit_path=Path(ledger_dir) / "eval.jsonl")
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps({"meta": {"provider": desk.agent.provider,
-                                     "model": desk.agent.model,
-                                     "run_at": datetime.now().isoformat(timespec="seconds"),
-                                     "n_requests": len(requests)}},
-                           ensure_ascii=False) + "\n")
-        for i, req in enumerate(requests, 1):
-            try:
-                if verbose:
-                    print(f"\n===== {req['request_id']} [{req['time']}] "
-                          f"{req['speaker']}: {req['text']}")
-                desk.agent.new_conversation()   # each request stands alone
-                t0 = time.perf_counter()
-                decision = desk.handle_message(req["text"],
-                                               requester=req["speaker"],
-                                               request_id=req["request_id"],
-                                               verbose=verbose)
-                latency_s = round(time.perf_counter() - t0, 2)
-                record = {"speaker": req["speaker"], "raw": req["text"],
-                          "latency_s": latency_s, **to_dict(decision)}
-                n_tools = len(decision.tool_log)
-            except Exception as exc:
-                record = {"request_id": req["request_id"], "speaker": req["speaker"],
-                          "raw": req["text"], "error": f"AGENT ERROR: {exc}"}
-                n_tools = 0
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            f.flush()
-            print(f"[{i}/{len(requests)}] {req['request_id']} done "
-                  f"({n_tools} tool calls, "
-                  f"{record.get('behaviour', record.get('error', '?'))})")
-    print(f"written to {out_path}")
-    return out_path
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"meta": {"provider": desk.agent.provider,
+                                         "model": desk.agent.model,
+                                         "run_at": datetime.now().isoformat(timespec="seconds"),
+                                         "n_requests": len(requests)}},
+                               ensure_ascii=False) + "\n")
+            for i, req in enumerate(requests, 1):
+                try:
+                    if verbose:
+                        print(f"\n===== {req['request_id']} [{req['time']}] "
+                              f"{req['speaker']}: {req['text']}")
+                    desk.agent.new_conversation()   # each request stands alone
+                    t0 = time.perf_counter()
+                    decision = desk.handle_message(req["text"],
+                                                   requester=req["speaker"],
+                                                   request_id=req["request_id"],
+                                                   verbose=verbose)
+                    latency_s = round(time.perf_counter() - t0, 2)
+                    record = {"speaker": req["speaker"], "raw": req["text"],
+                              "latency_s": latency_s, **to_dict(decision)}
+                    n_tools = len(decision.tool_log)
+                except Exception as exc:
+                    record = {"request_id": req["request_id"], "speaker": req["speaker"],
+                              "raw": req["text"], "error": f"AGENT ERROR: {exc}"}
+                    n_tools = 0
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                f.flush()
+                print(f"[{i}/{len(requests)}] {req['request_id']} done "
+                      f"({n_tools} tool calls, "
+                      f"{record.get('behaviour', record.get('error', '?'))})")
+        print(f"written to {out_path}")
+        return out_path
+
 
 
 if __name__ == "__main__":

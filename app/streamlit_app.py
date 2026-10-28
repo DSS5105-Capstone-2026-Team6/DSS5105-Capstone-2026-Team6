@@ -29,9 +29,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import streamlit as st
 
-from desk.contracts import Behaviour, to_dict
-from desk.desk import DispatchDesk
+from desk.contracts import Behaviour, Decision, to_dict
+from desk.desk import DispatchDesk, ProposalChanged
 from desk.chat_dump import ENVELOPE, split_chat_dump
+from desk.budget import BudgetExceeded
 
 # behaviour badge chips: text + tint. Semantics come first (green/red/
 # orange/blue); everything else in the UI stays in the light-blue family.
@@ -114,7 +115,7 @@ def get_desk():
             st.session_state.desk = desk
             st.session_state.desk_choice = choice
         except Exception as exc:  # missing API key, unreadable data...
-            st.error(f"Backend failed to start: {exc}")
+            st.error("Backend failed to start. Check the server configuration and provider key.")
             st.stop()
     return desk
 
@@ -252,13 +253,24 @@ def _save_thread(decision, desk):
                                                 for m in desk.agent.history]
 
 
+def _replace_item(previous, updated, reply):
+    if updated is None:
+        updated = Decision(request_id=previous.request_id, behaviour=Behaviour.ANSWER,
+                           parsed=previous.parsed, explanation=reply)
+    for item in st.session_state.get("decisions", []):
+        if item["decision"] is previous or item.get("updating_id") == previous.decision_id:
+            item["decision"] = updated
+            item["updating_id"] = previous.decision_id
+            break
+    return updated
+
+
 def render_item_chat(decision, desk):
     """The 4th-option conversation bound to ONE dispatch item. First shows
     every eligible workshop with its LIVE queue (re-read on each rerun, so
     the numbers move as soon as another dispatch commits); then the chat:
     ask anything, or name ANY candidate with an action word ('commit to
     W2', 'send it to Little Loom') to dispatch it — no LLM round."""
-    from desk.desk import commit_intent_workshop
     key = f"conv-{id(decision)}"
     conv = st.session_state.setdefault(key, [])
 
@@ -289,33 +301,35 @@ def render_item_chat(decision, desk):
         sent = st.form_submit_button("Send")
     if not (sent and prompt):
         return
-    wid = commit_intent_workshop(prompt, decision)
-    if (wid is not None and decision.candidates
-            and decision.parsed.order_id):
-        from dataclasses import replace
-        target = next((c for c in decision.candidates
-                       if c.workshop_id == wid), None)
-        try:
-            record = desk.confirm(replace(decision, chosen=target),
-                                  committed_by="dispatcher")
-        except ValueError as exc:
-            st.error(str(exc))
-            return
-        st.session_state[f"committed-{id(decision)}"] = record
-        line = (f"Committed {record.record_id} — "
-                f"{record.order_id} → {record.workshop_id}.")
-        conv.append({"role": "user", "content": prompt})
-        conv.append({"role": "assistant", "content": line})
-        _log_exchange("dispatcher", prompt, line)
-    else:
-        if not _budget_ok():
-            return
-        st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
-        desk.agent.history = [dict(m) for m in conv]   # continue THIS thread
+    if not _budget_ok():
+        return
+    st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
+    desk.agent.history = [dict(m) for m in conv]
+    # Invalidate old buttons before a request that may change the proposal.
+    _replace_item(decision, None, "Updating proposal...")
+    try:
         with st.spinner("Working..."):
-            reply = desk.agent.chat(prompt)
-        st.session_state[key] = [_norm_msg(m) for m in desk.agent.history]
-        _log_exchange("dispatcher", prompt, reply or "")
+            updated, record, reply = desk.follow_up(prompt, decision)
+    except BudgetExceeded:
+        _replace_item(decision, None, "Request limit reached. Please try again later.")
+        st.warning("Request limit reached. Please try again later.")
+        return
+    except Exception:
+        _replace_item(decision, None, "Request failed. Please request a new proposal.")
+        st.error("Request failed. Please retry later; no confirmation was completed.")
+        return
+    conv.append({"role": "user", "content": prompt})
+    conv.append({"role": "assistant", "content": reply})
+    if record is not None:
+        _replace_item(decision, decision, reply)
+        st.session_state[f"committed-{id(decision)}"] = record
+    else:
+        replacement = _replace_item(decision, updated, reply)
+        st.session_state[f"conv-{id(replacement)}"] = [_norm_msg(m) for m in desk.agent.history]
+        # Fast cancellation/confirmation has no model turn to persist.
+        if updated is None:
+            st.session_state[f"conv-{id(replacement)}"] = conv
+    _log_exchange("dispatcher", prompt, reply or "")
     st.rerun()
 
 
@@ -377,6 +391,9 @@ def render_confirm(decision, desk):
             try:
                 record = desk.confirm(replace(decision, chosen=c),
                                       committed_by="dispatcher")
+            except ProposalChanged as exc:
+                _replace_item(decision, exc.decision, str(exc))
+                st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
                 return
@@ -442,7 +459,15 @@ def render_inbox(desk):
             for i, msg in enumerate(msgs, 1):
                 desk.agent.new_conversation()  # inbox lines are independent
                 with st.spinner(f"Dispatching ({i}/{len(msgs)}: {msg[:40]}...)"):
-                    decision = desk.handle_message(msg, requester="dispatcher")
+                    st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
+                    try:
+                        decision = desk.handle_message(msg, requester="dispatcher")
+                    except BudgetExceeded:
+                        decision = Decision(request_id="", behaviour=Behaviour.ASK,
+                            explanation="Request limit reached. Please try again later.")
+                    except Exception:
+                        decision = Decision(request_id="", behaviour=Behaviour.ASK,
+                            explanation="Request failed. Please retry later or check server configuration.")
                     decisions.append({"msg": msg, "decision": decision})
                     _save_thread(decision, desk)   # per-item conversation seed
                     env = ENVELOPE.match(msg)
@@ -450,7 +475,6 @@ def render_inbox(desk):
                                   env.group(4) if env else msg,
                                   decision.explanation,
                                   link=f"d{id(decision)}")
-            st.session_state.n_sent = st.session_state.get("n_sent", 0) + len(msgs)
             st.session_state.decisions = decisions
             # the sidebar chat log was drawn before this loop ran; rerun so
             # the new exchanges show up now, not after the next click
@@ -508,8 +532,8 @@ def render_inbox(desk):
 # ---------------- 📊 dashboard ----------------
 
 def render_dashboard(desk):
-    st.caption("Live chat-side queue = 2026-04-01 snapshot + what this session "
-               "has committed. Bars jump after each confirm.")
+    st.caption("Live chat-side queue = 2026-04-01 snapshot + what "
+               "all sessions have committed. Bars update on the next interaction.")
     import pandas as pd
 
     names, snapshot, live, cost, defect = [], [], [], [], []
@@ -522,8 +546,8 @@ def render_dashboard(desk):
 
     st.markdown("**📡 Workshop queue levels**")
     # Same spec st.bar_chart builds (grid, legend, tooltip, zoom/pan),
-    # except: one stacked column (April 1 queue at the bottom, what this
-    # session committed on top, so the full height = live queue) and
+    # except: one stacked column (April 1 queue at the bottom, what all
+    # sessions committed on top, so the full height = live queue) and
     # horizontal labels
     import altair as alt
     series = ["Queue on April 1", "Live queue"]
@@ -574,19 +598,15 @@ def render_dashboard(desk):
 def render_recent(desk):
     """Step 7 — the record the group chat never had."""
     top_l, top_r = st.columns([3, 1])
-    top_l.caption("The audit log is an append-only file: refreshing does not "
-                  "reset it, and re-committing the same order is refused "
-                  "(never overwritten, never double-counted). Use the button "
-                  "on the right to zero the demo.")
+    top_l.caption("Allocations and queues are shared across sessions. Duplicate orders are refused. "
+                  "Reset archives the demo allocations; API usage limits remain in effect.")
     if top_r.button("↺ Reset demo", use_container_width=True,
-                    help="Archive the current audit log, clear the session, "
-                         "and reset queues to the queue on April 1"):
-        import datetime as _dt
-        path = desk.audit.path
-        if path.exists():
-            stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-            path.rename(path.with_name(f"audit_log.{stamp}.bak.jsonl"))
-        st.session_state.clear()   # desk rebuilt -> queues back to snapshot
+                    help="Archive allocations and reset shared queues to the "
+                         "queue on April 1 for all sessions"):
+        desk.audit.reset()
+        for key in list(st.session_state):
+            if str(key).startswith(("committed-", "conv-")) or key in {"decisions", "chat_log"}:
+                del st.session_state[key]
         st.rerun()
 
     records = desk.audit.load_all()
@@ -607,8 +627,23 @@ AUTH_DAYS = 30
 def _auth_token(password):
     """What the cookie holds: an HMAC of the password, never the password
     itself. Changing APP_PASSWORD makes every old cookie stop working."""
-    return hmac.new(str(password).encode(), b"dispatch-desk",
-                    hashlib.sha256).hexdigest()
+    import time
+    import secrets
+    body = f"{int(time.time()) + AUTH_DAYS * 86400}.{secrets.token_hex(16)}"
+    signature = hmac.new(str(password).encode(), body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{signature}"
+
+
+def _valid_auth_token(token, password):
+    import time
+    try:
+        expires, nonce, signature = token.split(".")
+        body = f"{expires}.{nonce}"
+        expected = hmac.new(str(password).encode(), body.encode(), hashlib.sha256).hexdigest()
+        return (time.time() < int(expires) <= time.time() + AUTH_DAYS * 86400
+                and hmac.compare_digest(signature, expected))
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def _remember_device(token):
@@ -623,26 +658,38 @@ def _remember_device(token):
 def check_password():
     """Gate the desk behind APP_PASSWORD (st.secrets or env). Every
     Dispatch spends the owner's API key, so a public link must not be
-    enough. No password configured -> open, as for local runs. A correct
-    password is remembered on this device for AUTH_DAYS via a cookie."""
+    enough. No password configured fails closed unless local development
+    explicitly opts out. A correct password can be remembered via a cookie."""
+    if (Path(__file__).parent.parent / ".env").exists():
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent / ".env")
     try:
         expected = st.secrets.get("APP_PASSWORD")
     except Exception:          # no secrets.toml at all (local run)
         expected = None
     expected = expected or os.environ.get("APP_PASSWORD")
     if not expected:
-        return True
+        if os.environ.get("REQUIRE_APP_PASSWORD", "true").lower() == "false":
+            return True
+        st.error("APP_PASSWORD is required. Configure it in Streamlit Secrets before using this app.")
+        return False
     token = _auth_token(expected)
     if st.session_state.get("authed"):
         if st.session_state.pop("remember_device", False):
             _remember_device(token)
         return True
     cookies = getattr(getattr(st, "context", None), "cookies", None) or {}
-    if hmac.compare_digest(str(cookies.get(AUTH_COOKIE, "")).encode(),
-                           token.encode()):
+    if _valid_auth_token(str(cookies.get(AUTH_COOKIE, "")), expected):
         st.session_state.authed = True
         return True
     pw = st.text_input("Password", type="password")
+    if pw:
+        from desk.budget import CallBudget, BudgetExceeded
+        try:
+            CallBudget().reserve(scope="login", limits=[(60, 30)])
+        except BudgetExceeded:
+            st.error("Too many sign-in attempts. Please try again later.")
+            return False
     if pw and hmac.compare_digest(pw.encode(), str(expected).encode()):
         st.session_state.authed = True
         st.session_state.remember_device = True   # set after the rerun
