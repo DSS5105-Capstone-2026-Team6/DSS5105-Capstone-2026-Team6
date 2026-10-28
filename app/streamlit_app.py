@@ -508,8 +508,9 @@ def render_inbox(desk):
 # ---------------- 📊 dashboard ----------------
 
 def render_dashboard(desk):
-    st.caption("Live chat-side queue = 2026-04-01 snapshot + what this session "
-               "has committed. Bars jump after each confirm.")
+    st.caption("Live queue = starting queue on 2026-04-01 + what this "
+               "session has committed. The dark part grows after each "
+               "confirm.")
     import pandas as pd
 
     names, snapshot, live, cost, defect = [], [], [], [], []
@@ -521,34 +522,54 @@ def render_dashboard(desk):
         defect.append(w.defect_rate)
 
     st.markdown("**📡 Workshop queue levels**")
-    # Altair, not st.bar_chart: bars side by side (st.bar_chart stacks
-    # them, which doubled the height) and every label horizontal
+    # one stacked column per workshop: the April 1 queue at the bottom,
+    # what this session committed on top, so the full height = live queue
     import altair as alt
-    series = ["Starting queue (Apr 1)", "Live queue"]
+    series = ["Starting queue (Apr 1)", "Added this session"]
+    added = [round(max(0.0, lv - s0), 2) for lv, s0 in zip(live, snapshot)]
     queues = pd.DataFrame({"workshop": names * 2,
                            "series": [series[0]] * len(names)
                                      + [series[1]] * len(names),
-                           "days": snapshot + live})
+                           "order": [0] * len(names) + [1] * len(names),
+                           "days": snapshot + added,
+                           "live": live * 2})
     chart = alt.Chart(queues).mark_bar().encode(
         x=alt.X("workshop:N", sort=names, title="Workshop",
                 axis=alt.Axis(labelAngle=0)),
-        xOffset=alt.XOffset("series:N", sort=series),
-        y=alt.Y("days:Q", title="Queue (days)",
+        y=alt.Y("sum(days):Q", title="Queue (days)",
                 axis=alt.Axis(titleAngle=0, titleAlign="left",
                               titleY=-10, titleX=0)),
         color=alt.Color("series:N", sort=series, title=None,
                         scale=alt.Scale(domain=series,
                                         range=[BLUE_PALE, BLUE_DEEP]),
                         legend=alt.Legend(orient="bottom")),
-        tooltip=["workshop", "series", "days"])
+        order=alt.Order("order:Q", sort="ascending"),
+        tooltip=["workshop", "series", "days",
+                 alt.Tooltip("live", title="live queue")])
     st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("**🧬 Cost × defect rate (bubble = live queue)**")
+    st.markdown("**🧬 Cost × defect rate (bubble size = live queue)**")
+    st.caption("Each bubble is one workshop. Bottom-left is cheap and "
+               "reliable; a bigger bubble means a longer wait.")
     trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
                           "queue_days": live, "workshop": names})
-    st.scatter_chart(trade, x="cost_per_pc", y="defect_rate",
-                     size="queue_days", color=[BLUE_SOFT],
-                     x_label="Cost ($/pc)", y_label="Defect rate")
+    base = alt.Chart(trade).encode(
+        x=alt.X("cost_per_pc:Q", title="Cost ($/pc)",
+                scale=alt.Scale(zero=False, padding=30)),
+        y=alt.Y("defect_rate:Q", title="Defect rate",
+                axis=alt.Axis(format="%", titleAngle=0, titleAlign="left",
+                              titleY=-10, titleX=0),
+                scale=alt.Scale(zero=False, padding=20)))
+    bubbles = base.mark_circle(color=BLUE_SOFT, opacity=0.8).encode(
+        size=alt.Size("queue_days:Q", title="Live queue (days)",
+                      scale=alt.Scale(range=[60, 900]),
+                      legend=alt.Legend(orient="bottom")),
+        tooltip=["workshop", alt.Tooltip("cost_per_pc", title="$/pc"),
+                 alt.Tooltip("defect_rate", format=".1%"),
+                 alt.Tooltip("queue_days", title="live queue (days)")])
+    labels = base.mark_text(align="left", dx=18, fontSize=12,
+                            color="#495057").encode(text="workshop:N")
+    st.altair_chart(bubbles + labels, use_container_width=True)
 
 
 # ---------------- 🧾 records ----------------
