@@ -19,6 +19,7 @@ Run from the project root:
     uv run streamlit run app/streamlit_app.py
 """
 
+import hmac
 import os
 import sys
 from pathlib import Path
@@ -564,11 +565,33 @@ def render_recent(desk):
              f"queue {r.queue_before} → {r.queue_after} d</span>")
 
 
+def check_password():
+    """Gate the desk behind APP_PASSWORD (st.secrets or env). Every
+    Dispatch spends the owner's API key, so a public link must not be
+    enough. No password configured -> open, as for local runs."""
+    try:
+        expected = st.secrets.get("APP_PASSWORD")
+    except Exception:          # no secrets.toml at all (local run)
+        expected = None
+    expected = expected or os.environ.get("APP_PASSWORD")
+    if not expected or st.session_state.get("authed"):
+        return True
+    pw = st.text_input("Password", type="password")
+    if pw and hmac.compare_digest(pw, str(expected)):
+        st.session_state.authed = True
+        st.rerun()
+    if pw:
+        st.error("Wrong password.")
+    return False
+
+
 def main():
     st.set_page_config(page_title="Dispatch Desk", layout="wide",
                        initial_sidebar_state="auto")
     st.markdown(CSS, unsafe_allow_html=True)
     st.title("🛰️ Dispatch Desk")
+    if not check_password():
+        st.stop()
 
     desk = get_desk()
     with st.sidebar:
