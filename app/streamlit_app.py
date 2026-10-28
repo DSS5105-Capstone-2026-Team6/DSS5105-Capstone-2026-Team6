@@ -508,9 +508,8 @@ def render_inbox(desk):
 # ---------------- 📊 dashboard ----------------
 
 def render_dashboard(desk):
-    st.caption("Live queue = starting queue on 2026-04-01 + what this "
-               "session has committed. The dark part grows after each "
-               "confirm.")
+    st.caption("Live chat-side queue = 2026-04-01 snapshot + what this session "
+               "has committed. Bars jump after each confirm.")
     import pandas as pd
 
     names, snapshot, live, cost, defect = [], [], [], [], []
@@ -548,27 +547,17 @@ def render_dashboard(desk):
                  alt.Tooltip("live", title="live queue")])
     st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("**🧬 Cost × defect rate (bubble size = live queue)**")
-    st.caption("Each bubble is one workshop. Bottom-left is cheap and "
-               "reliable; a bigger bubble means a longer wait.")
+    st.markdown("**🧬 Cost × defect rate (bubble = live queue)**")
     trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
                           "queue_days": live, "workshop": names})
+    # Altair, not st.scatter_chart, only so each bubble can carry its name
     base = alt.Chart(trade).encode(
-        x=alt.X("cost_per_pc:Q", title="Cost ($/pc)",
-                scale=alt.Scale(zero=False, padding=30)),
-        y=alt.Y("defect_rate:Q", title="Defect rate",
-                axis=alt.Axis(format="%", titleAngle=0, titleAlign="left",
-                              titleY=-10, titleX=0),
-                scale=alt.Scale(zero=False, padding=20)))
-    bubbles = base.mark_circle(color=BLUE_SOFT, opacity=0.8).encode(
-        size=alt.Size("queue_days:Q", title="Live queue (days)",
-                      scale=alt.Scale(range=[60, 900]),
-                      legend=alt.Legend(orient="bottom")),
-        tooltip=["workshop", alt.Tooltip("cost_per_pc", title="$/pc"),
-                 alt.Tooltip("defect_rate", format=".1%"),
-                 alt.Tooltip("queue_days", title="live queue (days)")])
-    labels = base.mark_text(align="left", dx=18, fontSize=12,
-                            color="#495057").encode(text="workshop:N")
+        x=alt.X("cost_per_pc:Q", title="Cost ($/pc)"),
+        y=alt.Y("defect_rate:Q", title="Defect rate"))
+    bubbles = base.mark_circle(color=BLUE_SOFT).encode(
+        size="queue_days:Q",
+        tooltip=["workshop", "cost_per_pc", "defect_rate", "queue_days"])
+    labels = base.mark_text(align="left", dx=10).encode(text="workshop:N")
     st.altair_chart(bubbles + labels, use_container_width=True)
 
 
