@@ -27,7 +27,7 @@ if _HARNESS not in sys.path:
     sys.path.append(_HARNESS)
 from harness.simulate import eligible_workshops
 
-CHAT_AS_OF = "2026-04-01"
+from desk.config import CHAT_AS_OF   # single source; re-exported for compat
 
 
 class DeskState:

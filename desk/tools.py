@@ -29,6 +29,7 @@ try:
     from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
+    from desk.config import CHAT_AS_OF
 except ImportError:  # run directly as a script: python desk/tools.py
     import sys
     from pathlib import Path
@@ -37,6 +38,7 @@ except ImportError:  # run directly as a script: python desk/tools.py
     from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
+    from desk.config import CHAT_AS_OF
 
 # algorithm2.py is a script-style module (imports `simulate` flat), so its
 # directory must be importable whether we run as a package or directly.
@@ -48,8 +50,7 @@ if _HARNESS not in sys.path:
 from harness.algorithm2 import est_turnaround_expected
 from harness.simulate import eligible_workshops, remaining_stages
 
-CHAT_TODAY = date(2026, 4, 1)
-CHAT_AS_OF = "2026-04-01"
+CHAT_TODAY = date.fromisoformat(CHAT_AS_OF)
 
 
 # ---------------- lookup_order ----------------
