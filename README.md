@@ -4,6 +4,59 @@
 
 The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
 
+## The Allocator (algorithm2)
+
+One time model everywhere — simulator replay, desk tools and the SQLite
+ledger all share it, so online and offline can never diverge:
+
+```
+E[finish] = queue_days + pieces / capacity × (1 + 0.5 × defect_rate) + pickup_lead_days
+```
+
+The `1 + 0.5 × defect_rate` term prices defect rework as an expectation: in
+the simulator a defective batch (probability `defect_rate`) is redone at
+1.5× work.
+
+**Constraints (a workshop is eligible only if ALL hold):**
+
+- it makes the order's category (`makes` vs TOPS / ACCESSORIES)
+- it is not `SUSPENDED`
+- the batch fits its `max_batch_pieces` cap
+- it is not excluded by a named person in the request
+- (stages mode) it covers the order's remaining stages
+
+**Selection policy — lateness first, defects second (the hybrid):**
+
+1. First constraint: `expected_days_late = max(0, E[finish] − slack)` —
+   finishing early counts as 0 days late
+2. Keep the **plateau**: workshops within `late_tol` days of the best
+   achievable lateness; when nobody is late (best = 0), tighten the plateau
+   to within `late_tol` of the earliest finish so queues stay short
+3. Inside the plateau pick the **lowest defect rate** (tiebreak: E[finish],
+   cost, workshop id)
+
+**How `late_tol` was found** — a two-stage scan over 10 tolerances
+(0–10 days) × 10 seeds (5105–5114) × {normal, shock} × {default, stages},
+run by `harness/algorithm2.py`: stage 1 keeps only tolerances achieving the
+minimum (% late, late days); stage 2 picks the lowest defect percentage
+among the keepers (tiebreak cost, smaller tol). The picks land at 0.0–0.5
+depending on scenario; **production runs 0.5** — within 0.1pt of the best
+% late in every scenario and the pick for stages-normal.
+
+**Performance (10 seeds, default simulator):**
+
+| Policy | % late | late days | cost ($) | max share |
+|---|---|---|---|---|
+| random | 34% | 6.1 | 111,780 | 23% |
+| greedy_biggest | 84% | 26.5 | 108,430 | 70% |
+| cheapest | 92% | 81.9 | 85,960 | 70% |
+| EFT (earliest finish) | 2% | 0.2 | 115,592 | 26% |
+| **hybrid (tol=0.5)** | **2%** | **0.2** | 115,639 | 27% |
+
+Under shock (a workshop closed day 30–44) the hybrid holds at 2% late /
+0.2 late days — matching EFT on lateness while carrying a lower defect
+load by construction.
+
 ## Deployed Apps
 Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
 
@@ -165,9 +218,9 @@ checker scores quoted numbers, not derived ones.
 
 | Version | Behaviour | Workshop | Faithfulness | Latency | What changed |
 |---|---|---|---|---|---|
-| v2.1 | 0.767 | 0.842 | 0.767 | 4.5s | baseline; impossible 0/3, faithfulness hurt by self-computed price gaps |
-| v2.2 | 0.900 | 0.632 | 0.967 | 4.7s | router: all-late rank → `impossible`; unfinished dispatch flow → `ask`; prompts: no self-arithmetic |
-| v2.2b | **0.933** | **0.842** | **0.967** | **3.6s** | tool descriptions fixed: `estimate_delivery` no longer invites per-workshop loops; comparisons go through `rank_candidates` |
+| v2.1 | 0.767 (23/30) | 0.842 | 0.767 | 4.5s | baseline; impossible 0/3, faithfulness hurt by self-computed price gaps |
+| v2.2 | 0.900 (27/30) | 0.632 | 0.967 | 4.7s | router: all-late rank → `impossible`; unfinished dispatch flow → `ask`; prompts: no self-arithmetic |
+| v2.2b | **0.933 (28/30)** | **0.842** | **0.967** | **3.6s** | tool descriptions fixed: `estimate_delivery` no longer invites per-workshop loops; comparisons go through `rank_candidates` |
 
 Root causes were found by reading tool logs, not by tuning blind: 5 of 7
 v2.1 errors fell into the `answer` fallback (model never completed the tool
