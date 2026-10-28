@@ -545,7 +545,8 @@ def render_dashboard(desk):
         order=alt.Order("order:Q", sort="ascending"),
         tooltip=["workshop", "series", "days",
                  alt.Tooltip("live", title="live queue")])
-    st.altair_chart(chart, use_container_width=True)
+    # .interactive(): scroll to zoom, drag to pan, like st.bar_chart
+    st.altair_chart(chart.interactive(), use_container_width=True)
 
     st.markdown("**🧬 Cost × defect rate (bubble = live queue)**")
     trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
@@ -558,7 +559,8 @@ def render_dashboard(desk):
         size=alt.Size("queue_days:Q", legend=alt.Legend(orient="bottom")),
         tooltip=["workshop", "cost_per_pc", "defect_rate", "queue_days"])
     labels = base.mark_text(align="left", dx=10).encode(text="workshop:N")
-    st.altair_chart(bubbles + labels, use_container_width=True)
+    st.altair_chart((bubbles + labels).interactive(),
+                    use_container_width=True)
 
 
 # ---------------- 🧾 records ----------------
