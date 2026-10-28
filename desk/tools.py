@@ -581,8 +581,10 @@ def flag_at_risk(*, desk=None):
         w = desk.workshops.workshops[rec.workshop_id]
         work = rec.pieces / w.capacity * (1 + 0.5 * w.defect_rate)
         # projection: the batch sat behind queue_before days of work at
-        # commit; elapsed days since commit drain it day by day
-        elapsed = (CHAT_TODAY - committed).days
+        # commit; elapsed days since commit drain it day by day. The ledger
+        # records wall-clock time while the desk world sits at CHAT_TODAY,
+        # so a real-time timestamp lands "after" the world — clamp at 0.
+        elapsed = max(0, (CHAT_TODAY - committed).days)
         remaining = max(0.0, rec.queue_before + work + w.lead_days - elapsed)
         projected = CHAT_TODAY + timedelta(days=round(remaining))
         if projected > due:

@@ -93,25 +93,30 @@ def test_flag_at_risk_requires_desk():
 
 
 def test_flag_at_risk_flags_late_commits(tmp_path):
-    """Commit an order whose queue makes it late, then the flag fires with
-    the roadmap's four options; a comfortable order stays quiet."""
+    """A commit that projects late under the real ledger queues is flagged,
+    with the roadmap's four options; an on-time commit stays quiet.
+    (The ledger derives queues from its own records — mutating
+    desk.state.queues would not move them.)"""
     from desk.desk import DispatchDesk
     desk = DispatchDesk(audit_path=tmp_path / "audit.jsonl")
-    desk.orders.by_id("ORD-063")  # sanity: exists
-    # force a huge queue on W1 so the commit projects late
-    desk.state.queues["W1"] = 60.0
-    rec = desk.audit.allocate(desk.orders.by_id("ORD-063"),
-                              desk.workshops.workshops["W1"],
-                              committed_by="tester")
-    assert rec.order_id == "ORD-063"
+    # ORD-099: 1500 pcs due 2026-04-05 — the queue ahead of it at W1 alone
+    # pushes the projected finish past the due date
+    late = desk.audit.allocate(desk.orders.by_id("ORD-099"),
+                               desk.workshops.workshops["W1"],
+                               committed_by="tester")
+    # ORD-041: 600 pcs due 2026-04-21 at W6 — comfortably on time
+    ok = desk.audit.allocate(desk.orders.by_id("ORD-041"),
+                             desk.workshops.workshops["W6"],
+                             committed_by="tester")
     out = flag_at_risk(desk=desk)
     flagged = {r["order_id"] for r in out["at_risk"]}
-    assert "ORD-063" in flagged
+    assert "ORD-099" in flagged
+    assert "ORD-041" not in flagged
     assert out["options"] == ["wait", "split the remainder", "reassign",
                               "escalate"]
     assert out["read_only"] is True
     # and the ledger was NOT touched by the read-only flag
-    assert len(desk.audit.load_all()) == 1
+    assert len(desk.audit.load_all()) == 2
 
 
 def test_both_tools_registered_and_dispatchable(tmp_path):
