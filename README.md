@@ -27,7 +27,7 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 │   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
 │   ├── config.py                # central constants: model, API and data/results paths
 │   ├── register.py              # OrderStore + WorkshopStore (shared data stores)
-│   ├── tools.py                 # the 7 deterministic tools (no LLM) + tool registry
+│   ├── tools.py                 # the 8 deterministic tools (no LLM) + tool registry
 │   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
 │   ├── agent.py                 # DeepSeek intake agent (tool-calling loop, temp 0)
 │   ├── router.py                # code-assigned behaviour: tool log -> Decision
@@ -45,7 +45,7 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 │   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
-├── tests/                     # pytest suite: one failure case per feature (132 tests)
+├── tests/                     # pytest suite: one failure case per feature (181 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
@@ -113,7 +113,69 @@ Score the run against the labelled inbox (Table 7 ground truth):
 `python eval/score_run.py` — reports behaviour accuracy by kind, workshop
 accuracy, and faithfulness (numbers traced to the tool log). The held-out
 set (`data/dispatch_requests_heldout.txt` + `data/labels_heldout.json`)
-scores the same way: `python eval/score_run.py --labels data/labels_heldout.json --results results/heldout_run.jsonl`
+runs and scores the same way:
+`python eval/run_eval.py --inbox data/dispatch_requests_heldout.txt --out results/heldout_run.jsonl`
+
+## Routing: how a message becomes a behaviour
+
+The LLM never labels its own answer. `desk/router.py` reads the **tool log**
+(what was called, what came back) and assigns one behaviour by a fixed
+priority ladder — deterministic, reproducible, immune to wording:
+
+| Priority | Behaviour | Trigger (tool-log evidence) |
+|---|---|---|
+| 1 | `refuse` | the message names a workshop `check_eligibility` ruled out (hard reasons only) |
+| 2 | `allocate` | `rank_candidates` succeeded for the order the message asked about |
+| 3 | `impossible` | `earliest_feasible` misses the due date even split — or (v2.2) every ranked candidate finishes late |
+| 4 | `ask` | lookup returned several matches — or (v2.2) dispatch intent with an incomplete tool flow |
+| 5 | `no_data` | lookup found nothing / question is outside the data (history, quotes) |
+| 6 | `answer` | fallback; never a labelled ground truth |
+
+Message text is read only for intent markers (`send/need/asap` vs
+`did we/which workshop/quote`), to separate `ask` from `no_data`. Everything
+safety-critical reads the tool log only.
+
+## Faithfulness: how a reply is verified
+
+`eval/faithfulness.py` answers roadmap risk 1 — *"the LLM states a number no
+tool returned."* It never re-computes anything; it checks provenance:
+
+1. Extract every digit-bearing token from the reply (dates in all formats,
+   ids like `ORD-073`, money, percentages)
+2. Build the evidence set: **every scalar in every tool result** + **numbers
+   the user themselves wrote** (echoing the request is legitimate)
+3. Cross-normalise date forms (`Apr 6` = `2026-04-06` = `6 Apr`), accept
+   `3%` ≡ `0.03`, strip thousands separators
+4. Any token with no source in the evidence set → a violation
+
+Documented limitations: number words ("two shops") are not extracted, and
+arithmetic on tool numbers ("about half of 600") is not verified — the
+checker scores quoted numbers, not derived ones.
+
+### What the evaluation measures (per request)
+
+| Score | Question it answers | Source of truth |
+|---|---|---|
+| behaviour | did the system route it to the right action? | labels (Table 7 kind) |
+| workshop | did the chosen workshop match ground truth? | labels |
+| faithfulness | does every number trace to a tool output? | the request's tool log |
+| latency | seconds per request | run records |
+
+### Improvement journey (dev set, 30 requests)
+
+| Version | Behaviour | Workshop | Faithfulness | Latency | What changed |
+|---|---|---|---|---|---|
+| v2.1 | 0.767 | 0.842 | 0.767 | 4.5s | baseline; impossible 0/3, faithfulness hurt by self-computed price gaps |
+| v2.2 | 0.900 | 0.632 | 0.967 | 4.7s | router: all-late rank → `impossible`; unfinished dispatch flow → `ask`; prompts: no self-arithmetic |
+| v2.2b | **0.933** | **0.842** | **0.967** | **3.6s** | tool descriptions fixed: `estimate_delivery` no longer invites per-workshop loops; comparisons go through `rank_candidates` |
+
+Root causes were found by reading tool logs, not by tuning blind: 5 of 7
+v2.1 errors fell into the `answer` fallback (model never completed the tool
+flow), and the per-workshop estimate loops were induced by a tool
+description that literally said "call it for every candidate".
+
+Run artefacts live in `results/`: `inbox_run*.jsonl` (raw decisions + tool
+logs) and `inbox_scores*.json` (per-request scores + summary).
 
 ## Evaluation Plan (Track 2)
 

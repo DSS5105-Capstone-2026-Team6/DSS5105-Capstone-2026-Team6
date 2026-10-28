@@ -1,0 +1,376 @@
+{
+  "summary": {
+    "labels": "D:\\DSS5105\\data-science-collaboration\\data\\labels_inbox.json",
+    "results": "results/inbox_run_v22.jsonl",
+    "n_requests": 30,
+    "errors": 0,
+    "behaviour_accuracy": 0.9,
+    "workshop_accuracy": 0.632,
+    "faithfulness": 0.967,
+    "mean_latency_s": 4.74,
+    "per_kind_behaviour": {
+      "ambiguous": {
+        "n": 4,
+        "accuracy": 1.0
+      },
+      "complete": {
+        "n": 7,
+        "accuracy": 1.0
+      },
+      "constraint": {
+        "n": 6,
+        "accuracy": 0.667
+      },
+      "impossible": {
+        "n": 3,
+        "accuracy": 1.0
+      },
+      "ineligible": {
+        "n": 4,
+        "accuracy": 1.0
+      },
+      "missing": {
+        "n": 3,
+        "accuracy": 0.667
+      },
+      "unanswerable": {
+        "n": 3,
+        "accuracy": 1.0
+      }
+    }
+  },
+  "rows": [
+    {
+      "request_id": "R01",
+      "kind": "missing",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.32
+    },
+    {
+      "request_id": "R02",
+      "kind": "unanswerable",
+      "expected": "no_data",
+      "actual": "no_data",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 1.4
+    },
+    {
+      "request_id": "R03",
+      "kind": "ambiguous",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.94
+    },
+    {
+      "request_id": "R04",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.31
+    },
+    {
+      "request_id": "R05",
+      "kind": "missing",
+      "expected": "ask",
+      "actual": "answer",
+      "behaviour_ok": false,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.43
+    },
+    {
+      "request_id": "R06",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.58
+    },
+    {
+      "request_id": "R07",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.92
+    },
+    {
+      "request_id": "R08",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.42
+    },
+    {
+      "request_id": "R09",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.57
+    },
+    {
+      "request_id": "R10",
+      "kind": "missing",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 1.35
+    },
+    {
+      "request_id": "R11",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 5.82
+    },
+    {
+      "request_id": "R12",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 7.78
+    },
+    {
+      "request_id": "R13",
+      "kind": "unanswerable",
+      "expected": "no_data",
+      "actual": "no_data",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.56
+    },
+    {
+      "request_id": "R14",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.61
+    },
+    {
+      "request_id": "R15",
+      "kind": "ambiguous",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": false,
+      "violations": [
+        "6"
+      ],
+      "latency_s": 3.02
+    },
+    {
+      "request_id": "R16",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.91
+    },
+    {
+      "request_id": "R17",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 7.66
+    },
+    {
+      "request_id": "R18",
+      "kind": "unanswerable",
+      "expected": "no_data",
+      "actual": "no_data",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.41
+    },
+    {
+      "request_id": "R19",
+      "kind": "ambiguous",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.28
+    },
+    {
+      "request_id": "R20",
+      "kind": "impossible",
+      "expected": "impossible",
+      "actual": "impossible",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 7.69
+    },
+    {
+      "request_id": "R21",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "answer",
+      "behaviour_ok": false,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.5
+    },
+    {
+      "request_id": "R22",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.71
+    },
+    {
+      "request_id": "R23",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "answer",
+      "behaviour_ok": false,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.98
+    },
+    {
+      "request_id": "R24",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.25
+    },
+    {
+      "request_id": "R25",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.26
+    },
+    {
+      "request_id": "R26",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.19
+    },
+    {
+      "request_id": "R27",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.38
+    },
+    {
+      "request_id": "R28",
+      "kind": "impossible",
+      "expected": "impossible",
+      "actual": "impossible",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 7.98
+    },
+    {
+      "request_id": "R29",
+      "kind": "ambiguous",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.77
+    },
+    {
+      "request_id": "R30",
+      "kind": "impossible",
+      "expected": "impossible",
+      "actual": "impossible",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 9.21
+    }
+  ]
+}
