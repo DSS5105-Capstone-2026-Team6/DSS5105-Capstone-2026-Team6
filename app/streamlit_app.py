@@ -521,11 +521,27 @@ def render_dashboard(desk):
         defect.append(w.defect_rate)
 
     st.markdown("**📡 Workshop queue levels**")
-    queues = pd.DataFrame({"workshop": names,
-                           "4/1 snapshot": snapshot, "Live queue": live})
-    st.bar_chart(queues, x="workshop", y=["4/1 snapshot", "Live queue"],
-                 color=[BLUE_PALE, BLUE_DEEP],
-                 x_label="Workshop", y_label="Queue (days)")
+    # Altair, not st.bar_chart: bars side by side (st.bar_chart stacks
+    # them, which doubled the height) and every label horizontal
+    import altair as alt
+    series = ["April 1 snapshot", "Live queue"]
+    queues = pd.DataFrame({"workshop": names * 2,
+                           "series": [series[0]] * len(names)
+                                     + [series[1]] * len(names),
+                           "days": snapshot + live})
+    chart = alt.Chart(queues).mark_bar().encode(
+        x=alt.X("workshop:N", sort=names, title="Workshop",
+                axis=alt.Axis(labelAngle=0)),
+        xOffset=alt.XOffset("series:N", sort=series),
+        y=alt.Y("days:Q", title="Queue (days)",
+                axis=alt.Axis(titleAngle=0, titleAlign="left",
+                              titleY=-10, titleX=0)),
+        color=alt.Color("series:N", sort=series, title=None,
+                        scale=alt.Scale(domain=series,
+                                        range=[BLUE_PALE, BLUE_DEEP]),
+                        legend=alt.Legend(orient="bottom")),
+        tooltip=["workshop", "series", "days"])
+    st.altair_chart(chart, use_container_width=True)
 
     st.markdown("**🧬 Cost × defect rate (bubble = live queue)**")
     trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
@@ -546,7 +562,7 @@ def render_recent(desk):
                   "on the right to zero the demo.")
     if top_r.button("↺ Reset demo", use_container_width=True,
                     help="Archive the current audit log, clear the session, "
-                         "and reset queues to the 4/1 snapshot"):
+                         "and reset queues to the April 1 snapshot"):
         import datetime as _dt
         path = desk.audit.path
         if path.exists():
