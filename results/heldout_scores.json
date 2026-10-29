@@ -1,0 +1,268 @@
+{
+  "summary": {
+    "labels": "data/labels_heldout.json",
+    "results": "results/heldout_run.jsonl",
+    "n_requests": 20,
+    "errors": 0,
+    "completion_rate": 1.0,
+    "overall_behaviour_accuracy": 0.8,
+    "successful_behaviour_accuracy": 0.8,
+    "overall_faithfulness": 1.0,
+    "behaviour_accuracy": 0.8,
+    "workshop_accuracy": 0.692,
+    "faithfulness": 1.0,
+    "mean_latency_s": 3.79,
+    "per_kind_behaviour": {
+      "ambiguous": {
+        "n": 2,
+        "accuracy": 1.0
+      },
+      "complete": {
+        "n": 4,
+        "accuracy": 0.5
+      },
+      "constraint": {
+        "n": 4,
+        "accuracy": 1.0
+      },
+      "impossible": {
+        "n": 2,
+        "accuracy": 1.0
+      },
+      "ineligible": {
+        "n": 3,
+        "accuracy": 1.0
+      },
+      "missing": {
+        "n": 2,
+        "accuracy": 0.5
+      },
+      "unanswerable": {
+        "n": 3,
+        "accuracy": 0.667
+      }
+    }
+  },
+  "rows": [
+    {
+      "request_id": "H01",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.17
+    },
+    {
+      "request_id": "H02",
+      "kind": "impossible",
+      "expected": "impossible",
+      "actual": "impossible",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 6.34
+    },
+    {
+      "request_id": "H03",
+      "kind": "ambiguous",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.68
+    },
+    {
+      "request_id": "H04",
+      "kind": "missing",
+      "expected": "ask",
+      "actual": "answer",
+      "behaviour_ok": false,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.72
+    },
+    {
+      "request_id": "H05",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.84
+    },
+    {
+      "request_id": "H06",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.75
+    },
+    {
+      "request_id": "H07",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "ask",
+      "behaviour_ok": false,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.61
+    },
+    {
+      "request_id": "H08",
+      "kind": "unanswerable",
+      "expected": "no_data",
+      "actual": "ask",
+      "behaviour_ok": false,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.56
+    },
+    {
+      "request_id": "H09",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.94
+    },
+    {
+      "request_id": "H10",
+      "kind": "ambiguous",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.42
+    },
+    {
+      "request_id": "H11",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 5.55
+    },
+    {
+      "request_id": "H12",
+      "kind": "missing",
+      "expected": "ask",
+      "actual": "ask",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 1.52
+    },
+    {
+      "request_id": "H13",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.61
+    },
+    {
+      "request_id": "H14",
+      "kind": "impossible",
+      "expected": "impossible",
+      "actual": "impossible",
+      "behaviour_ok": true,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.2
+    },
+    {
+      "request_id": "H15",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.04
+    },
+    {
+      "request_id": "H16",
+      "kind": "unanswerable",
+      "expected": "no_data",
+      "actual": "no_data",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 3.03
+    },
+    {
+      "request_id": "H17",
+      "kind": "ineligible",
+      "expected": "refuse",
+      "actual": "refuse",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 5.19
+    },
+    {
+      "request_id": "H18",
+      "kind": "constraint",
+      "expected": "allocate",
+      "actual": "allocate",
+      "behaviour_ok": true,
+      "workshop_ok": true,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 4.95
+    },
+    {
+      "request_id": "H19",
+      "kind": "unanswerable",
+      "expected": "no_data",
+      "actual": "no_data",
+      "behaviour_ok": true,
+      "workshop_ok": null,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.4
+    },
+    {
+      "request_id": "H20",
+      "kind": "complete",
+      "expected": "allocate",
+      "actual": "ask",
+      "behaviour_ok": false,
+      "workshop_ok": false,
+      "faithful": true,
+      "violations": [],
+      "latency_s": 2.18
+    }
+  ]
+}
