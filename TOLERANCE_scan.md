@@ -1,6 +1,6 @@
-## Appendix — `late_tol` tolerance scan (Track 2)
+## Appendix — `late_tol` tolerance scan (Group 06 · Track 2)
 
-Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds). **PICK** marks the selected tolerance (stage 1 lateness plateau → stage 2 defect optimum).
+Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds), arranged 2×2. **PICK** marks the selected tolerance (stage 1 lateness plateau → stage 2 defect optimum).
 
 ### Summary of picks
 
@@ -11,7 +11,13 @@ Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds)
 | Shock · default | **0.0** | 1.9% | 7.4% | 115,292 |
 | Shock · --stages | **0.0** | 2.5% | 6.5% | 116,822 |
 
-### NORMAL · default simulator
+### Scan results (2×2)
+
+<table>
+  <tr>
+    <td valign="top" width="50%">
+
+**NORMAL · default simulator** — stage 1 plateau: 1/10 at % late 1.7 · late days 0.18 → **selected late_tol = 0**
 
 | late_tol | % late | late days | % def pcs | cost ($) | max share |
 |---|---|---|---|---|---|
@@ -26,9 +32,10 @@ Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds)
 | 7.0 | 5.4% | 0.49 | 5.2% | 110,892 | 35% |
 | 10.0 | 8.1% | 0.60 | 5.4% | 108,879 | 38% |
 
-Stage 1 plateau: 1/10 tolerances at % late 1.7 · late days 0.18 → **selected late_tol = 0**
+    </td>
+    <td valign="top" width="50%">
 
-### NORMAL · --stages
+**NORMAL · --stages** — stage 1 plateau: 1/10 at % late 1.8 · late days 0.23 → **selected late_tol = 0.5**
 
 | late_tol | % late | late days | % def pcs | cost ($) | max share |
 |---|---|---|---|---|---|
@@ -43,9 +50,12 @@ Stage 1 plateau: 1/10 tolerances at % late 1.7 · late days 0.18 → **selected 
 | 7.0 | 10.2% | 0.55 | 5.6% | 113,758 | 36% |
 | 10.0 | 13.1% | 1.07 | 5.3% | 113,404 | 39% |
 
-Stage 1 plateau: 1/10 tolerances at % late 1.8 · late days 0.23 → **selected late_tol = 0.5**
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
 
-### SHOCK · default simulator
+**SHOCK · default simulator** — stage 1 plateau: 1/10 at % late 1.9 · late days 0.18 → **selected late_tol = 0**
 
 | late_tol | % late | late days | % def pcs | cost ($) | max share |
 |---|---|---|---|---|---|
@@ -60,9 +70,10 @@ Stage 1 plateau: 1/10 tolerances at % late 1.8 · late days 0.23 → **selected 
 | 7.0 | 5.9% | 0.53 | 5.8% | 110,894 | 35% |
 | 10.0 | 9.6% | 0.74 | 6.0% | 108,995 | 37% |
 
-Stage 1 plateau: 1/10 tolerances at % late 1.9 · late days 0.18 → **selected late_tol = 0**
+    </td>
+    <td valign="top">
 
-### SHOCK · --stages
+**SHOCK · --stages** — stage 1 plateau: 1/10 at % late 2.5 · late days 0.30 → **selected late_tol = 0**
 
 | late_tol | % late | late days | % def pcs | cost ($) | max share |
 |---|---|---|---|---|---|
@@ -77,7 +88,9 @@ Stage 1 plateau: 1/10 tolerances at % late 1.9 · late days 0.18 → **selected 
 | 7.0 | 10.4% | 0.70 | 5.8% | 113,914 | 36% |
 | 10.0 | 13.9% | 1.23 | 5.0% | 113,184 | 38% |
 
-Stage 1 plateau: 1/10 tolerances at % late 2.5 · late days 0.30 → **selected late_tol = 0**
+    </td>
+  </tr>
+</table>
 
 ### Why these values were chosen
 
