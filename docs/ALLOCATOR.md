@@ -63,7 +63,7 @@ accessory-reservation experiment).
 
 ## Appendix
 
-| Tool calls | 10 deterministic tools, LLM never does arithmetic | [/Tolerance_scan.md](/Tolerance_scan.md) |
+| Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds)| [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
 
 ### Why these values were chosen
 
