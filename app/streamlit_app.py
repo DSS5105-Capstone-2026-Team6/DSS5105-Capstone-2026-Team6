@@ -110,11 +110,15 @@ def _log_exchange(speaker, text, reply, link=None):
         {"speaker": speaker, "text": text, "reply": reply, "link": link})
 
 
-def _budget_ok(extra=1):
-    """Per-session request cap (Risk 6): the hosted demo shares one key."""
+def _budget_ok(extra=1, cap=100):
+    """Per-session request cap (Risk 6): the hosted demo shares one key.
+    Temporarily raised from 40 to 100; the global hourly/daily API limits
+    (API_CALLS_PER_HOUR / API_CALLS_PER_DAY) still apply across sessions.
+    The cap lives here, not in a module constant, because the tests exec
+    this function on its own."""
     n = st.session_state.get("n_sent", 0)
-    if n + extra > 40:
-        st.warning("Session request cap reached (40). Please reopen the page.")
+    if n + extra > cap:
+        st.warning(f"Session request cap reached ({cap}). Please reopen the page.")
         return False
     return True
 
