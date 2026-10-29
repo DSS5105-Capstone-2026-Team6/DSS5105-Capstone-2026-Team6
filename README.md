@@ -94,7 +94,13 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 │   ├── session.py             # per-chat session: trigger filter + confirmation gate (pure, tested)
 │   └── telegram_bot.py        # python-telegram-bot wiring; zero business logic
 ├── app/
-│   ├── streamlit_app.py       # Dispatcher UI: candidates + estimated dates → human confirms → audit record written
+│   ├── streamlit_app.py       # entry: auth gate, get_desk, confirmation-flow core, main()
+│   ├── ui_inbox.py            # 🗂 Desk tab: paste box, KPI row, case filter, request cards
+│   ├── ui_dashboard.py        # 📊 charts (queues, cost × defect bubbles)
+│   ├── ui_sidebar.py          # chat log + returned-batch recorder
+│   ├── ui_records.py          # 🧾 ledger view + demo reset
+│   ├── ui_shared.py           # palette/CSS, card(), scroll sync
+│   └── local_auth/            # remember-me localStorage component
 ├── eval/
 │   ├── run_eval.py              # batch runner: 30 requests -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
