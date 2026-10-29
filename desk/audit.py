@@ -42,12 +42,22 @@ class AuditLog:
                 db.execute("INSERT INTO ledger_meta VALUES ('version', ?)", (uuid.uuid4().hex,))
             if not db.execute("SELECT 1 FROM ledger_meta WHERE key='legacy_imported'").fetchone():
                 if legacy.suffix == '.jsonl' and legacy.exists():
-                    # Malformed or duplicate legacy data aborts the whole import.
+                    # Malformed data aborts the import; duplicate order_ids
+                    # skip (keep the first) — one stray dupe in a demo
+                    # ledger must not brick every future startup, and the
+                    # flag below must be written either way.
+                    seen, skipped = set(), []
                     for line in legacy.read_text(encoding='utf-8').splitlines():
                         if line.strip():
                             record = allocation_from_dict(json.loads(line))
+                            if record.order_id in seen:
+                                skipped.append(record.order_id)
+                                continue
+                            seen.add(record.order_id)
                             db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
                                        (record.order_id, json.dumps(to_dict(record))))
+                    if skipped:
+                        print(f"legacy import: skipped duplicate order_ids {skipped}")
                 db.execute("INSERT INTO ledger_meta VALUES ('legacy_imported', '1')")
 
     @contextmanager
