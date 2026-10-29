@@ -4,10 +4,6 @@
 
 The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
 
-The allocator is a **lateness-first hybrid**: expected finish with defect
-rework priced in, a tolerance plateau among on-time workshops, lowest defect
-rate inside the plateau. Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md).
-
 ## Deployed Apps
 
 Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
@@ -22,6 +18,10 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 | Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Tool calls | 10 deterministic tools, LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
+
+The allocator is a **lateness-first hybrid**: expected finish with defect
+rework priced in, a tolerance plateau among on-time workshops, lowest defect
+rate inside the plateau. Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
 Further reading: [deployment & migration notes](docs/DEPLOYMENT.md).
 
