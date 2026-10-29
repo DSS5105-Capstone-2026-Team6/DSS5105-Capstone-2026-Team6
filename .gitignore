@@ -184,8 +184,10 @@ temp/
 .env.*
 !.env.example
 results/*
-# but keep the evaluation run artefacts — they are the README's evidence
+# but keep the evaluation run artefacts — they are the docs' evidence
 !results/inbox_*.jsonl
 !results/inbox_*.json
+!results/heldout_*.jsonl
+!results/heldout_*.json
 *.sqlite3
 *.sqlite3-*
