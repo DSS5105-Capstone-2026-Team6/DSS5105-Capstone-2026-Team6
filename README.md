@@ -4,13 +4,43 @@
 
 The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
 
+## Safety and deployment
+
+See [deployment and migration notes](docs/DEPLOYMENT.md) before upgrading.
+The model tools are read-only. Human confirmation uses a transactionally shared
+SQLite allocation ledger; follow-ups update the pending proposal. Public
+Streamlit deployments require `APP_PASSWORD`, and every provider requires its
+own key (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Server-side
+API call budgets survive new sessions and Reset demo.
+
+SQLite shares state within one host; a separately hosted Telegram bot needs an
+external database to share state with Streamlit. Local cloud disk is not durable
+across all redeployments. Existing JSONL audit records are imported once.
+
+## Quick Start
+
+```bash
+uv sync                                     # install deps (generates uv.lock)
+python harness/simulate.py                  # runs the three baselines (random / greedy_biggest / cheapest)
+python harness/eft_benchmark.py --seeds 10  # EFT benchmark, normal + shock, averaged over 10 seeds
+uv run pytest                               # tool unit tests (incl. failure cases)
+uv run python desk/agent.py "R07: ORD-063 — 100 cardigans, make Apr 29."   # chat smoke test (needs DeepSeek key in .env)
+```
+
+`harness/simulate.py` loads its data from `../data` — keep the `harness/` and `data/` directories as siblings.
+
+## Deployed Apps
+Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
+
+Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
+
 ## The Allocator (algorithm2)
 
 One time model everywhere — simulator replay, desk tools and the SQLite
 ledger all share it, so online and offline can never diverge:
 
 ```
-E[finish] = queue_days + pieces / capacity × (1 + 0.5 × defect_rate) + pickup_lead_days
+E[finish] = queue_days + pieces / capacity × (1 + 0.5 × defect_rate) + pickup_lead_days --- the transport time 
 ```
 
 The `1 + 0.5 × defect_rate` term prices defect rework as an expectation: in
@@ -57,10 +87,6 @@ Under shock (a workshop closed day 30–44) the hybrid holds at 2% late /
 0.2 late days — matching EFT on lateness while carrying a lower defect
 load by construction.
 
-## Deployed Apps
-Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
-
-Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 ## Project Structure
 
 ```
@@ -108,31 +134,6 @@ Dispatcher Bot (Deployed on PC): https://t.me/Ddispatcherr_bot
 ├── tests/                     # pytest suite: one failure case per feature (189 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
-
-## Safety and deployment
-
-See [deployment and migration notes](docs/DEPLOYMENT.md) before upgrading.
-The model tools are read-only. Human confirmation uses a transactionally shared
-SQLite allocation ledger; follow-ups update the pending proposal. Public
-Streamlit deployments require `APP_PASSWORD`, and every provider requires its
-own key (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Server-side
-API call budgets survive new sessions and Reset demo.
-
-SQLite shares state within one host; a separately hosted Telegram bot needs an
-external database to share state with Streamlit. Local cloud disk is not durable
-across all redeployments. Existing JSONL audit records are imported once.
-
-## Quick Start
-
-```bash
-uv sync                                     # install deps (generates uv.lock)
-python harness/simulate.py                  # runs the three baselines (random / greedy_biggest / cheapest)
-python harness/eft_benchmark.py --seeds 10  # EFT benchmark, normal + shock, averaged over 10 seeds
-uv run pytest                               # tool unit tests (incl. failure cases)
-uv run python desk/agent.py "R07: ORD-063 — 100 cardigans, make Apr 29."   # chat smoke test (needs DeepSeek key in .env)
-```
-
-`harness/simulate.py` loads its data from `../data` — keep the `harness/` and `data/` directories as siblings.
 
 ## How the System Runs
 
