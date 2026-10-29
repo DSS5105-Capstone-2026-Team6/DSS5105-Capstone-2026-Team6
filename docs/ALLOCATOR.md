@@ -60,3 +60,14 @@ load by construction.
 Reproduce: `python harness/algorithm2.py` (tables + tolerance scan),
 `python harness/eft_benchmark.py --seeds 10` (EFT benchmark + the
 accessory-reservation experiment).
+
+## Appendix
+
+| Tool calls | 10 deterministic tools, LLM never does arithmetic | [docs/Tolerance_scan.md](docs/Tolerance_scan.md) |
+
+### Why these values were chosen
+
+- **Lateness is flat for small tolerances (0–0.5) and degrades quickly beyond ~5 days** — at tol = 10, % late rises to 8–14%. Since the selection hierarchy is *lateness first*, any tolerance that sacrifices lateness is eliminated at stage 1 of the scan.
+- **Larger tolerances trade lateness for fewer defects and lower cost** (% def pcs 7.5% → 5.0–5.4%, up to ~$6.7k cheaper), which violates the lateness-first hierarchy and is rejected despite looking attractive on the secondary metrics.
+- **Three of the four cells select `late_tol = 0`**; only NORMAL·--stages selects **0.5** (its stage-1 plateau favors 0.5's better late days, 0.23 vs 0.27). Production runs **0.5** — within 0.1pt of the best % late in every scenario and matching the pick for stages-normal, giving a single robust default across all cells.
+
