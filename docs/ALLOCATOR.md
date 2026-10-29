@@ -7,6 +7,8 @@ ledger all share it, so online and offline can never diverge:
 E[finish] = queue_days + pieces / capacity × (1 + 0.5 × defect_rate) + pickup_lead_days
 ```
 
+(`pickup_lead_days` is the transport time.)
+
 The `1 + 0.5 × defect_rate` term prices defect rework as an expectation: in
 the simulator a defective batch (probability `defect_rate`) is redone at
 1.5× work.
