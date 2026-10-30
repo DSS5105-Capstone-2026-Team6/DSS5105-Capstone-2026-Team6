@@ -102,6 +102,8 @@ def render_decision(decision, desk):
         st.success(f"⚡ Committed {r.record_id} — {r.order_id} → {r.workshop_id}")
         return
     render_understood(decision)
+    for note in decision.warnings:
+        st.warning(note, icon="⚠️")
     render_candidates(decision)
     render_confirm(decision, desk)
     # the 4th option, available on every uncommitted item (incl. ASK items

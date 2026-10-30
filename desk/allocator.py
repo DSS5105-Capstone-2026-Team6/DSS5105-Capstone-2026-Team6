@@ -38,7 +38,7 @@ from harness.algorithm2 import est_turnaround_expected, expected_days_late
 from harness.simulate import eligible_workshops
 
 CHAT_TODAY = date(2026, 4, 1)
-OBJECTIVES = ("lateness", "defects", "hybrid")
+OBJECTIVES = ("lateness", "defects", "hybrid", "cost")
 
 
 def _candidate_row(w, batch, queues):
@@ -60,6 +60,12 @@ def _candidate_row(w, batch, queues):
 
 
 def _sort_key(objective, row):
+    if objective == "cost":
+        # cheapest among the shops that meet the due date; when none does,
+        # fall back to the lateness order (never a cheap-but-late pick)
+        on_time = row["days_late"] == 0
+        return (not on_time, row["cost"] if on_time else row["expected_days_late"],
+                row["est_finish_days"], row["defect_risk"], row["workshop_id"])
     if objective == "defects":
         return (row["defect_risk"], row["expected_days_late"],
                 row["est_finish_days"], row["cost"], row["workshop_id"])
@@ -130,7 +136,8 @@ RANK_CANDIDATES_SCHEMA = {
         "description": "The allocator: every eligible workshop ranked by the "
                        "objective (lateness first, or defects, or the hybrid "
                        "which keeps the lateness plateau and picks the lowest "
-                       "defect rate). THE way to compare or choose workshops: "
+                       "defect rate, or cost: the cheapest shop that still "
+                       "meets the due date). THE way to compare or choose workshops: "
                        "call it once per allocation request, instead of "
                        "estimating workshops one by one.",
         "parameters": {
@@ -138,8 +145,9 @@ RANK_CANDIDATES_SCHEMA = {
             "properties": {
                 "order_id": {"type": "string"},
                 "objective": {"type": "string",
-                              "enum": ["lateness", "defects", "hybrid"],
-                              "description": "default lateness"},
+                              "enum": ["lateness", "defects", "hybrid", "cost"],
+                              "description": "default lateness; cost for "
+                                             "'cheapest that still hits the date'"},
                 "excluded": {"type": "array", "items": {"type": "string"},
                              "description": "workshops the request excludes"},
             },

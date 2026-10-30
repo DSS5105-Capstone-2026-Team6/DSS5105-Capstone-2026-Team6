@@ -104,6 +104,7 @@ class Decision:
     state_version: Optional[str] = None
     objective: str = "lateness"
     excluded: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)     # consistency notes shown to the human
 
 
 @dataclass
