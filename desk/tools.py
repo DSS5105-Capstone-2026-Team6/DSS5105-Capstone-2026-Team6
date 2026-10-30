@@ -410,11 +410,12 @@ PROBE_OVERLOAD_SCHEMA = {
 
 # ---------------- earliest_feasible ----------------
 
-def _eligible_for(pieces, category, store):
+def _eligible_for(pieces, category, store, excluded_ids=frozenset()):
     """Eligible workshops for a part of this size — the simulator's own
     rule, so per-part eligibility can never drift from the rest."""
     batch = {"category": category, "pieces": pieces}
-    return eligible_workshops(batch, store.workshops)
+    return [w for w in eligible_workshops(batch, store.workshops)
+            if w.workshop_id not in excluded_ids]
 
 
 def _finish(pieces, w, queues):
@@ -422,23 +423,31 @@ def _finish(pieces, w, queues):
     return est_turnaround_expected(batch, w, queues)
 
 
-def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
+def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
+                      queues=None):
     """Earliest date as one batch and as a two-way split. Error dict for an
     unknown order; flags report when even the split misses the due date.
-    `queues` overrides the 1 April snapshot with live chat-side queues."""
+    `queues` overrides the 1 April snapshot with live chat-side queues;
+    `excluded` workshops (names or ids) are left out of both."""
     orders = orders or OrderStore()
     store = store or WorkshopStore()
     queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
     rec = orders.by_id(order_id) if order_id else None
     if rec is None:
         return {"error": f"unknown order {order_id!r}"}
+    excluded_ids = set()
+    for name in excluded or []:
+        wid = store.resolve(name)
+        if not wid:
+            return {"error": f"unknown excluded workshop {name!r}"}
+        excluded_ids.add(wid)
 
     pieces, category = int(rec["pieces"]), rec["category"]
     due = date.fromisoformat(rec["due_date"])
 
     # --- single batch: earliest finish over all eligible workshops
     single = None   # (finish date, workshop)
-    for w in _eligible_for(pieces, category, store):
+    for w in _eligible_for(pieces, category, store, excluded_ids):
         finish = CHAT_TODAY + timedelta(days=round(_finish(pieces, w, queues)))
         if single is None or finish < single[0]:
             single = (finish, w)
@@ -449,14 +458,14 @@ def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
 
     def elig(n):
         if n not in elig_cache:
-            elig_cache[n] = _eligible_for(n, category, store)
+            elig_cache[n] = _eligible_for(n, category, store, excluded_ids)
         return elig_cache[n]
 
     for a in range(1, pieces):
         b = pieces - a
-        for w1 in elig_cache.setdefault(a, _eligible_for(a, category, store)):
+        for w1 in elig(a):
             f1 = _finish(a, w1, queues)
-            for w2 in elig_cache.setdefault(b, _eligible_for(b, category, store)):
+            for w2 in elig(b):
                 if w2.workshop_id == w1.workshop_id:
                     continue            # same shop = serial, no parallelism
                 f2 = _finish(b, w2, queues)
@@ -483,7 +492,9 @@ def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
             "meets_due_split": bool(split_out and split_out["earliest_finish"] <= due.isoformat()),
             "slack_days_single": _slack(single_out and single_out["earliest_finish"]),
             "slack_days_split": _slack(split_out and split_out["earliest_finish"]),
-            "advisory": "splits are advisory; the simulator sends one batch "
+            "excluded": sorted(excluded_ids),
+            "advisory": "a split can be confirmed in the chat desk (both parts "
+                        "are committed); the simulator still sends one batch "
                         "to one workshop (roadmap, Assumption 4)"}
 
 
@@ -499,6 +510,8 @@ EARLIEST_FEASIBLE_SCHEMA = {
             "type": "object",
             "properties": {
                 "order_id": {"type": "string"},
+                "excluded": {"type": "array", "items": {"type": "string"},
+                             "description": "workshops the request excludes"},
             },
             "required": ["order_id"],
         },

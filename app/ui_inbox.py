@@ -91,6 +91,49 @@ def render_confirm(decision, desk):
             st.rerun()
 
 
+def render_split(decision, desk):
+    """Step 4b — a two-workshop split, when it beats the best single batch.
+    Both parts commit together (one record each); the simulator itself
+    still sends one batch to one workshop."""
+    from desk.desk import ProposalChanged
+    from app.streamlit_app import _log_exchange, _replace_item
+    split = decision.split
+    if not split or decision.parsed.order_id is None:
+        return
+    parts = " + ".join(f"{p['pieces']} pcs {p['name']} ({p['workshop_id']})"
+                       for p in split["parts"])
+    due = ("meets the due date" if split["meets_due"]
+           else "still misses the due date")
+    st.markdown("**✂️ Split option**")
+    card(f"<b>{parts}</b><br>Finish {split['earliest_finish']} · {due}"
+         + (f" · single batch {split['single_finish']}"
+            if split.get("single_finish") else ""))
+    if st.button(f"▶ Confirm split ({parts})", use_container_width=True,
+                 key=f"btn-{id(decision)}-split"):
+        try:
+            records = desk.confirm_split(decision, committed_by="dispatcher")
+        except ProposalChanged as exc:
+            _replace_item(decision, exc.decision, str(exc))
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        st.session_state[f"committed-{id(decision)}"] = records
+        _log_exchange("dispatcher", f"(button) split {parts}",
+                      "Committed " + _committed_line(records) + ".")
+        st.rerun()
+
+
+def _committed_line(records):
+    """'A-0003 — ORD-029 → W2 (549 pcs) + W6 (951 pcs)' for a split, the
+    usual 'A-0001 — ORD-041 → W6' for one record."""
+    if not isinstance(records, list):
+        return f"{records.record_id} — {records.order_id} → {records.workshop_id}"
+    ids = ", ".join(r.record_id for r in records)
+    shops = " + ".join(f"{r.workshop_id} ({r.pieces} pcs)" for r in records)
+    return f"{ids} — {records[0].order_id} → {shops}"
+
+
 def render_decision(decision, desk):
     """Pre-commit: understood / candidates / confirm buttons, plus the 4th
     option — an expander with the live candidate board and the per-item
@@ -99,11 +142,12 @@ def render_decision(decision, desk):
     from app.streamlit_app import render_item_chat
     r = st.session_state.get(f"committed-{id(decision)}")
     if r is not None:
-        st.success(f"⚡ Committed {r.record_id} — {r.order_id} → {r.workshop_id}")
+        st.success(f"⚡ Committed {_committed_line(r)}")
         return
     render_understood(decision)
     render_candidates(decision)
     render_confirm(decision, desk)
+    render_split(decision, desk)
     # the 4th option, available on every uncommitted item (incl. ASK items
     # with no candidates): an expander — st.chat_input/popover cannot hold
     # a working chat input, so the dialog uses a text form
@@ -188,7 +232,7 @@ def render_inbox(desk):
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("⚠️ Needs you", sum(1 for x in items if x["decision"].behaviour in NEEDS_HUMAN))
     k2.metric("🟢 To confirm", to_confirm)
-    k3.metric("✅ Committed", len(desk.audit.load_all()))
+    k3.metric("✅ Committed", len({r.order_id for r in desk.audit.load_all()}))
     k4.metric("🕒 Total queue (days)", round(sum(desk.state.queues.values()), 1))
     k5.metric("🔴 At risk", risk["n_at_risk"])
     if risk["n_at_risk"]:

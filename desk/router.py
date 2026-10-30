@@ -73,6 +73,16 @@ def _suggested_workshop_id(text, workshops):
     return None
 
 
+def candidates_from_rank(result):
+    """rank_candidates result -> (candidates, chosen) as contract records."""
+    rows = result.get("candidates", [])
+    candidates = [Candidate(**{k: row[k] for k in _CANDIDATE_FIELDS})
+                  for row in rows]
+    chosen = next((c for c in candidates
+                   if c.workshop_id == result.get("chosen")), None)
+    return candidates, chosen
+
+
 def _eligibility_row(elig_call, workshop_id):
     for row in elig_call["result"].get("workshops", []):
         if row["workshop_id"] == workshop_id:
@@ -132,12 +142,9 @@ def route(text, reply, log, workshops=None) -> Decision:
     if rank_relevant:
         parsed.order_id = parsed.order_id or rank["arguments"].get("order_id")
         rows = rank["result"]["candidates"]
-        candidates = [Candidate(**{k: row[k] for k in _CANDIDATE_FIELDS})
-                      for row in rows]
+        candidates, top = candidates_from_rank(rank["result"])
         if behaviour is not Behaviour.REFUSE:
-            top = next(r for r in rows
-                       if r["workshop_id"] == rank["result"]["chosen"])
-            chosen = Candidate(**{k: top[k] for k in _CANDIDATE_FIELDS})
+            chosen = top
             behaviour = (Behaviour.IMPOSSIBLE
                          if rows and all(r["days_late"] > 0 for r in rows)
                          else Behaviour.ALLOCATE)

@@ -104,6 +104,10 @@ class Decision:
     state_version: Optional[str] = None
     objective: str = "lateness"
     excluded: list = field(default_factory=list)
+    # a two-workshop split the desk can commit (from earliest_feasible):
+    # {"earliest_finish", "meets_due", "single_finish",
+    #  "parts": [{"workshop_id", "name", "pieces"}, ...]}; None = no split
+    split: Optional[dict] = None
 
 
 @dataclass
