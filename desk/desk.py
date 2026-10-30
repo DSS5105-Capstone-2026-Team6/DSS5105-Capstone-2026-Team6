@@ -35,7 +35,7 @@ from desk.confirmation import (commit_intent_workshop, fast_intent,
 from desk.audit import StaleAllocation
 from desk.allocator import rank_candidates
 from desk.contracts import Behaviour, Constraint, canonical_order_id
-from desk.tools import earliest_feasible
+from desk.tools import split_options
 
 _OPTIONS_LINE = re.compile(r"(?im)^OPTIONS:\s*(.+?)\s*$")
 
@@ -143,32 +143,28 @@ class DispatchDesk:
         decision.candidates, decision.chosen = candidates_from_rank(result)
 
     def _attach_split(self, decision, force=False):
-        """Offer a two-workshop split when it finishes earlier than the best
-        single batch: always for IMPOSSIBLE, and for an ALLOCATE whose flow
-        asked earliest_feasible (e.g. the message asked about splitting) or
-        that is a refresh of a proposal which already offered one.
-        Splits live in the chat layer; the simulator stays single-batch."""
+        """Offer ranked split options (any number of workshops, fewest days
+        late first) that finish earlier than the best single batch: always
+        for IMPOSSIBLE,
+        and for an ALLOCATE whose flow asked earliest_feasible (e.g. the
+        message asked about splitting) or that is a refresh of a proposal
+        which already offered splits. Splits live in the chat layer; the
+        simulator stays single-batch."""
         oid = decision.parsed.order_id
         asked = force or any(x["tool"] == "earliest_feasible" for x in decision.tool_log)
+        decision.splits = []
         if (self.orders.by_id(oid) is None
                 or decision.behaviour not in (Behaviour.IMPOSSIBLE, Behaviour.ALLOCATE)
                 or (decision.behaviour is Behaviour.ALLOCATE and not asked)):
-            decision.split = None
             return
         args = {"order_id": oid, "excluded": list(decision.excluded)}
-        result = earliest_feasible(**args, orders=self.orders, store=self.workshops,
-                                   queues=self.state.queues)
-        split, single = result.get("split"), result.get("single")
-        if "error" in result or not split or (
-                single and split["earliest_finish"] >= single["earliest_finish"]):
-            decision.split = None
+        result = split_options(**args, orders=self.orders, store=self.workshops,
+                               queues=self.state.queues)
+        if "error" in result or not result["options"]:
             return
-        decision.tool_log.append({"tool": "earliest_feasible", "arguments": args,
+        decision.tool_log.append({"tool": "split_options", "arguments": args,
                                   "result": result, "called_by": "desk"})
-        decision.split = {"earliest_finish": split["earliest_finish"],
-                          "meets_due": result["meets_due_split"],
-                          "single_finish": single and single["earliest_finish"],
-                          "parts": [dict(part) for part in split["parts"]]}
+        decision.splits = result["options"]
 
     def _attach_ranking(self, decision, requester):
         ranks = [x for x in decision.tool_log if x["tool"] == "rank_candidates"
@@ -196,7 +192,7 @@ class DispatchDesk:
         fresh.objective, fresh.excluded = decision.objective, list(decision.excluded)
         fresh.state_version = version
         fresh.created_at = datetime.now(timezone.utc).isoformat()
-        self._attach_split(fresh, force=decision.split is not None)
+        self._attach_split(fresh, force=bool(decision.splits))
         return fresh
 
     def follow_up(self, text, decision, requester="dispatcher"):
@@ -301,12 +297,13 @@ class DispatchDesk:
         except StaleAllocation:
             raise ProposalChanged(self.refresh(decision)) from None
 
-    def confirm_split(self, decision, committed_by="dispatcher"):
-        """The human confirmed the split: commit every part (each moves its
-        own workshop's queue) in one transaction and return the records."""
-        split = decision.split
-        if not split or not decision.parsed.order_id:
-            raise ValueError("nothing to commit: decision has no split")
+    def confirm_split(self, decision, index=0, committed_by="dispatcher"):
+        """The human confirmed split option `index`: commit every part (each
+        moves its own workshop's queue) in one transaction and return the
+        records."""
+        if not decision.parsed.order_id or not 0 <= index < len(decision.splits):
+            raise ValueError("nothing to commit: decision has no such split")
+        split = decision.splits[index]
         if decision.state_version is None:
             raise ValueError("Proposal has no state version. Request a new proposal.")
         if decision.state_version != self.audit.version:

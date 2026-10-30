@@ -92,36 +92,37 @@ def render_confirm(decision, desk):
 
 
 def render_split(decision, desk):
-    """Step 4b — a two-workshop split, when it beats the best single batch.
-    Both parts commit together (one record each); the simulator itself
-    still sends one batch to one workshop."""
+    """Step 4b — split options over any number of workshops, ranked by days
+    late, each faster than the best single batch. All parts of the chosen
+    option commit together (one record each); the simulator itself still
+    sends one batch to one workshop."""
     from desk.desk import ProposalChanged
     from app.streamlit_app import _log_exchange, _replace_item
-    split = decision.split
-    if not split or decision.parsed.order_id is None:
+    if not decision.splits or decision.parsed.order_id is None:
         return
-    parts = " + ".join(f"{p['pieces']} pcs {p['name']} ({p['workshop_id']})"
-                       for p in split["parts"])
-    due = ("meets the due date" if split["meets_due"]
-           else "still misses the due date")
-    st.markdown("**✂️ Split option**")
-    card(f"<b>{parts}</b><br>Finish {split['earliest_finish']} · {due}"
-         + (f" · single batch {split['single_finish']}"
-            if split.get("single_finish") else ""))
-    if st.button(f"▶ Confirm split ({parts})", use_container_width=True,
-                 key=f"btn-{id(decision)}-split"):
-        try:
-            records = desk.confirm_split(decision, committed_by="dispatcher")
-        except ProposalChanged as exc:
-            _replace_item(decision, exc.decision, str(exc))
+    st.markdown("**✂️ Split options (ranked by days late)**")
+    for i, split in enumerate(decision.splits):
+        parts = " + ".join(f"{p['pieces']} pcs {p['name']} ({p['workshop_id']})"
+                           for p in split["parts"])
+        late = ("on time" if split["meets_due"]
+                else f"{split['days_late']} days late")
+        card(f"<b>#{i + 1} · {split['n_shops']} workshops</b><br>{parts}"
+             f"<br>Finish {split['earliest_finish']} · {late}"
+             f" · Cost {split['cost']:.2f} · Defect {split['defect_risk']:.2f}")
+        if st.button(f"▶ Confirm split #{i + 1}", use_container_width=True,
+                     key=f"btn-{id(decision)}-split-{i}"):
+            try:
+                records = desk.confirm_split(decision, i, committed_by="dispatcher")
+            except ProposalChanged as exc:
+                _replace_item(decision, exc.decision, str(exc))
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+            st.session_state[f"committed-{id(decision)}"] = records
+            _log_exchange("dispatcher", f"(button) split #{i + 1}: {parts}",
+                          "Committed " + _committed_line(records) + ".")
             st.rerun()
-        except ValueError as exc:
-            st.error(str(exc))
-            return
-        st.session_state[f"committed-{id(decision)}"] = records
-        _log_exchange("dispatcher", f"(button) split {parts}",
-                      "Committed " + _committed_line(records) + ".")
-        st.rerun()
 
 
 def _committed_line(records):

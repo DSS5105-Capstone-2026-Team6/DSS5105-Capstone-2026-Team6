@@ -12,7 +12,8 @@ import pytest
 
 from desk.contracts import Behaviour, decision_from_dict, to_dict
 from desk.desk import DispatchDesk, ProposalChanged
-from desk.tools import commit_allocation, dispatch_tool, earliest_feasible
+from desk.tools import (commit_allocation, dispatch_tool, earliest_feasible,
+                        split_options)
 
 
 class FeasibilityAgent:
@@ -50,29 +51,36 @@ def test_impossible_via_earliest_feasible_gets_candidates(desk):
                for x in d.tool_log)
 
 
-def test_split_offered_when_faster_than_single(desk):
+def test_splits_offered_ranked_by_days_late(desk):
     d = desk.handle_message("ORD-029 is due TODAY. Can we still make it?")
-    assert d.split is not None
-    assert d.split["earliest_finish"] < d.split["single_finish"]
-    parts = d.split["parts"]
-    assert len(parts) == 2 and parts[0]["workshop_id"] != parts[1]["workshop_id"]
-    assert sum(p["pieces"] for p in parts) == 1500
+    assert d.splits
+    lates = [s["days_late"] for s in d.splits]
+    assert lates == sorted(lates)
+    for s in d.splits:
+        ids = [p["workshop_id"] for p in s["parts"]]
+        assert len(ids) == len(set(ids)) == s["n_shops"] >= 2
+        assert sum(p["pieces"] for p in s["parts"]) == 1500
+        assert s["earliest_finish"] < "2026-04-14"          # beats one shop
+    # the best option uses three shops: no ceiling on the number of shops
+    assert d.splits[0]["n_shops"] == 3 and d.splits[0]["earliest_finish"] == "2026-04-08"
 
 
 def test_split_survives_json_round_trip(desk):
     d = desk.handle_message("ORD-029 is due TODAY.")
-    assert decision_from_dict(to_dict(d)).split == d.split
+    assert decision_from_dict(to_dict(d)).splits == d.splits
 
 
-def test_confirm_split_commits_both_parts(desk):
+@pytest.mark.parametrize("index", [0, 1])
+def test_confirm_split_commits_every_part(desk, index):
     d = desk.handle_message("ORD-029 is due TODAY.")
+    chosen = d.splits[index]
     before = dict(desk.state.queues)
-    records = desk.confirm_split(d, committed_by="dispatcher")
-    assert [r.workshop_id for r in records] == [p["workshop_id"] for p in d.split["parts"]]
+    records = desk.confirm_split(d, index, committed_by="dispatcher")
+    assert [r.workshop_id for r in records] == [p["workshop_id"] for p in chosen["parts"]]
     assert sum(r.pieces for r in records) == 1500
     assert all(r.order_id == "ORD-029" for r in records)
-    assert records[0].evidence["split"] == {"part": 1, "of": 2, "parts": [
-        {"workshop_id": p["workshop_id"], "pieces": p["pieces"]} for p in d.split["parts"]]}
+    assert records[0].evidence["split"] == {"part": 1, "of": len(records), "parts": [
+        {"workshop_id": p["workshop_id"], "pieces": p["pieces"]} for p in chosen["parts"]]}
     for r in records:      # each part moves only its own workshop's queue
         w = desk.workshops.workshops[r.workshop_id]
         assert desk.state.queues[r.workshop_id] == pytest.approx(
@@ -86,7 +94,7 @@ def test_split_order_cannot_be_committed_again(desk):
     assert again["committed"] is False and "already committed" in again["error"]
     with pytest.raises(ValueError, match="already committed"):
         desk.confirm_split(desk.refresh(d))
-    assert len(desk.audit.load_all()) == 2
+    assert len(desk.audit.load_all()) == d.splits[0]["n_shops"]
 
 
 def test_stale_split_is_refreshed_not_committed(desk):
@@ -94,17 +102,19 @@ def test_stale_split_is_refreshed_not_committed(desk):
     commit_allocation("ORD-041", "W6", desk=desk)      # queues move
     with pytest.raises(ProposalChanged) as exc:
         desk.confirm_split(d)
-    assert exc.value.decision.split is not None
+    assert exc.value.decision.splits
     assert desk.audit.load_all()[-1].order_id == "ORD-041"
 
 
 def test_confirm_split_rejects_tampered_parts(desk):
     d = desk.handle_message("ORD-029 is due TODAY.")
-    bad = dict(d.split, parts=[dict(p) for p in d.split["parts"]])
+    bad = dict(d.splits[0], parts=[dict(p) for p in d.splits[0]["parts"]])
     bad["parts"][0]["pieces"] += 1                   # no longer adds up
-    d.split = bad
+    d.splits = [bad]
     with pytest.raises(ValueError, match="add up"):
         desk.confirm_split(d)
+    with pytest.raises(ValueError, match="no such split"):
+        desk.confirm_split(d, 5)
     assert desk.audit.load_all() == []
 
 
@@ -115,7 +125,7 @@ def test_no_split_for_plain_allocation(desk):
     desk.agent = FakeAgent()
     desk.agent.desk = desk
     d = desk.handle_message("allocate ORD-041")
-    assert d.behaviour is Behaviour.ALLOCATE and d.split is None
+    assert d.behaviour is Behaviour.ALLOCATE and d.splits == []
 
 
 def test_earliest_feasible_respects_exclusions():
@@ -123,3 +133,32 @@ def test_earliest_feasible_respects_exclusions():
     assert r["single"]["workshop_id"] != "W2"
     assert all(p["workshop_id"] != "W2" for p in r["split"]["parts"])
     assert "error" in earliest_feasible("ORD-029", excluded=["Nobody"])
+
+
+def test_two_shop_split_matches_brute_force():
+    """The exact search agrees with earliest_feasible's brute force on the
+    best two-shop date (it may find a different piece split, same date)."""
+    for oid in ("ORD-029", "ORD-103", "ORD-041", "ORD-010"):
+        best2 = min((o for o in split_options(oid, top=99)["options"]
+                     if o["n_shops"] == 2), key=lambda o: o["earliest_finish"])
+        assert best2["earliest_finish"] == earliest_feasible(oid)["split"]["earliest_finish"]
+
+
+def test_split_parts_respect_caps_and_minimum_share():
+    """FreshStart's 300-piece cap holds per part, and no token parts:
+    every part carries at least 10% of the order."""
+    for o in split_options("ORD-010", top=99)["options"]:
+        for p in o["parts"]:
+            assert p["pieces"] >= 100
+            if p["workshop_id"] == "W8":
+                assert p["pieces"] <= 300
+
+
+def test_extra_shop_must_earn_its_place():
+    """A split is dropped when a split over a subset of its shops is at
+    least as fast — adding a shop has to make the order earlier."""
+    opts = split_options("ORD-010", top=99)["options"]
+    for o in opts:
+        shops = {p["workshop_id"] for p in o["parts"]}
+        assert not any({p["workshop_id"] for p in x["parts"]} < shops
+                       and x["est_finish_days"] <= o["est_finish_days"] for x in opts)

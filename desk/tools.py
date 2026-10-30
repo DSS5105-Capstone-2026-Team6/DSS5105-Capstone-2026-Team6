@@ -23,6 +23,8 @@ Tool index:
 """
 
 from datetime import date, timedelta
+import itertools
+import math
 
 try:
     from desk.register import OrderStore, WorkshopStore
@@ -496,6 +498,114 @@ def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
             "advisory": "a split can be confirmed in the chat desk (both parts "
                         "are committed); the simulator still sends one batch "
                         "to one workshop (roadmap, Assumption 4)"}
+
+
+def _best_split_for(shops, pieces, category, store, queues, min_part=1):
+    """Earliest finish when `pieces` are shared over exactly these shops,
+    all working in parallel. Searches the finish time T: by T each shop can
+    finish floor((T - queue - lead) * capacity / (1 + 0.5 * defect_rate))
+    pieces (capped at max_batch), and the earliest T at which the shops
+    cover the order, with at least `min_part` pieces each, is optimal.
+    None when the shops cannot cover it."""
+    rate = {w.workshop_id: w.capacity / (1 + 0.5 * w.defect_rate) for w in shops}
+    start = {w.workshop_id: queues[w.workshop_id] + w.lead_days for w in shops}
+
+    def can_make(w, t):
+        n = math.floor((t - start[w.workshop_id]) * rate[w.workshop_id] + 1e-9)
+        return max(0, min(n, w.max_batch or pieces))
+
+    if (sum(can_make(w, 1e9) for w in shops) < pieces
+            or min(can_make(w, 1e9) for w in shops) < min_part):
+        return None
+    lo, hi = 0.0, max(start.values()) + pieces / min(rate.values()) + 1
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        made = [can_make(w, mid) for w in shops]
+        if sum(made) >= pieces and min(made) >= min_part:
+            hi = mid
+        else:
+            lo = mid
+    split = {w.workshop_id: can_make(w, hi) for w in shops}
+    excess = sum(split.values()) - pieces
+    while excess > 0:   # hand back the surplus from the latest-finishing part
+        w = max((w for w in shops if split[w.workshop_id] > min_part),
+                key=lambda w: _finish(split[w.workshop_id], w, queues))
+        cut = min(excess, split[w.workshop_id] - min_part)
+        split[w.workshop_id] -= cut
+        excess -= cut
+    for w in shops:     # every part must itself be eligible (e.g. batch caps)
+        if w not in _eligible_for(split[w.workshop_id], category, store):
+            return None
+    return split
+
+
+def split_options(order_id=None, excluded=None, max_shops=None, top=5,
+                  min_part_share=0.1, *, orders=None, store=None, queues=None):
+    """Every way to split an order over two or more workshops (no ceiling
+    unless `max_shops` is given; at most 7 eligible shops = 120 sets), each set
+    with its best piece split, ranked by days late, then earliest finish,
+    then fewer shops, then cost. A split is kept only when it finishes
+    earlier than the best single batch and than every split over a subset
+    of its shops (an extra shop must earn its pickup and QC), and each part
+    carries at least `min_part_share` of the order (no 1-piece parts).
+    Chat layer only: the simulator still sends one batch to one workshop."""
+    orders = orders or OrderStore()
+    store = store or WorkshopStore()
+    queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
+    rec = orders.by_id(order_id) if order_id else None
+    if rec is None:
+        return {"error": f"unknown order {order_id!r}"}
+    excluded_ids = set()
+    for name in excluded or []:
+        wid = store.resolve(name)
+        if not wid:
+            return {"error": f"unknown excluded workshop {name!r}"}
+        excluded_ids.add(wid)
+
+    pieces, category = int(rec["pieces"]), rec["category"]
+    due = date.fromisoformat(rec["due_date"])
+    single = min((_finish(pieces, w, queues)
+                  for w in _eligible_for(pieces, category, store, excluded_ids)),
+                 default=None)
+    single_finish = (CHAT_TODAY + timedelta(days=round(single))) if single is not None else None
+    shops = _eligible_for(1, category, store, excluded_ids)
+    min_part = max(1, math.ceil(pieces * min_part_share))
+
+    options = []
+    for k in range(2, min(max_shops or len(shops), len(shops)) + 1):
+        for group in itertools.combinations(shops, k):
+            split = _best_split_for(group, pieces, category, store, queues, min_part)
+            if split is None:
+                continue
+            days = max(_finish(split[w.workshop_id], w, queues) for w in group)
+            finish = CHAT_TODAY + timedelta(days=round(days))
+            if single_finish is not None and finish >= single_finish:
+                continue
+            options.append({
+                "parts": [{"workshop_id": w.workshop_id, "name": w.name,
+                           "pieces": split[w.workshop_id]} for w in group],
+                "n_shops": k,
+                "earliest_finish": finish.isoformat(),
+                "est_finish_days": round(days, 2),
+                "days_late": max(0, (finish - due).days),
+                "meets_due": finish <= due,
+                "cost": round(sum(split[w.workshop_id] * w.cost for w in group), 2),
+                "defect_risk": round(sum(split[w.workshop_id] * w.defect_rate
+                                         for w in group) / pieces, 4)})
+    def shop_set(o):
+        return {p["workshop_id"] for p in o["parts"]}
+    options = [o for o in options
+               if not any(shop_set(x) < shop_set(o)
+                          and x["est_finish_days"] <= o["est_finish_days"]
+                          for x in options)]
+    options.sort(key=lambda o: (o["days_late"], o["est_finish_days"],
+                                o["n_shops"], o["cost"]))
+    return {"order_id": order_id, "due_date": due.isoformat(),
+            "single_finish": single_finish and single_finish.isoformat(),
+            "excluded": sorted(excluded_ids), "options": options[:top],
+            "n_options": len(options),
+            "advisory": "chat-layer splits; the simulator still sends one "
+                        "batch to one workshop"}
 
 
 EARLIEST_FEASIBLE_SCHEMA = {
