@@ -152,7 +152,7 @@ class DispatchDesk:
         simulator stays single-batch."""
         oid = decision.parsed.order_id
         asked = force or any(x["tool"] == "earliest_feasible" for x in decision.tool_log)
-        decision.splits = []
+        decision.splits, decision.recommended_split = [], None
         if (self.orders.by_id(oid) is None
                 or decision.behaviour not in (Behaviour.IMPOSSIBLE, Behaviour.ALLOCATE)
                 or (decision.behaviour is Behaviour.ALLOCATE and not asked)):
@@ -165,6 +165,8 @@ class DispatchDesk:
         decision.tool_log.append({"tool": "split_options", "arguments": args,
                                   "result": result, "called_by": "desk"})
         decision.splits = result["options"]
+        if decision.behaviour is Behaviour.IMPOSSIBLE:
+            decision.recommended_split = 0      # ranked best, beats any single shop
 
     def _attach_ranking(self, decision, requester):
         ranks = [x for x in decision.tool_log if x["tool"] == "rank_candidates"

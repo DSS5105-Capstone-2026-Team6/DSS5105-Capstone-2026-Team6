@@ -55,6 +55,12 @@ number of workshops, and at most 7 shops are eligible, so this is at most
 workshops, then lower cost. The top 5 are shown, each with its own
 **Confirm split #k** button.
 
+**Recommendation.** On an IMPOSSIBLE order the ⭐ recommendation moves from
+the best single workshop to split #1 (`Decision.recommended_split = 0`),
+since every listed split finishes earlier than any single shop. `chosen`
+stays the best single workshop as the fallback, so the evaluation's
+workshop check is unchanged. On an ALLOCATE the single workshop keeps the ⭐.
+
 ## Example: ORD-029 (1500 beanies, due Apr 1)
 
 | # | Split | Finish | Days late |

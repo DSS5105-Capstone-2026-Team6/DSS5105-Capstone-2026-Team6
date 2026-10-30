@@ -108,6 +108,10 @@ class Decision:
     # [{"parts": [{"workshop_id", "name", "pieces"}, ...], "n_shops",
     #   "earliest_finish", "days_late", "meets_due", "cost", ...}, ...]
     splits: list = field(default_factory=list)
+    # index into splits when the desk recommends a split over `chosen`
+    # (IMPOSSIBLE: the best split always beats the best single shop);
+    # `chosen` then stays the best single-workshop fallback
+    recommended_split: Optional[int] = None
 
 
 @dataclass

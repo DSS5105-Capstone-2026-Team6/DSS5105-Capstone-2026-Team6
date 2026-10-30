@@ -38,13 +38,20 @@ def render_understood(decision):
     card("".join(rows))
 
 
+def _star_on_single(decision, c):
+    """The ⭐ goes to the chosen workshop, unless the desk recommends a split
+    (IMPOSSIBLE orders), in which case it moves to that split option."""
+    return (decision.recommended_split is None and decision.chosen is not None
+            and c.workshop_id == decision.chosen.workshop_id)
+
+
 def render_candidates(decision):
     """Step 3 — candidate cards, chosen one highlighted."""
     if not decision.candidates:
         return
     st.markdown("**🧭 Candidates**")
     for i, c in enumerate(decision.candidates[:3]):
-        is_chosen = decision.chosen and c.workshop_id == decision.chosen.workshop_id
+        is_chosen = _star_on_single(decision, c)
         slack = ""
         if decision.parsed.due_date:
             from datetime import date
@@ -70,7 +77,7 @@ def render_confirm(decision, desk):
     st.markdown("**⚙️ Confirm (the recommendation is advisory — you may pick another)**")
     from dataclasses import replace
     for c in decision.candidates[:3]:
-        is_chosen = decision.chosen and c.workshop_id == decision.chosen.workshop_id
+        is_chosen = _star_on_single(decision, c)
         label = f"▶ Confirm {c.name} ({c.workshop_id})" + (" ⭐ recommended" if is_chosen else "")
         if st.button(label, use_container_width=True,
                      key=f"btn-{id(decision)}-{c.workshop_id}"):
@@ -106,10 +113,13 @@ def render_split(decision, desk):
                            for p in split["parts"])
         late = ("on time" if split["meets_due"]
                 else f"{split['days_late']} days late")
-        card(f"<b>#{i + 1} · {split['n_shops']} workshops</b><br>{parts}"
+        star = i == decision.recommended_split
+        card(f"<b>#{i + 1} · {split['n_shops']} workshops</b>"
+             + (" ⭐" if star else "") + f"<br>{parts}"
              f"<br>Finish {split['earliest_finish']} · {late}"
              f" · Cost {split['cost']:.2f} · Defect {split['defect_risk']:.2f}")
-        if st.button(f"▶ Confirm split #{i + 1}", use_container_width=True,
+        if st.button(f"▶ Confirm split #{i + 1}" + (" ⭐ recommended" if star else ""),
+                     use_container_width=True,
                      key=f"btn-{id(decision)}-split-{i}"):
             try:
                 records = desk.confirm_split(decision, i, committed_by="dispatcher")

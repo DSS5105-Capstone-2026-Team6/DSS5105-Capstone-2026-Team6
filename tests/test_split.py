@@ -162,3 +162,19 @@ def test_extra_shop_must_earn_its_place():
         shops = {p["workshop_id"] for p in o["parts"]}
         assert not any({p["workshop_id"] for p in x["parts"]} < shops
                        and x["est_finish_days"] <= o["est_finish_days"] for x in opts)
+
+
+def test_impossible_recommends_best_split(desk):
+    """On an IMPOSSIBLE order the ⭐ moves to split #1 (it always beats the
+    best single shop); `chosen` stays the single-workshop fallback."""
+    d = desk.handle_message("ORD-029 is due TODAY.")
+    assert d.recommended_split == 0 and d.chosen.workshop_id == "W2"
+    assert decision_from_dict(to_dict(d)).recommended_split == 0
+
+
+def test_allocate_keeps_single_recommendation(desk):
+    from tests.test_dispatch_safety import FakeAgent
+    desk.agent = FakeAgent()
+    desk.agent.desk = desk
+    d = desk.handle_message("allocate ORD-041")
+    assert d.recommended_split is None
