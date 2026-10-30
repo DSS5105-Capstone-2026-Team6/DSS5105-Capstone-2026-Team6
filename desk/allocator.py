@@ -68,6 +68,23 @@ def _sort_key(objective, row):
             row["defect_risk"], row["cost"], row["workshop_id"])
 
 
+def order_rows(rows, objective="lateness", late_tol=0.5):
+    """Sort scored rows best-first by the objective. Needs the keys
+    expected_days_late, est_finish_days, defect_risk, cost, workshop_id.
+    Shared by rank_candidates and the split options, so both rank alike."""
+    if objective == "hybrid" and rows:
+        # algorithm2.make_hybrid_allocator's plateau, listing everyone in it
+        best = min(r["expected_days_late"] for r in rows)
+        plateau = [r for r in rows if r["expected_days_late"] <= best + late_tol]
+        if best == 0.0:
+            earliest = min(r["est_finish_days"] for r in plateau)
+            plateau = [r for r in plateau if r["est_finish_days"] <= earliest + late_tol]
+        return sorted(plateau,
+                      key=lambda r: (r["defect_risk"], r["est_finish_days"],
+                                     r["cost"], r["workshop_id"]))
+    return sorted(rows, key=lambda r: _sort_key(objective, r))
+
+
 def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
                     excluded=None, *, orders=None, store=None, queues=None):
     """Rank every eligible workshop for an order. Returns candidates sorted
@@ -103,18 +120,7 @@ def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
 
     rows = [_candidate_row(w, batch, queues) for w in ok]
 
-    if objective == "hybrid" and rows:
-        # algorithm2.make_hybrid_allocator's plateau, listing everyone in it
-        best = min(r["expected_days_late"] for r in rows)
-        plateau = [r for r in rows if r["expected_days_late"] <= best + late_tol]
-        if best == 0.0:
-            earliest = min(r["est_finish_days"] for r in plateau)
-            plateau = [r for r in plateau if r["est_finish_days"] <= earliest + late_tol]
-        rows = sorted(plateau,
-                      key=lambda r: (r["defect_risk"], r["est_finish_days"],
-                                     r["cost"], r["workshop_id"]))
-    else:
-        rows = sorted(rows, key=lambda r: _sort_key(objective, r))
+    rows = order_rows(rows, objective, late_tol)
 
     return {"order_id": order_id, "objective": objective, "excluded": sorted(excluded_ids),
             "late_tol": late_tol if objective == "hybrid" else None,

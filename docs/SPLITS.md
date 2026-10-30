@@ -51,9 +51,20 @@ number of workshops, and at most 7 shops are eligible, so this is at most
   at least as early: an extra workshop must make the order earlier to be
   worth its extra pickup and quality check.
 
-**Step 4: rank** by days late, then earliest expected finish, then fewer
-workshops, then lower cost. The top 5 are shown, each with its own
-**Confirm split #k** button.
+**Step 4: rank exactly like the candidates.** Split options go through the
+same ranking function as single workshops (`order_rows` in
+`desk/allocator.py`, used by `rank_candidates`), with the proposal's
+objective:
+- **lateness** (default): expected days late, then expected finish, then
+  defect rate, then cost.
+- **defects**: defect rate (piece-weighted over the parts), then expected
+  days late, then finish, then cost.
+- **hybrid**: keep the plateau within `late_tol` (0.5 days) of the least
+  expected lateness, then the lowest defect rate.
+
+Expected days late = max(0, expected finish − days until the due date), the
+same continuous measure the candidates use. The top 5 are shown, each with
+its own **Confirm split #k** button.
 
 **Recommendation.** On an IMPOSSIBLE order the ⭐ recommendation moves from
 the best single workshop to split #1 (`Decision.recommended_split = 0`),
@@ -83,8 +94,8 @@ it, and refuses an order that was already committed (single or split).
 
 ## Limits
 
-- Splits optimise the finish date only; cost and defect rate are shown but
-  only break ties.
+- Within one set of workshops the piece split minimises the finish date;
+  the objective then decides between the sets.
 - `earliest_feasible` (the tool the model calls, and which the router reads)
   still reports the best two-workshop split; tests check that its date
   matches the best two-shop option here.

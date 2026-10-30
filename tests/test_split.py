@@ -178,3 +178,15 @@ def test_allocate_keeps_single_recommendation(desk):
     desk.agent.desk = desk
     d = desk.handle_message("allocate ORD-041")
     assert d.recommended_split is None
+
+
+@pytest.mark.parametrize("objective", ["lateness", "defects", "hybrid"])
+def test_splits_rank_like_candidates(objective):
+    """Split options use the candidates' own ranking (allocator.order_rows)
+    under the same objective, not a split-only rule."""
+    from desk.allocator import order_rows
+    opts = split_options("ORD-029", objective=objective, top=99)["options"]
+    assert opts and opts == order_rows(opts, objective)
+    if objective == "defects":
+        risks = [o["defect_risk"] for o in opts]
+        assert risks == sorted(risks)

@@ -107,7 +107,7 @@ def render_split(decision, desk):
     from app.streamlit_app import _log_exchange, _replace_item
     if not decision.splits or decision.parsed.order_id is None:
         return
-    st.markdown("**✂️ Split options (ranked by days late)**")
+    st.markdown(f"**✂️ Split options (ranked like the candidates: {decision.objective})**")
     for i, split in enumerate(decision.splits):
         parts = " + ".join(f"{p['pieces']} pcs {p['name']} ({p['workshop_id']})"
                            for p in split["parts"])

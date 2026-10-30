@@ -28,7 +28,8 @@ import math
 
 try:
     from desk.register import OrderStore, WorkshopStore
-    from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
+    from desk.allocator import (OBJECTIVES, RANK_CANDIDATES_SCHEMA,
+                                order_rows, rank_candidates)
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
     from desk.config import CHAT_AS_OF
@@ -37,7 +38,8 @@ except ImportError:  # run directly as a script: python desk/tools.py
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.register import OrderStore, WorkshopStore
-    from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
+    from desk.allocator import (OBJECTIVES, RANK_CANDIDATES_SCHEMA,
+                                order_rows, rank_candidates)
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
     from desk.config import CHAT_AS_OF
@@ -539,12 +541,14 @@ def _best_split_for(shops, pieces, category, store, queues, min_part=1):
     return split
 
 
-def split_options(order_id=None, excluded=None, max_shops=None, top=5,
-                  min_part_share=0.1, *, orders=None, store=None, queues=None):
+def split_options(order_id=None, excluded=None, objective="lateness",
+                  late_tol=0.5, max_shops=None, top=5, min_part_share=0.1, *,
+                  orders=None, store=None, queues=None):
     """Every way to split an order over two or more workshops (no ceiling
     unless `max_shops` is given; at most 7 eligible shops = 120 sets), each set
-    with its best piece split, ranked by days late, then earliest finish,
-    then fewer shops, then cost. A split is kept only when it finishes
+    with its best piece split, ranked exactly like rank_candidates ranks
+    single workshops (allocator.order_rows: the same objective, expected
+    days late, tie-breaks and hybrid plateau). A split is kept only when it finishes
     earlier than the best single batch and than every split over a subset
     of its shops (an extra shop must earn its pickup and QC), and each part
     carries at least `min_part_share` of the order (no 1-piece parts).
@@ -555,6 +559,8 @@ def split_options(order_id=None, excluded=None, max_shops=None, top=5,
     rec = orders.by_id(order_id) if order_id else None
     if rec is None:
         return {"error": f"unknown order {order_id!r}"}
+    if objective not in OBJECTIVES:
+        return {"error": f"objective must be one of {OBJECTIVES}, got {objective!r}"}
     excluded_ids = set()
     for name in excluded or []:
         wid = store.resolve(name)
@@ -564,6 +570,7 @@ def split_options(order_id=None, excluded=None, max_shops=None, top=5,
 
     pieces, category = int(rec["pieces"]), rec["category"]
     due = date.fromisoformat(rec["due_date"])
+    slack = (due - CHAT_TODAY).days
     single = min((_finish(pieces, w, queues)
                   for w in _eligible_for(pieces, category, store, excluded_ids)),
                  default=None)
@@ -588,6 +595,8 @@ def split_options(order_id=None, excluded=None, max_shops=None, top=5,
                 "earliest_finish": finish.isoformat(),
                 "est_finish_days": round(days, 2),
                 "days_late": max(0, (finish - due).days),
+                "expected_days_late": round(max(0.0, days - slack), 2),
+                "workshop_id": "+".join(w.workshop_id for w in group),
                 "meets_due": finish <= due,
                 "cost": round(sum(split[w.workshop_id] * w.cost for w in group), 2),
                 "defect_risk": round(sum(split[w.workshop_id] * w.defect_rate
@@ -598,9 +607,9 @@ def split_options(order_id=None, excluded=None, max_shops=None, top=5,
                if not any(shop_set(x) < shop_set(o)
                           and x["est_finish_days"] <= o["est_finish_days"]
                           for x in options)]
-    options.sort(key=lambda o: (o["days_late"], o["est_finish_days"],
-                                o["n_shops"], o["cost"]))
+    options = order_rows(options, objective, late_tol)
     return {"order_id": order_id, "due_date": due.isoformat(),
+            "objective": objective,
             "single_finish": single_finish and single_finish.isoformat(),
             "excluded": sorted(excluded_ids), "options": options[:top],
             "n_options": len(options),

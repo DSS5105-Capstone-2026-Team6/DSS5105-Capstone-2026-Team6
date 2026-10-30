@@ -143,12 +143,12 @@ class DispatchDesk:
         decision.candidates, decision.chosen = candidates_from_rank(result)
 
     def _attach_split(self, decision, force=False):
-        """Offer ranked split options (any number of workshops, fewest days
-        late first) that finish earlier than the best single batch: always
-        for IMPOSSIBLE,
-        and for an ALLOCATE whose flow asked earliest_feasible (e.g. the
-        message asked about splitting) or that is a refresh of a proposal
-        which already offered splits. Splits live in the chat layer; the
+        """Offer split options (any number of workshops, ranked by the
+        proposal's objective exactly like the candidates) that finish
+        earlier than the best single batch: always for IMPOSSIBLE, and for
+        an ALLOCATE whose flow asked earliest_feasible (e.g. the message
+        asked about splitting) or that is a refresh of a proposal which
+        already offered splits. Splits live in the chat layer; the
         simulator stays single-batch."""
         oid = decision.parsed.order_id
         asked = force or any(x["tool"] == "earliest_feasible" for x in decision.tool_log)
@@ -157,7 +157,8 @@ class DispatchDesk:
                 or decision.behaviour not in (Behaviour.IMPOSSIBLE, Behaviour.ALLOCATE)
                 or (decision.behaviour is Behaviour.ALLOCATE and not asked)):
             return
-        args = {"order_id": oid, "excluded": list(decision.excluded)}
+        args = {"order_id": oid, "excluded": list(decision.excluded),
+                "objective": decision.objective}
         result = split_options(**args, orders=self.orders, store=self.workshops,
                                queues=self.state.queues)
         if "error" in result or not result["options"]:
