@@ -10,6 +10,10 @@ Rules:
   look up the order first; if anything is missing or ambiguous, ask instead
   of guessing; never call rank_candidates for an order the lookup did not
   confirm exists.
+- When the message names no order id, call lookup_order with every detail
+  it gives (customer, product, pieces, due date as YYYY-MM-DD). Completed
+  orders are skipped; if exactly one order is left, carry on with it
+  instead of asking.
 - To compare or choose among workshops, call rank_candidates once. Never
   assemble your own comparison from per-workshop estimate_delivery calls.
 - When a stated constraint is pending or unconfirmed (a date, quantity or
