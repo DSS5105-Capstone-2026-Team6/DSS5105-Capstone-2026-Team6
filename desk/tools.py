@@ -60,11 +60,16 @@ CHAT_TODAY = date.fromisoformat(CHAT_AS_OF)
 # ---------------- lookup_order ----------------
 
 def lookup_order(order_id=None, customer=None, product=None, category=None,
+                 pieces=None, due_date=None, include_complete=False,
                  *, store=None):
     """Resolve an order. Returns {"status", "matches", "message"}.
 
     status: "found" (exactly one), "ambiguous" (several — ask, don't guess),
     "not_found" (none — never a nearest match).
+    A filter search skips COMPLETE orders unless include_complete is set
+    (there is nothing left to dispatch on them), and `pieces` / `due_date`
+    narrow it further, so "TrendCart beanies, 1000 pieces" resolves to one
+    order instead of a question. An exact order_id is always returned.
     """
     store = store or OrderStore()
 
@@ -76,7 +81,7 @@ def lookup_order(order_id=None, customer=None, product=None, category=None,
         return {"status": "found", "matches": [store.row(rec)],
                 "message": f"Found {rec['order_id']}."}
 
-    if customer is None and product is None and category is None:
+    if all(x is None for x in (customer, product, category, pieces, due_date)):
         return {"status": "not_found", "matches": [],
                 "message": "No order_id or filters given; ask for the order id, "
                            "customer, product or category."}
@@ -88,16 +93,37 @@ def lookup_order(order_id=None, customer=None, product=None, category=None,
         matches = [r for r in matches if product.lower() in r["product"].lower()]
     if category:
         matches = [r for r in matches if r["category"] == category.upper()]
+    if pieces is not None:
+        matches = [r for r in matches if int(r["pieces"]) == int(pieces)]
+    ignored = ""
+    if due_date:
+        try:
+            due_iso = date.fromisoformat(str(due_date).strip()).isoformat()
+        except ValueError:      # an unreadable date must not hide the order
+            due_iso, ignored = None, f" (due_date {due_date!r} ignored: use YYYY-MM-DD)"
+        if due_iso:
+            matches = [r for r in matches if r["due_date"] == due_iso]
+    completed = [r for r in matches if r["status"] == "COMPLETE"]
+    if not include_complete:
+        matches = [r for r in matches if r["status"] != "COMPLETE"]
+    hidden = (f" ({len(completed)} completed order(s) not shown)"
+              if completed and not include_complete else "") + ignored
 
     if not matches:
-        return {"status": "not_found", "matches": [],
-                "message": "No order matches those filters."}
+        return {"status": "not_found", "matches": [], "n_completed_hidden": len(completed),
+                "message": ("Only completed orders match: "
+                            + ", ".join(r["order_id"] for r in completed)
+                            + "; nothing open to dispatch.") if completed
+                           else "No order matches those filters."}
     rows = [store.row(r) for r in matches]
     if len(rows) == 1:
         return {"status": "found", "matches": rows,
-                "message": f"Found {rows[0]['order_id']}."}
+                "n_completed_hidden": 0 if include_complete else len(completed),
+                "message": f"Found {rows[0]['order_id']}{hidden}."}
     return {"status": "ambiguous", "matches": rows,
-            "message": f"{len(rows)} orders match; ask which one is meant."}
+            "n_completed_hidden": 0 if include_complete else len(completed),
+            "message": f"{len(rows)} {'' if include_complete else 'open '}orders "
+                       f"match{hidden}; ask which one is meant."}
 
 
 LOOKUP_ORDER_SCHEMA = {
@@ -105,8 +131,11 @@ LOOKUP_ORDER_SCHEMA = {
     "function": {
         "name": "lookup_order",
         "description": "Resolve the order a chat message refers to, by exact "
-                       "order id or by customer/product/category filters. "
-                       "Returns all matches; several matches means ask the "
+                       "order id or by filters. A filter search returns open "
+                       "orders only (completed ones are skipped unless "
+                       "include_complete is true); pass every detail the "
+                       "message gives (customer, product, pieces, due date) "
+                       "so one order is left. Several matches means ask the "
                        "dispatcher which one is meant.",
         "parameters": {
             "type": "object",
@@ -119,6 +148,13 @@ LOOKUP_ORDER_SCHEMA = {
                             "description": "Product name (substring, case-insensitive)"},
                 "category": {"type": "string", "enum": ["TOPS", "ACCESSORIES"],
                              "description": "Product category"},
+                "pieces": {"type": "integer",
+                           "description": "Exact quantity, when the message states it"},
+                "due_date": {"type": "string",
+                             "description": "Due date as YYYY-MM-DD, when the message states it"},
+                "include_complete": {"type": "boolean",
+                                     "description": "Also return COMPLETE orders "
+                                                    "(history questions only); default false"},
             },
             "required": [],
         },
