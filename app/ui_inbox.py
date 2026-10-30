@@ -156,6 +156,8 @@ def render_decision(decision, desk):
         st.success(f"⚡ Committed {_committed_line(r)}")
         return
     render_understood(decision)
+    for note in decision.warnings:
+        st.warning(note, icon="⚠️")
     render_candidates(decision)
     render_confirm(decision, desk)
     render_split(decision, desk)

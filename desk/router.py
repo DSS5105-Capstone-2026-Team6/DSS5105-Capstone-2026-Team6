@@ -83,6 +83,27 @@ def candidates_from_rank(result):
     return candidates, chosen
 
 
+def _reply_workshop(reply, workshops):
+    """The workshop the reply asks the human to commit to ("Reply yes to
+    commit ORD-010 to W3"), else the one it says it recommends; None when
+    the reply names neither. Only used to keep the structured choice and
+    the prose in step — never to decide a behaviour."""
+    if workshops is None or not reply:
+        return None
+    names = {}
+    for w in workshops.workshops.values():
+        names[w.workshop_id.lower()] = w.workshop_id
+        names[w.name.lower()] = w.workshop_id
+    shop = "(" + "|".join(re.escape(n) for n in
+                          sorted(names, key=len, reverse=True)) + r")\b"
+    for pattern in (r"\bcommit\b[^.\n]{0,60}?\bto\s+" + shop,
+                    r"\brecommend(?:ed|ation)?(?:\s+(?:is|workshop))?:?\s+" + shop):
+        hits = re.findall(pattern, reply.lower())
+        if hits:
+            return names[hits[-1]]
+    return None
+
+
 def _eligibility_row(elig_call, workshop_id):
     for row in elig_call["result"].get("workshops", []):
         if row["workshop_id"] == workshop_id:
@@ -102,6 +123,7 @@ def route(text, reply, log, workshops=None) -> Decision:
 
     parsed = ParsedRequest()
     candidates, chosen, behaviour, options = [], None, Behaviour.ANSWER, []
+    warnings = []
 
     lookup = last_ok("lookup_order")
     requested_id = lookup["arguments"].get("order_id") if lookup else None
@@ -181,9 +203,28 @@ def route(text, reply, log, workshops=None) -> Decision:
         elif _looks_like_alloc_request(text):
             behaviour = Behaviour.ASK
 
+    # 8. the button must commit what the text recommends: when the reply
+    #    asks to commit a different workshop than the ranking chose, follow
+    #    the reply if that workshop is a valid candidate, else flag it
+    reply_id = _reply_workshop(reply, workshops) if chosen else None
+    if reply_id and reply_id != chosen.workshop_id:
+        named = next((c for c in candidates if c.workshop_id == reply_id), None)
+        if named is not None:
+            warnings.append(
+                f"The reply recommends {named.name} ({reply_id}) but the ranking "
+                f"chose {chosen.name} ({chosen.workshop_id}); the recommendation "
+                f"now follows the reply so the button matches the text.")
+            chosen = named
+        else:
+            warnings.append(
+                f"The reply recommends {reply_id}, which is not a valid candidate "
+                f"for this order; the recommendation stays on "
+                f"{chosen.name} ({chosen.workshop_id}). Check before confirming.")
+
     return Decision(request_id="", behaviour=behaviour, parsed=parsed,
                     candidates=candidates, chosen=chosen,
-                    explanation=reply, options=options, tool_log=list(log))
+                    explanation=reply, options=options, tool_log=list(log),
+                    warnings=warnings)
 
 
 if __name__ == "__main__":

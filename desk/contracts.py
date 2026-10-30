@@ -112,6 +112,7 @@ class Decision:
     # (IMPOSSIBLE: the best split always beats the best single shop);
     # `chosen` then stays the best single-workshop fallback
     recommended_split: Optional[int] = None
+    warnings: list = field(default_factory=list)     # consistency notes shown to the human
 
 
 @dataclass
