@@ -23,10 +23,13 @@ Tool index:
 """
 
 from datetime import date, timedelta
+import itertools
+import math
 
 try:
     from desk.register import OrderStore, WorkshopStore
-    from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
+    from desk.allocator import (OBJECTIVES, RANK_CANDIDATES_SCHEMA,
+                                order_rows, rank_candidates)
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
     from desk.config import CHAT_AS_OF
@@ -35,7 +38,8 @@ except ImportError:  # run directly as a script: python desk/tools.py
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.register import OrderStore, WorkshopStore
-    from desk.allocator import rank_candidates, RANK_CANDIDATES_SCHEMA
+    from desk.allocator import (OBJECTIVES, RANK_CANDIDATES_SCHEMA,
+                                order_rows, rank_candidates)
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
     from desk.config import CHAT_AS_OF
@@ -56,11 +60,16 @@ CHAT_TODAY = date.fromisoformat(CHAT_AS_OF)
 # ---------------- lookup_order ----------------
 
 def lookup_order(order_id=None, customer=None, product=None, category=None,
+                 pieces=None, due_date=None, include_complete=False,
                  *, store=None):
     """Resolve an order. Returns {"status", "matches", "message"}.
 
     status: "found" (exactly one), "ambiguous" (several — ask, don't guess),
     "not_found" (none — never a nearest match).
+    A filter search skips COMPLETE orders unless include_complete is set
+    (there is nothing left to dispatch on them), and `pieces` / `due_date`
+    narrow it further, so "TrendCart beanies, 1000 pieces" resolves to one
+    order instead of a question. An exact order_id is always returned.
     """
     store = store or OrderStore()
 
@@ -72,7 +81,7 @@ def lookup_order(order_id=None, customer=None, product=None, category=None,
         return {"status": "found", "matches": [store.row(rec)],
                 "message": f"Found {rec['order_id']}."}
 
-    if customer is None and product is None and category is None:
+    if all(x is None for x in (customer, product, category, pieces, due_date)):
         return {"status": "not_found", "matches": [],
                 "message": "No order_id or filters given; ask for the order id, "
                            "customer, product or category."}
@@ -84,16 +93,37 @@ def lookup_order(order_id=None, customer=None, product=None, category=None,
         matches = [r for r in matches if product.lower() in r["product"].lower()]
     if category:
         matches = [r for r in matches if r["category"] == category.upper()]
+    if pieces is not None:
+        matches = [r for r in matches if int(r["pieces"]) == int(pieces)]
+    ignored = ""
+    if due_date:
+        try:
+            due_iso = date.fromisoformat(str(due_date).strip()).isoformat()
+        except ValueError:      # an unreadable date must not hide the order
+            due_iso, ignored = None, f" (due_date {due_date!r} ignored: use YYYY-MM-DD)"
+        if due_iso:
+            matches = [r for r in matches if r["due_date"] == due_iso]
+    completed = [r for r in matches if r["status"] == "COMPLETE"]
+    if not include_complete:
+        matches = [r for r in matches if r["status"] != "COMPLETE"]
+    hidden = (f" ({len(completed)} completed order(s) not shown)"
+              if completed and not include_complete else "") + ignored
 
     if not matches:
-        return {"status": "not_found", "matches": [],
-                "message": "No order matches those filters."}
+        return {"status": "not_found", "matches": [], "n_completed_hidden": len(completed),
+                "message": ("Only completed orders match: "
+                            + ", ".join(r["order_id"] for r in completed)
+                            + "; nothing open to dispatch.") if completed
+                           else "No order matches those filters."}
     rows = [store.row(r) for r in matches]
     if len(rows) == 1:
         return {"status": "found", "matches": rows,
-                "message": f"Found {rows[0]['order_id']}."}
+                "n_completed_hidden": 0 if include_complete else len(completed),
+                "message": f"Found {rows[0]['order_id']}{hidden}."}
     return {"status": "ambiguous", "matches": rows,
-            "message": f"{len(rows)} orders match; ask which one is meant."}
+            "n_completed_hidden": 0 if include_complete else len(completed),
+            "message": f"{len(rows)} {'' if include_complete else 'open '}orders "
+                       f"match{hidden}; ask which one is meant."}
 
 
 LOOKUP_ORDER_SCHEMA = {
@@ -101,8 +131,11 @@ LOOKUP_ORDER_SCHEMA = {
     "function": {
         "name": "lookup_order",
         "description": "Resolve the order a chat message refers to, by exact "
-                       "order id or by customer/product/category filters. "
-                       "Returns all matches; several matches means ask the "
+                       "order id or by filters. A filter search returns open "
+                       "orders only (completed ones are skipped unless "
+                       "include_complete is true); pass every detail the "
+                       "message gives (customer, product, pieces, due date) "
+                       "so one order is left. Several matches means ask the "
                        "dispatcher which one is meant.",
         "parameters": {
             "type": "object",
@@ -115,6 +148,13 @@ LOOKUP_ORDER_SCHEMA = {
                             "description": "Product name (substring, case-insensitive)"},
                 "category": {"type": "string", "enum": ["TOPS", "ACCESSORIES"],
                              "description": "Product category"},
+                "pieces": {"type": "integer",
+                           "description": "Exact quantity, when the message states it"},
+                "due_date": {"type": "string",
+                             "description": "Due date as YYYY-MM-DD, when the message states it"},
+                "include_complete": {"type": "boolean",
+                                     "description": "Also return COMPLETE orders "
+                                                    "(history questions only); default false"},
             },
             "required": [],
         },
@@ -410,11 +450,12 @@ PROBE_OVERLOAD_SCHEMA = {
 
 # ---------------- earliest_feasible ----------------
 
-def _eligible_for(pieces, category, store):
+def _eligible_for(pieces, category, store, excluded_ids=frozenset()):
     """Eligible workshops for a part of this size — the simulator's own
     rule, so per-part eligibility can never drift from the rest."""
     batch = {"category": category, "pieces": pieces}
-    return eligible_workshops(batch, store.workshops)
+    return [w for w in eligible_workshops(batch, store.workshops)
+            if w.workshop_id not in excluded_ids]
 
 
 def _finish(pieces, w, queues):
@@ -422,23 +463,31 @@ def _finish(pieces, w, queues):
     return est_turnaround_expected(batch, w, queues)
 
 
-def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
+def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
+                      queues=None):
     """Earliest date as one batch and as a two-way split. Error dict for an
     unknown order; flags report when even the split misses the due date.
-    `queues` overrides the 1 April snapshot with live chat-side queues."""
+    `queues` overrides the 1 April snapshot with live chat-side queues;
+    `excluded` workshops (names or ids) are left out of both."""
     orders = orders or OrderStore()
     store = store or WorkshopStore()
     queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
     rec = orders.by_id(order_id) if order_id else None
     if rec is None:
         return {"error": f"unknown order {order_id!r}"}
+    excluded_ids = set()
+    for name in excluded or []:
+        wid = store.resolve(name)
+        if not wid:
+            return {"error": f"unknown excluded workshop {name!r}"}
+        excluded_ids.add(wid)
 
     pieces, category = int(rec["pieces"]), rec["category"]
     due = date.fromisoformat(rec["due_date"])
 
     # --- single batch: earliest finish over all eligible workshops
     single = None   # (finish date, workshop)
-    for w in _eligible_for(pieces, category, store):
+    for w in _eligible_for(pieces, category, store, excluded_ids):
         finish = CHAT_TODAY + timedelta(days=round(_finish(pieces, w, queues)))
         if single is None or finish < single[0]:
             single = (finish, w)
@@ -449,14 +498,14 @@ def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
 
     def elig(n):
         if n not in elig_cache:
-            elig_cache[n] = _eligible_for(n, category, store)
+            elig_cache[n] = _eligible_for(n, category, store, excluded_ids)
         return elig_cache[n]
 
     for a in range(1, pieces):
         b = pieces - a
-        for w1 in elig_cache.setdefault(a, _eligible_for(a, category, store)):
+        for w1 in elig(a):
             f1 = _finish(a, w1, queues)
-            for w2 in elig_cache.setdefault(b, _eligible_for(b, category, store)):
+            for w2 in elig(b):
                 if w2.workshop_id == w1.workshop_id:
                     continue            # same shop = serial, no parallelism
                 f2 = _finish(b, w2, queues)
@@ -483,8 +532,125 @@ def earliest_feasible(order_id=None, *, orders=None, store=None, queues=None):
             "meets_due_split": bool(split_out and split_out["earliest_finish"] <= due.isoformat()),
             "slack_days_single": _slack(single_out and single_out["earliest_finish"]),
             "slack_days_split": _slack(split_out and split_out["earliest_finish"]),
-            "advisory": "splits are advisory; the simulator sends one batch "
+            "excluded": sorted(excluded_ids),
+            "advisory": "a split can be confirmed in the chat desk (both parts "
+                        "are committed); the simulator still sends one batch "
                         "to one workshop (roadmap, Assumption 4)"}
+
+
+def _best_split_for(shops, pieces, category, store, queues, min_part=1):
+    """Earliest finish when `pieces` are shared over exactly these shops,
+    all working in parallel. Searches the finish time T: by T each shop can
+    finish floor((T - queue - lead) * capacity / (1 + 0.5 * defect_rate))
+    pieces (capped at max_batch), and the earliest T at which the shops
+    cover the order, with at least `min_part` pieces each, is optimal.
+    None when the shops cannot cover it."""
+    rate = {w.workshop_id: w.capacity / (1 + 0.5 * w.defect_rate) for w in shops}
+    start = {w.workshop_id: queues[w.workshop_id] + w.lead_days for w in shops}
+
+    def can_make(w, t):
+        n = math.floor((t - start[w.workshop_id]) * rate[w.workshop_id] + 1e-9)
+        return max(0, min(n, w.max_batch or pieces))
+
+    if (sum(can_make(w, 1e9) for w in shops) < pieces
+            or min(can_make(w, 1e9) for w in shops) < min_part):
+        return None
+    lo, hi = 0.0, max(start.values()) + pieces / min(rate.values()) + 1
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        made = [can_make(w, mid) for w in shops]
+        if sum(made) >= pieces and min(made) >= min_part:
+            hi = mid
+        else:
+            lo = mid
+    split = {w.workshop_id: can_make(w, hi) for w in shops}
+    excess = sum(split.values()) - pieces
+    while excess > 0:   # hand back the surplus from the latest-finishing part
+        w = max((w for w in shops if split[w.workshop_id] > min_part),
+                key=lambda w: _finish(split[w.workshop_id], w, queues))
+        cut = min(excess, split[w.workshop_id] - min_part)
+        split[w.workshop_id] -= cut
+        excess -= cut
+    for w in shops:     # every part must itself be eligible (e.g. batch caps)
+        if w not in _eligible_for(split[w.workshop_id], category, store):
+            return None
+    return split
+
+
+def split_options(order_id=None, excluded=None, objective="lateness",
+                  late_tol=0.5, max_shops=None, top=5, min_part_share=0.1, *,
+                  orders=None, store=None, queues=None):
+    """Every way to split an order over two or more workshops (no ceiling
+    unless `max_shops` is given; at most 7 eligible shops = 120 sets), each set
+    with its best piece split, ranked exactly like rank_candidates ranks
+    single workshops (allocator.order_rows: the same objective, expected
+    days late, tie-breaks and hybrid plateau). A split is kept only when it finishes
+    earlier than the best single batch and than every split over a subset
+    of its shops (an extra shop must earn its pickup and QC), and each part
+    carries at least `min_part_share` of the order (no 1-piece parts).
+    Chat layer only: the simulator still sends one batch to one workshop."""
+    orders = orders or OrderStore()
+    store = store or WorkshopStore()
+    queues = queues or {wid: w.queue0 for wid, w in store.workshops.items()}
+    rec = orders.by_id(order_id) if order_id else None
+    if rec is None:
+        return {"error": f"unknown order {order_id!r}"}
+    if objective not in OBJECTIVES:
+        return {"error": f"objective must be one of {OBJECTIVES}, got {objective!r}"}
+    excluded_ids = set()
+    for name in excluded or []:
+        wid = store.resolve(name)
+        if not wid:
+            return {"error": f"unknown excluded workshop {name!r}"}
+        excluded_ids.add(wid)
+
+    pieces, category = int(rec["pieces"]), rec["category"]
+    due = date.fromisoformat(rec["due_date"])
+    slack = (due - CHAT_TODAY).days
+    single = min((_finish(pieces, w, queues)
+                  for w in _eligible_for(pieces, category, store, excluded_ids)),
+                 default=None)
+    single_finish = (CHAT_TODAY + timedelta(days=round(single))) if single is not None else None
+    shops = _eligible_for(1, category, store, excluded_ids)
+    min_part = max(1, math.ceil(pieces * min_part_share))
+
+    options = []
+    for k in range(2, min(max_shops or len(shops), len(shops)) + 1):
+        for group in itertools.combinations(shops, k):
+            split = _best_split_for(group, pieces, category, store, queues, min_part)
+            if split is None:
+                continue
+            days = max(_finish(split[w.workshop_id], w, queues) for w in group)
+            finish = CHAT_TODAY + timedelta(days=round(days))
+            if single_finish is not None and finish >= single_finish:
+                continue
+            options.append({
+                "parts": [{"workshop_id": w.workshop_id, "name": w.name,
+                           "pieces": split[w.workshop_id]} for w in group],
+                "n_shops": k,
+                "earliest_finish": finish.isoformat(),
+                "est_finish_days": round(days, 2),
+                "days_late": max(0, (finish - due).days),
+                "expected_days_late": round(max(0.0, days - slack), 2),
+                "workshop_id": "+".join(w.workshop_id for w in group),
+                "meets_due": finish <= due,
+                "cost": round(sum(split[w.workshop_id] * w.cost for w in group), 2),
+                "defect_risk": round(sum(split[w.workshop_id] * w.defect_rate
+                                         for w in group) / pieces, 4)})
+    def shop_set(o):
+        return {p["workshop_id"] for p in o["parts"]}
+    options = [o for o in options
+               if not any(shop_set(x) < shop_set(o)
+                          and x["est_finish_days"] <= o["est_finish_days"]
+                          for x in options)]
+    options = order_rows(options, objective, late_tol)
+    return {"order_id": order_id, "due_date": due.isoformat(),
+            "objective": objective,
+            "single_finish": single_finish and single_finish.isoformat(),
+            "excluded": sorted(excluded_ids), "options": options[:top],
+            "n_options": len(options),
+            "advisory": "chat-layer splits; the simulator still sends one "
+                        "batch to one workshop"}
 
 
 EARLIEST_FEASIBLE_SCHEMA = {
@@ -499,6 +665,8 @@ EARLIEST_FEASIBLE_SCHEMA = {
             "type": "object",
             "properties": {
                 "order_id": {"type": "string"},
+                "excluded": {"type": "array", "items": {"type": "string"},
+                             "description": "workshops the request excludes"},
             },
             "required": ["order_id"],
         },

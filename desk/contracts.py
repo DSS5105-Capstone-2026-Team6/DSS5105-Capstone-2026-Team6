@@ -104,6 +104,15 @@ class Decision:
     state_version: Optional[str] = None
     objective: str = "lateness"
     excluded: list = field(default_factory=list)
+    # split options the desk can commit (tools.split_options), best first:
+    # [{"parts": [{"workshop_id", "name", "pieces"}, ...], "n_shops",
+    #   "earliest_finish", "days_late", "meets_due", "cost", ...}, ...]
+    splits: list = field(default_factory=list)
+    # index into splits when the desk recommends a split over `chosen`
+    # (IMPOSSIBLE: the best split always beats the best single shop);
+    # `chosen` then stays the best single-workshop fallback
+    recommended_split: Optional[int] = None
+    warnings: list = field(default_factory=list)     # consistency notes shown to the human
 
 
 @dataclass

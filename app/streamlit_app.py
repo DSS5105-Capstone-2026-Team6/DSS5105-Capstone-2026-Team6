@@ -148,7 +148,7 @@ def render_item_chat(decision, desk):
         st.markdown("**🧭 All candidates · live queue**")
         for c in decision.candidates:
             live_q = desk.state.queues.get(c.workshop_id, 0.0)
-            star = " ⭐" if (decision.chosen
+            star = " ⭐" if (decision.recommended_split is None and decision.chosen
                              and c.workshop_id == decision.chosen.workshop_id) else ""
             st.markdown(f"- **{c.name} ({c.workshop_id})**{star} — "
                         f"queue {live_q:.1f} d · finish {c.estimated_finish} · "

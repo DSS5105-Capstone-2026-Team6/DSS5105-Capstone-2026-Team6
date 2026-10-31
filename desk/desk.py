@@ -11,7 +11,7 @@ state through the transactional allocation ledger.
 try:
     from desk.agent import DispatchAgent
     from desk.register import OrderStore
-    from desk.router import route
+    from desk.router import candidates_from_rank, route
     from .contracts import to_dict
     from .state import DeskState
     from .audit import AuditLog
@@ -21,7 +21,7 @@ except ImportError:  # run directly as a script
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.agent import DispatchAgent
     from desk.register import OrderStore
-    from desk.router import route
+    from desk.router import candidates_from_rank, route
     from desk.contracts import to_dict
     from desk.state import DeskState
     from desk.audit import AuditLog
@@ -34,7 +34,8 @@ from desk.confirmation import (commit_intent_workshop, fast_intent,
                            looks_like_confirmation)
 from desk.audit import StaleAllocation
 from desk.allocator import rank_candidates
-from desk.contracts import Constraint, canonical_order_id
+from desk.contracts import Behaviour, Constraint, canonical_order_id
+from desk.tools import split_options
 
 _OPTIONS_LINE = re.compile(r"(?im)^OPTIONS:\s*(.+?)\s*$")
 
@@ -120,7 +121,53 @@ class DispatchDesk:
         decision.state_version = version
         decision.created_at = datetime.now(timezone.utc).isoformat()
         self._attach_ranking(decision, requester or "dispatcher")
+        self._fill_impossible(decision)
+        self._attach_split(decision)
         return decision
+
+    def _fill_impossible(self, decision):
+        """An IMPOSSIBLE reached through earliest_feasible alone has no
+        candidates, yet the reply names workshops. Rank in code so the
+        structured output lists every shop and the best late option."""
+        if (decision.behaviour is not Behaviour.IMPOSSIBLE or decision.candidates
+                or self.orders.by_id(decision.parsed.order_id) is None):
+            return
+        args = {"order_id": decision.parsed.order_id, "objective": decision.objective,
+                "excluded": list(decision.excluded)}
+        result = rank_candidates(**args, orders=self.orders, store=self.workshops,
+                                 queues=self.state.queues)
+        if "error" in result:
+            return
+        decision.tool_log.append({"tool": "rank_candidates", "arguments": args,
+                                  "result": result, "called_by": "desk"})
+        decision.candidates, decision.chosen = candidates_from_rank(result)
+
+    def _attach_split(self, decision, force=False):
+        """Offer split options (any number of workshops, ranked by the
+        proposal's objective exactly like the candidates) that finish
+        earlier than the best single batch: always for IMPOSSIBLE, and for
+        an ALLOCATE whose flow asked earliest_feasible (e.g. the message
+        asked about splitting) or that is a refresh of a proposal which
+        already offered splits. Splits live in the chat layer; the
+        simulator stays single-batch."""
+        oid = decision.parsed.order_id
+        asked = force or any(x["tool"] == "earliest_feasible" for x in decision.tool_log)
+        decision.splits, decision.recommended_split = [], None
+        if (self.orders.by_id(oid) is None
+                or decision.behaviour not in (Behaviour.IMPOSSIBLE, Behaviour.ALLOCATE)
+                or (decision.behaviour is Behaviour.ALLOCATE and not asked)):
+            return
+        args = {"order_id": oid, "excluded": list(decision.excluded),
+                "objective": decision.objective}
+        result = split_options(**args, orders=self.orders, store=self.workshops,
+                               queues=self.state.queues)
+        if "error" in result or not result["options"]:
+            return
+        decision.tool_log.append({"tool": "split_options", "arguments": args,
+                                  "result": result, "called_by": "desk"})
+        decision.splits = result["options"]
+        if decision.behaviour is Behaviour.IMPOSSIBLE:
+            decision.recommended_split = 0      # ranked best, beats any single shop
 
     def _attach_ranking(self, decision, requester):
         ranks = [x for x in decision.tool_log if x["tool"] == "rank_candidates"
@@ -148,6 +195,7 @@ class DispatchDesk:
         fresh.objective, fresh.excluded = decision.objective, list(decision.excluded)
         fresh.state_version = version
         fresh.created_at = datetime.now(timezone.utc).isoformat()
+        self._attach_split(fresh, force=bool(decision.splits))
         return fresh
 
     def follow_up(self, text, decision, requester="dispatcher"):
@@ -247,6 +295,45 @@ class DispatchDesk:
                 evidence={"objective": decision.objective, "excluded": decision.excluded,
                           "constraints": to_dict(decision.parsed.constraints),
                           "reason": decision.explanation, "chosen": to_dict(decision.chosen),
+                          "candidates": to_dict(decision.candidates),
+                          "tool_log": decision.tool_log})
+        except StaleAllocation:
+            raise ProposalChanged(self.refresh(decision)) from None
+
+    def confirm_split(self, decision, index=0, committed_by="dispatcher"):
+        """The human confirmed split option `index`: commit every part (each
+        moves its own workshop's queue) in one transaction and return the
+        records."""
+        if not decision.parsed.order_id or not 0 <= index < len(decision.splits):
+            raise ValueError("nothing to commit: decision has no such split")
+        split = decision.splits[index]
+        if decision.state_version is None:
+            raise ValueError("Proposal has no state version. Request a new proposal.")
+        if decision.state_version != self.audit.version:
+            raise ProposalChanged(self.refresh(decision))
+        order = self.orders.by_id(decision.parsed.order_id)
+        if order is None:
+            raise ValueError("Order no longer exists")
+        ids = [p["workshop_id"] for p in split["parts"]]
+        if len(set(ids)) != len(ids):
+            raise ValueError("A split must use different workshops")
+        excluded_ids = {self.workshops.resolve(x) for x in decision.excluded}
+        parts = []
+        for part in split["parts"]:
+            wid, pieces = part["workshop_id"], int(part["pieces"])
+            if wid in excluded_ids:
+                raise ValueError(f"{wid} is excluded by this proposal")
+            error = self.state.validate({**order, "pieces": pieces}, wid)
+            if error:
+                raise ValueError(error["error"])
+            parts.append((self.workshops.workshops[wid], pieces))
+        try:
+            return self.audit.allocate_split(order, parts,
+                committed_by=committed_by, expected_version=decision.state_version,
+                decision_id=decision.decision_id,
+                evidence={"objective": decision.objective, "excluded": decision.excluded,
+                          "constraints": to_dict(decision.parsed.constraints),
+                          "reason": decision.explanation, "split_proposal": split,
                           "candidates": to_dict(decision.candidates),
                           "tool_log": decision.tool_log})
         except StaleAllocation:

@@ -107,34 +107,72 @@ class AuditLog:
                        (record.order_id, json.dumps(to_dict(record), ensure_ascii=False)))
             db.execute("UPDATE ledger_meta SET value=? WHERE key='version'", (uuid.uuid4().hex,))
 
+    @staticmethod
+    def _refuse_duplicate(db, order_id):
+        # a split stores its parts under "ORD-xxx#1", "ORD-xxx#2" (the
+        # column is UNIQUE), so one order is still dispatched only once
+        existing = db.execute('SELECT record FROM allocations WHERE order_id=? OR order_id LIKE ?',
+                              (order_id, order_id + '#%')).fetchone()
+        if existing:
+            old = json.loads(existing[0])
+            raise ValueError(f"{order_id} was already committed to "
+                             f"{old['workshop_id']} ({old['record_id']}). Refusing the duplicate commit.")
+
+    def _insert(self, db, order, workshop, pieces, *, key, committed_by,
+                decision_id, evidence):
+        before = self._queues(db)[workshop.workshop_id]
+        added = pieces / workshop.capacity * (1 + .5 * workshop.defect_rate)
+        seq = db.execute("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='allocations'), 0) + 1").fetchone()[0]
+        record = AllocationRecord(
+            record_id=f'A-{seq:04d}', decision_id=decision_id or order['order_id'],
+            order_id=order['order_id'], workshop_id=workshop.workshop_id,
+            pieces=pieces, committed_by=committed_by,
+            # world date + wall-clock time-of-day: the desk world sits at
+            # CHAT_AS_OF, but same-day records stay ordered by the clock
+            committed_at=f"{CHAT_AS_OF}T{datetime.now(timezone.utc):%H:%M:%S}+00:00",
+            queue_before=before, queue_after=before + added,
+            evidence=evidence or {})
+        db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
+                   (key, json.dumps(to_dict(record), ensure_ascii=False)))
+        return record
+
     def allocate(self, order, workshop, *, committed_by, expected_version=None,
                  decision_id='', evidence=None):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            existing = db.execute('SELECT record FROM allocations WHERE order_id=?',
-                                  (order['order_id'],)).fetchone()
-            if existing:
-                old = json.loads(existing[0])
-                raise ValueError(f"{order['order_id']} was already committed to "
-                                 f"{old['workshop_id']} ({old['record_id']}). Refusing the duplicate commit.")
+            self._refuse_duplicate(db, order['order_id'])
             if expected_version is not None and expected_version != self._version(db):
                 raise StaleAllocation('Queues changed. Review the updated proposal before confirming.')
-            before = self._queues(db)[workshop.workshop_id]
-            added = int(order['pieces']) / workshop.capacity * (1 + .5 * workshop.defect_rate)
-            seq = db.execute("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='allocations'), 0) + 1").fetchone()[0]
-            record = AllocationRecord(
-                record_id=f'A-{seq:04d}', decision_id=decision_id or order['order_id'],
-                order_id=order['order_id'], workshop_id=workshop.workshop_id,
-                pieces=int(order['pieces']), committed_by=committed_by,
-                # world date + wall-clock time-of-day: the desk world sits at
-                # CHAT_AS_OF, but same-day records stay ordered by the clock
-                committed_at=f"{CHAT_AS_OF}T{datetime.now(timezone.utc):%H:%M:%S}+00:00",
-                queue_before=before, queue_after=before + added,
-                evidence=evidence or {})
-            db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
-                       (record.order_id, json.dumps(to_dict(record), ensure_ascii=False)))
+            record = self._insert(db, order, workshop, int(order['pieces']),
+                                  key=order['order_id'], committed_by=committed_by,
+                                  decision_id=decision_id, evidence=evidence)
             db.execute("UPDATE ledger_meta SET value=? WHERE key='version'", (uuid.uuid4().hex,))
             return record
+
+    def allocate_split(self, order, parts, *, committed_by, expected_version=None,
+                       decision_id='', evidence=None):
+        """Commit one order as several parts in one transaction: every part
+        gets its own record (and moves its own workshop's queue), or none
+        does. `parts` is a list of (workshop, pieces)."""
+        if sum(pieces for _, pieces in parts) != int(order['pieces']):
+            raise ValueError(f"split parts do not add up to {order['order_id']}'s "
+                             f"{order['pieces']} pieces")
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._refuse_duplicate(db, order['order_id'])
+            if expected_version is not None and expected_version != self._version(db):
+                raise StaleAllocation('Queues changed. Review the updated proposal before confirming.')
+            summary = [{"workshop_id": w.workshop_id, "pieces": n} for w, n in parts]
+            records = []
+            for i, (workshop, pieces) in enumerate(parts, start=1):
+                part_evidence = {**(evidence or {}),
+                                 "split": {"part": i, "of": len(parts), "parts": summary}}
+                records.append(self._insert(
+                    db, order, workshop, pieces, key=f"{order['order_id']}#{i}",
+                    committed_by=committed_by, decision_id=decision_id,
+                    evidence=part_evidence))
+            db.execute("UPDATE ledger_meta SET value=? WHERE key='version'", (uuid.uuid4().hex,))
+            return records
 
     def reset(self):
         """Reset demo allocations atomically, retaining API usage and old records."""

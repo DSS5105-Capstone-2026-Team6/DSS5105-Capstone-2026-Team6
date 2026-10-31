@@ -64,6 +64,7 @@ accessory-reservation experiment).
 ## Appendix
 
 | Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds)| [Tolerance_Scan.md](Tolerance_Scan.md) |
+| Splitting an order across workshops (chat desk only, not the simulator) | [SPLITS.md](SPLITS.md) |
 
 ### Why these values were chosen
 
