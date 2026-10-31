@@ -49,6 +49,19 @@ def render_performance_sidebar(desk):
             else:
                 st.success(f"Recorded ({out['delay_days']}d delay). "
                            + out["note"])
+                # capacity changed -> every open proposal is stale: re-rank
+                # them all against the learned numbers, in one go
+                from dataclasses import replace
+                from desk.contracts import Behaviour
+                from app.streamlit_app import _replace_item
+                open_alloc = [x for x in st.session_state.get("decisions", [])
+                              if x["decision"].behaviour is Behaviour.ALLOCATE
+                              and x["decision"].candidates
+                              and f"committed-{id(x['decision'])}" not in st.session_state]
+                for x in open_alloc:
+                    _replace_item(x["decision"],
+                                  desk.refresh(x["decision"]),
+                                  "Re-ranked: capacity estimates updated.")
         # learned-vs-profile status line per workshop with observations
         lines = []
         for w in workshops:

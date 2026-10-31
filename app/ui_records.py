@@ -13,9 +13,11 @@ def render_recent(desk):
     top_l.caption("Allocations and queues are shared across sessions. Duplicate orders are refused. "
                   "Reset archives the demo allocations; API usage limits remain in effect.")
     if top_r.button("↺ Reset demo", use_container_width=True,
-                    help="Archive allocations and reset shared queues to the "
-                         "queue on April 1 for all sessions"):
+                    help="Archive allocations, reset shared queues to the "
+                         "queue on April 1, and wipe learned performance "
+                         "for all sessions"):
         desk.audit.reset()
+        desk.performance.clear()   # learned capacity resets with the world
         for key in list(st.session_state):
             if str(key).startswith(("committed-", "conv-")) or key in {"decisions", "chat_log"}:
                 del st.session_state[key]
