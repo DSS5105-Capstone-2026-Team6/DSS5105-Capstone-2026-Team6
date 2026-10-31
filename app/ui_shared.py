@@ -37,14 +37,15 @@ CSS = """
     margin: auto;
 }
 .card {
-    border: 1px solid #dee2e6; border-radius: 12px;
-    padding: 12px 14px; margin: 8px 0; background: #fff;
+    border: 1px solid #dee2e6; border-radius: 10px;
+    padding: 8px 10px; margin: 5px 0; background: #fff;
+    font-size: 0.92em;                  /* ~30% tighter than the first pass */
     animation: fadeUp .35s ease both;   /* entrance: slide + fade */
 }
 .card.chosen { border: 2px solid #339af0; background: #f1f8fe; }
 .muted { color: #868e96; font-size: 0.85em; }
-.field { margin: 2px 0; }
-.field b { display: inline-block; min-width: 7.5em; }
+.field { margin: 1px 0; }
+.field b { display: inline-block; min-width: 7em; }
 h1 { font-size: 1.4rem !important; }
 
 @keyframes fadeUp {
@@ -54,14 +55,28 @@ h1 { font-size: 1.4rem !important; }
 
 /* per-candidate live-queue bars (rendered inside order cards) */
 .qbar-track {
-    display: flex; height: 10px; border-radius: 6px;
-    background: #e9ecef; overflow: hidden; margin: 6px 0 4px;
+    display: flex; height: 8px; border-radius: 5px;
+    background: #e9ecef; overflow: hidden; margin: 4px 0 3px;
 }
 .qbar-fill { height: 100%; animation: qgrow .9s cubic-bezier(.2,.8,.2,1) both; }
 .qbar-now  { background: #74c0fc; }   /* queue the shop already holds */
 .qbar-add  { background: #1971c2; }   /* this order stacked on top */
 @keyframes qgrow { from { width: 0; } }
 .qbar-legend { color: #868e96; font-size: 0.8em; }
+
+/* right-rail panels (app/ui_queuedock.py): plain blocks in the layout's
+   right column — no fixed positioning, so nothing ever overlaps the
+   dashboard; content re-renders on every interaction */
+[class*="st-key-objective_dock"], [class*="st-key-queue_dock"] {
+    background: #fff; border: 1px solid #dee2e6; border-radius: 12px;
+    padding: 8px 12px; font-size: 0.85em; margin-bottom: 10px;
+    box-shadow: 0 2px 10px rgba(25, 113, 194, 0.08);
+    animation: fadeUp .4s ease both;
+}
+.dock-row { display: flex; align-items: center; gap: 6px; margin: 1px 0; }
+.dock-row .qbar-track { flex: 1; margin: 0; height: 7px; }
+.dock-row .dock-name { min-width: 86px; }
+.dock-row .dock-days { min-width: 36px; text-align: right; color: #868e96; }
 </style>
 """
 

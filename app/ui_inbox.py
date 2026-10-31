@@ -161,10 +161,39 @@ def _committed_line(records):
     return f"{ids} — {records[0].order_id} → {shops}"
 
 
+def render_actions(decision, desk):
+    """Fine-grained per-card controls: re-rank (live queues, objective from
+    the right-side panel) or dismiss the request — one tap, no chat round."""
+    from dataclasses import replace
+    from app.streamlit_app import _log_exchange, _replace_item
+    if not decision.parsed.order_id or not decision.candidates:
+        return
+    pref = st.session_state.get("objective_pref", "hybrid")
+    c_note, c_refresh, c_dismiss = st.columns([3, 1, 1])
+    note = f"objective: {decision.objective}"
+    if pref != decision.objective:
+        note += f" → {pref} on re-rank"
+    c_note.caption(note)
+    if c_refresh.button("🔄 Re-rank", key=f"refresh-{id(decision)}",
+                        help="Rank again against the live queues, with the "
+                             "objective from the right panel"):
+        fresh = desk.refresh(replace(decision, objective=pref))
+        _replace_item(decision, fresh, f"Re-ranked by {pref}, live queues.")
+        _log_exchange("dispatcher", f"(re-rank) {pref}",
+                      f"Re-ranked {decision.parsed.order_id} by {pref}.")
+        st.rerun()
+    if c_dismiss.button("🗑 Dismiss", key=f"dismiss-{id(decision)}",
+                        help="Drop this request from the worklist"):
+        items = st.session_state.get("decisions", [])
+        st.session_state.decisions = [x for x in items
+                                      if x["decision"] is not decision]
+        st.rerun()
+
+
 def render_decision(decision, desk):
-    """Pre-commit: understood / candidates / confirm buttons, plus the 4th
-    option — an expander with the live candidate board and the per-item
-    conversation (the agent's reply shows there, first bubble).
+    """Pre-commit: understood / candidates / confirm buttons, actions row,
+    split options, plus the 4th option — an expander with the live
+    candidate board and the per-item conversation.
     Post-commit: a single line — the confirm UI deletes itself."""
     from app.streamlit_app import render_item_chat
     r = st.session_state.get(f"committed-{id(decision)}")
@@ -176,6 +205,7 @@ def render_decision(decision, desk):
         st.warning(note, icon="⚠️")
     render_candidates(decision, desk)
     render_confirm(decision, desk)
+    render_actions(decision, desk)
     render_split(decision, desk)
     # the 4th option, available on every uncommitted item (incl. ASK items
     # with no candidates): an expander — st.chat_input/popover cannot hold
