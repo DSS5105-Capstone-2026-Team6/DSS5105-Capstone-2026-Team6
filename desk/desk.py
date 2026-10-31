@@ -135,7 +135,7 @@ class DispatchDesk:
         args = {"order_id": decision.parsed.order_id, "objective": decision.objective,
                 "excluded": list(decision.excluded)}
         result = rank_candidates(**args, orders=self.orders, store=self.workshops,
-                                 queues=self.state.queues)
+                                 queues=self.state.queues, perf=self.performance)
         if "error" in result:
             return
         decision.tool_log.append({"tool": "rank_candidates", "arguments": args,
@@ -160,7 +160,7 @@ class DispatchDesk:
         args = {"order_id": oid, "excluded": list(decision.excluded),
                 "objective": decision.objective}
         result = split_options(**args, orders=self.orders, store=self.workshops,
-                               queues=self.state.queues)
+                               queues=self.state.queues, perf=self.performance)
         if "error" in result or not result["options"]:
             return
         decision.tool_log.append({"tool": "split_options", "arguments": args,
@@ -184,7 +184,8 @@ class DispatchDesk:
         version = self.audit.version
         result = rank_candidates(decision.parsed.order_id, decision.objective,
                                  excluded=decision.excluded, orders=self.orders,
-                                 store=self.workshops, queues=self.state.queues)
+                                 store=self.workshops, queues=self.state.queues,
+                                 perf=self.performance)
         fresh = route("", "Queues changed. Please review these updated candidates and confirm again.",
                       [{"tool": "rank_candidates",
                         "arguments": {"order_id": decision.parsed.order_id,

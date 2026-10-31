@@ -9,8 +9,9 @@ learned() derives a recency-weighted effective capacity / lead time plus an
 
 Guards from the roadmap:
 - falls back to the profile card until MIN_SAMPLES batches are observed
-- one batch moves the capacity estimate by at most MAX_STEP (bounded update,
-  so a single outlier cannot swing the estimator)
+- every update is bounded (at most MAX_STEP, scaled down further for small
+  batches — a one-day-late 50-piece return barely moves the estimate, and
+  even the first batch gets no free pass)
 - observation history is capped at KEEP_MOST_RECENT
 
 Storage lives in the same SQLite file as the allocation ledger
@@ -51,25 +52,35 @@ class PerformanceStore:
 
     # ---------------- write ----------------
 
-    def observe(self, workshop_id, pieces, promised_date, actual_date):
+    def observe(self, workshop_id, pieces, promised_date, actual_date,
+                profile=None):
         """One returned batch -> one observation. Returns the recorded delay
-        and the resulting learned state (or why it is not active yet)."""
+        and the resulting learned state (or why it is not active yet).
+        `profile` (the WorkshopStore record) makes the delay->capacity
+        conversion proportional to the batch's work content."""
         promised = date.fromisoformat(str(promised_date))
         actual = date.fromisoformat(str(actual_date))
         delay = (actual - promised).days
+        pieces = int(pieces)
         samples = self._samples(workshop_id)
         samples.append({"promised": promised.isoformat(),
                         "actual": actual.isoformat(),
-                        "pieces": int(pieces), "delay": delay})
+                        "pieces": pieces, "delay": delay})
         samples = samples[-KEEP_MOST_RECENT:]
 
+        # evidence strength scales with the batch's work content: a one-day
+        # late return on a half-day job must not move the capacity estimate
+        # the way a late ten-day job does (and the first batch gets no free
+        # pass either — every update is bounded, starting from ratio 1.0)
+        work_days = (pieces / profile.capacity * (1 + 0.5 * profile.defect_rate)
+                     if profile is not None else 10.0)
+        observed = self._observed_ratio(delay, work_days)
         ratio = self._ratio(workshop_id)
-        observed = self._observed_ratio(samples[-1], ratio)
         if ratio is None:
-            ratio = observed
-        else:   # bounded step toward the observation
-            step = max(-MAX_STEP, min(MAX_STEP, observed - ratio))
-            ratio = round(ratio + step, 4)
+            ratio = 1.0
+        step = max(-MAX_STEP, min(MAX_STEP, observed - ratio))
+        step *= min(1.0, work_days / 10.0)       # small batches move less
+        ratio = round(ratio + step, 4)
         ratio = max(RATIO_CLAMP[0], min(RATIO_CLAMP[1], ratio))
 
         with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
@@ -79,10 +90,16 @@ class PerformanceStore:
                        "updated_at=excluded.updated_at",
                        (workshop_id, json.dumps(samples), ratio,
                         date.today().isoformat()))
-        state = self.learned(workshop_id, profile=None) or {}
+        state = self.learned(workshop_id, profile=profile) or {}
         return {"workshop_id": workshop_id, "delay_days": delay,
                 "observations": len(samples),
                 "active": len(samples) >= MIN_SAMPLES, **state}
+
+    def clear(self):
+        """Drop every learned observation (demo reset wipes these too, so a
+        fresh world starts back on the profile cards)."""
+        with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
+            db.execute("DELETE FROM performance")
 
     # ---------------- read ----------------
 
@@ -129,15 +146,14 @@ class PerformanceStore:
         return row[1] if row else None
 
     @staticmethod
-    def _observed_ratio(sample, current_ratio):
-        """Delay -> capacity ratio, heuristic: the work span is not observed,
-        so a d-day-late batch reads as a d/10 fractional slowdown (10-day
-        reference batch); an early batch nudges the ratio up, capped at +10%.
-        MAX_STEP bounds every move regardless, so the heuristic can only
-        drift, never jump."""
-        if sample["delay"] > 0:
-            return 1.0 / (1.0 + sample["delay"] / 10.0)
-        return 1.0 + min(0.1, -sample["delay"] / 100.0)
+    def _observed_ratio(delay, work_days):
+        """Delay -> capacity ratio. The capacity-blame model: if the batch's
+        pure work was `work_days` and it came back `delay` days late, the
+        implied throughput is work / (work + delay) of the profile. Early
+        batches nudge the ratio up, capped at +10%."""
+        if delay > 0:
+            return work_days / (work_days + delay)
+        return 1.0 + min(0.1, -delay / 100.0)
 
 
 def _percentile(values, pct):

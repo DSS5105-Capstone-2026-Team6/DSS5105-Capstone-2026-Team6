@@ -458,13 +458,14 @@ def _eligible_for(pieces, category, store, excluded_ids=frozenset()):
             if w.workshop_id not in excluded_ids]
 
 
-def _finish(pieces, w, queues):
+def _finish(pieces, w, queues, perf=None):
+    from desk.allocator import est_finish_days
     batch = {"pieces": pieces}
-    return est_turnaround_expected(batch, w, queues)
+    return est_finish_days(batch, w, queues, perf)
 
 
 def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
-                      queues=None):
+                      queues=None, perf=None):
     """Earliest date as one batch and as a two-way split. Error dict for an
     unknown order; flags report when even the split misses the due date.
     `queues` overrides the 1 April snapshot with live chat-side queues;
@@ -488,7 +489,7 @@ def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
     # --- single batch: earliest finish over all eligible workshops
     single = None   # (finish date, workshop)
     for w in _eligible_for(pieces, category, store, excluded_ids):
-        finish = CHAT_TODAY + timedelta(days=round(_finish(pieces, w, queues)))
+        finish = CHAT_TODAY + timedelta(days=round(_finish(pieces, w, queues, perf)))
         if single is None or finish < single[0]:
             single = (finish, w)
 
@@ -504,11 +505,11 @@ def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
     for a in range(1, pieces):
         b = pieces - a
         for w1 in elig(a):
-            f1 = _finish(a, w1, queues)
+            f1 = _finish(a, w1, queues, perf)
             for w2 in elig(b):
                 if w2.workshop_id == w1.workshop_id:
                     continue            # same shop = serial, no parallelism
-                f2 = _finish(b, w2, queues)
+                f2 = _finish(b, w2, queues, perf)
                 finish = CHAT_TODAY + timedelta(days=round(max(f1, f2)))
                 if best_split is None or finish < best_split[0]:
                     best_split = (finish, w1, a, w2, b)
@@ -538,7 +539,7 @@ def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
                         "to one workshop (roadmap, Assumption 4)"}
 
 
-def _best_split_for(shops, pieces, category, store, queues, min_part=1):
+def _best_split_for(shops, pieces, category, store, queues, min_part=1, perf=None):
     """Earliest finish when `pieces` are shared over exactly these shops,
     all working in parallel. Searches the finish time T: by T each shop can
     finish floor((T - queue - lead) * capacity / (1 + 0.5 * defect_rate))
@@ -567,7 +568,7 @@ def _best_split_for(shops, pieces, category, store, queues, min_part=1):
     excess = sum(split.values()) - pieces
     while excess > 0:   # hand back the surplus from the latest-finishing part
         w = max((w for w in shops if split[w.workshop_id] > min_part),
-                key=lambda w: _finish(split[w.workshop_id], w, queues))
+                key=lambda w: _finish(split[w.workshop_id], w, queues, perf))
         cut = min(excess, split[w.workshop_id] - min_part)
         split[w.workshop_id] -= cut
         excess -= cut
@@ -579,7 +580,7 @@ def _best_split_for(shops, pieces, category, store, queues, min_part=1):
 
 def split_options(order_id=None, excluded=None, objective="lateness",
                   late_tol=0.5, max_shops=None, top=5, min_part_share=0.1, *,
-                  orders=None, store=None, queues=None):
+                  orders=None, store=None, queues=None, perf=None):
     """Every way to split an order over two or more workshops (no ceiling
     unless `max_shops` is given; at most 7 eligible shops = 120 sets), each set
     with its best piece split, ranked exactly like rank_candidates ranks
@@ -607,7 +608,7 @@ def split_options(order_id=None, excluded=None, objective="lateness",
     pieces, category = int(rec["pieces"]), rec["category"]
     due = date.fromisoformat(rec["due_date"])
     slack = (due - CHAT_TODAY).days
-    single = min((_finish(pieces, w, queues)
+    single = min((_finish(pieces, w, queues, perf)
                   for w in _eligible_for(pieces, category, store, excluded_ids)),
                  default=None)
     single_finish = (CHAT_TODAY + timedelta(days=round(single))) if single is not None else None
@@ -617,10 +618,10 @@ def split_options(order_id=None, excluded=None, objective="lateness",
     options = []
     for k in range(2, min(max_shops or len(shops), len(shops)) + 1):
         for group in itertools.combinations(shops, k):
-            split = _best_split_for(group, pieces, category, store, queues, min_part)
+            split = _best_split_for(group, pieces, category, store, queues, min_part, perf=perf)
             if split is None:
                 continue
-            days = max(_finish(split[w.workshop_id], w, queues) for w in group)
+            days = max(_finish(split[w.workshop_id], w, queues, perf) for w in group)
             finish = CHAT_TODAY + timedelta(days=round(days))
             if single_finish is not None and finish >= single_finish:
                 continue
@@ -692,7 +693,8 @@ def update_workshop_performance(workshop_id=None, pieces=None,
     if not isinstance(pieces, int) or pieces <= 0:
         return {"error": f"pieces must be a positive integer, got {pieces!r}"}
     try:
-        result = perf.observe(wid, pieces, promised_date, actual_date)
+        result = perf.observe(wid, pieces, promised_date, actual_date,
+                              profile=store.workshops[wid])
     except (TypeError, ValueError) as exc:
         return {"error": f"bad dates (expected ISO YYYY-MM-DD): {exc}"}
     if not result["active"]:
@@ -859,7 +861,8 @@ _QUEUES_TOOLS = {"get_queue", "estimate_delivery", "rank_candidates",
 
 # tools that read the learned-performance store (desk injects its own, so UI
 # and bot learn from the same observations)
-_PERF_TOOLS = {"estimate_delivery", "update_workshop_performance"}
+_PERF_TOOLS = {"estimate_delivery", "update_workshop_performance",
+              "rank_candidates", "earliest_feasible", "split_options"}
 
 
 def tool_schemas():
