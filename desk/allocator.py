@@ -41,21 +41,38 @@ CHAT_TODAY = date(2026, 4, 1)
 OBJECTIVES = ("lateness", "defects", "hybrid", "cost")
 
 
-def _candidate_row(w, batch, queues):
-    est = est_turnaround_expected(batch, w, queues)
+def est_finish_days(batch, w, queues, perf=None):
+    """est_turnaround_expected, except a workshop with learned performance
+    (roadmap §1.6) is estimated on its EFFECTIVE capacity and lead time.
+    The harness function stays on the profile card — the simulator must not
+    diverge — so the learned path is computed here, desk-side only."""
+    learned = perf.learned(w.workshop_id, profile=w) if perf else None
+    if not learned:
+        return est_turnaround_expected(batch, w, queues)
+    return (queues[w.workshop_id]
+            + batch["pieces"] / learned["eff_capacity"] * (1 + 0.5 * w.defect_rate)
+            + learned["eff_lead_days"])
+
+
+def _candidate_row(w, batch, queues, perf=None):
+    est = est_finish_days(batch, w, queues, perf)
     finish = CHAT_TODAY + timedelta(days=round(est))
     due = batch["due_date"]
     pieces = batch["pieces"]
+    slack = (due - batch["sent_date"]).days
+    learned = perf.learned(w.workshop_id, profile=w) if perf else None
+    capacity = learned["eff_capacity"] if learned else w.capacity
     return {"workshop_id": w.workshop_id, "name": w.name,
             "estimated_finish": finish.isoformat(),
             "days_late": max(0, (finish - due).days),
             "cost": round(pieces * w.cost, 2),
             "defect_risk": w.defect_rate,
-            "expected_days_late": round(expected_days_late(batch, w, queues), 2),
+            "expected_days_late": round(max(0.0, est - slack), 2),
             "est_finish_days": round(est, 2),
+            "estimator": "learned" if learned else "profile_card",
             "components": {"queue_days": queues[w.workshop_id],
                            "work_days_expected": round(
-                               pieces / w.capacity * (1 + 0.5 * w.defect_rate), 2),
+                               pieces / capacity * (1 + 0.5 * w.defect_rate), 2),
                            "transport_days": w.lead_days}}
 
 
@@ -92,7 +109,8 @@ def order_rows(rows, objective="lateness", late_tol=0.5):
 
 
 def rank_candidates(order_id=None, objective="hybrid", late_tol=0.5,
-                    excluded=None, *, orders=None, store=None, queues=None):
+                    excluded=None, *, orders=None, store=None, queues=None,
+                    perf=None):
     """Rank every eligible workshop for an order. Returns candidates sorted
     best-first plus the chosen id; an error dict for a bad order/objective;
     empty candidates when no workshop can take it (never a silent pick).
@@ -124,7 +142,7 @@ def rank_candidates(order_id=None, objective="hybrid", late_tol=0.5,
     ok = [w for w in eligible_workshops(batch, store.workshops)
           if w.workshop_id not in excluded_ids]
 
-    rows = [_candidate_row(w, batch, queues) for w in ok]
+    rows = [_candidate_row(w, batch, queues, perf) for w in ok]
 
     rows = order_rows(rows, objective, late_tol)
 
