@@ -72,7 +72,11 @@ def test_split_survives_json_round_trip(desk):
 
 @pytest.mark.parametrize("index", [0, 1])
 def test_confirm_split_commits_every_part(desk, index):
+    from dataclasses import replace
     d = desk.handle_message("ORD-029 is due TODAY.")
+    # pin lateness: hybrid's plateau keeps only the single best split, but
+    # this test exercises committing parts of BOTH ranked options
+    d = desk.refresh(replace(d, objective="lateness"))
     chosen = d.splits[index]
     before = dict(desk.state.queues)
     records = desk.confirm_split(d, index, committed_by="dispatcher")

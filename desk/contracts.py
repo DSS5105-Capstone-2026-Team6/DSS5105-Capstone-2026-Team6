@@ -102,7 +102,7 @@ class Decision:
     created_at: str = ""               # ISO timestamp
     decision_id: str = field(default_factory=lambda: uuid4().hex)
     state_version: Optional[str] = None
-    objective: str = "lateness"
+    objective: str = "hybrid"
     excluded: list = field(default_factory=list)
     # split options the desk can commit (tools.split_options), best first:
     # [{"parts": [{"workshop_id", "name", "pieces"}, ...], "n_shops",

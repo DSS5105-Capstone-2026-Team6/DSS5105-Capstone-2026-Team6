@@ -91,7 +91,7 @@ def order_rows(rows, objective="lateness", late_tol=0.5):
     return sorted(rows, key=lambda r: _sort_key(objective, r))
 
 
-def rank_candidates(order_id=None, objective="lateness", late_tol=0.5,
+def rank_candidates(order_id=None, objective="hybrid", late_tol=0.5,
                     excluded=None, *, orders=None, store=None, queues=None):
     """Rank every eligible workshop for an order. Returns candidates sorted
     best-first plus the chosen id; an error dict for a bad order/objective;
@@ -152,7 +152,7 @@ RANK_CANDIDATES_SCHEMA = {
                 "order_id": {"type": "string"},
                 "objective": {"type": "string",
                               "enum": ["lateness", "defects", "hybrid", "cost"],
-                              "description": "default lateness; cost for "
+                              "description": "default hybrid (the production allocator); cost for "
                                              "'cheapest that still hits the date'"},
                 "excluded": {"type": "array", "items": {"type": "string"},
                              "description": "workshops the request excludes"},
