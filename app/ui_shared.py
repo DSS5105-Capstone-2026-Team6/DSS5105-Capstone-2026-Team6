@@ -39,18 +39,52 @@ CSS = """
 .card {
     border: 1px solid #dee2e6; border-radius: 12px;
     padding: 12px 14px; margin: 8px 0; background: #fff;
+    animation: fadeUp .35s ease both;   /* entrance: slide + fade */
 }
 .card.chosen { border: 2px solid #339af0; background: #f1f8fe; }
 .muted { color: #868e96; font-size: 0.85em; }
 .field { margin: 2px 0; }
 .field b { display: inline-block; min-width: 7.5em; }
 h1 { font-size: 1.4rem !important; }
+
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* per-candidate live-queue bars (rendered inside order cards) */
+.qbar-track {
+    display: flex; height: 10px; border-radius: 6px;
+    background: #e9ecef; overflow: hidden; margin: 6px 0 4px;
+}
+.qbar-fill { height: 100%; animation: qgrow .9s cubic-bezier(.2,.8,.2,1) both; }
+.qbar-now  { background: #74c0fc; }   /* queue the shop already holds */
+.qbar-add  { background: #1971c2; }   /* this order stacked on top */
+@keyframes qgrow { from { width: 0; } }
+.qbar-legend { color: #868e96; font-size: 0.8em; }
 </style>
 """
 
 
-def card(html):
-    st.markdown(f'<div class="card">{html}</div>', unsafe_allow_html=True)
+def card(html, delay=0.0):
+    """One card. delay staggers the entrance animation (seconds)."""
+    style = f' style="animation-delay:{delay}s"' if delay else ""
+    st.markdown(f'<div class="card"{style}>{html}</div>',
+                unsafe_allow_html=True)
+
+
+def queue_bar_html(queue_now, queue_added, scale):
+    """Inline-SVG-free queue bar: current queue (soft blue) + this order's
+    expected work (deep blue) stacked, widths as % of `scale` days. The
+    fills grow from 0 via the qgrow keyframe, so bars animate in on every
+    rerun — and re-rendered values visibly move when queues change."""
+    now_pct = round(min(100.0, 100.0 * queue_now / scale), 1) if scale else 0
+    add_pct = round(min(100.0 - now_pct, 100.0 * queue_added / scale), 1) \
+        if scale else 0
+    return (f'<div class="qbar-track">'
+            f'<div class="qbar-fill qbar-now" style="width:{now_pct}%"></div>'
+            f'<div class="qbar-fill qbar-add" style="width:{add_pct}%"></div>'
+            f'</div>')
 
 
 def _sync_anchor(link):

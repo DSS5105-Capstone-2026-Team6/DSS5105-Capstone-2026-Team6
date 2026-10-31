@@ -14,7 +14,8 @@ from desk.contracts import Behaviour, Decision
 from desk.chat_dump import ENVELOPE, split_chat_dump
 from desk.budget import BudgetExceeded
 from desk.tools import flag_at_risk
-from app.ui_shared import BADGE, NEEDS_HUMAN, _sync_anchor, card
+from app.ui_shared import (BADGE, NEEDS_HUMAN, _sync_anchor, card,
+                           queue_bar_html)
 
 
 # ---------------- decision rendering (worklist) ----------------
@@ -45,12 +46,22 @@ def _star_on_single(decision, c):
             and c.workshop_id == decision.chosen.workshop_id)
 
 
-def render_candidates(decision):
-    """Step 3 — candidate cards, chosen one highlighted."""
+def render_candidates(decision, desk):
+    """Step 3 — candidate cards, chosen one highlighted. Each card carries a
+    live queue bar: the workshop's CURRENT queue (re-read every rerun, so it
+    moves the moment another dispatch commits) with this order's expected
+    work stacked on top, animated in with the card."""
     if not decision.candidates:
         return
-    st.markdown("**🧭 Candidates**")
-    for i, c in enumerate(decision.candidates[:3]):
+    st.markdown("**🧭 Candidates · live queue**")
+    shown = decision.candidates[:3]
+    live = {c.workshop_id: desk.state.queues.get(c.workshop_id, 0.0)
+            for c in shown}
+    added = {c.workshop_id: float(c.components.get("work_days_expected", 0.0))
+             for c in shown}
+    scale = max([live[c.workshop_id] + added[c.workshop_id] for c in shown]
+                + [0.1])
+    for i, c in enumerate(shown):
         is_chosen = _star_on_single(decision, c)
         slack = ""
         if decision.parsed.due_date:
@@ -59,11 +70,16 @@ def render_candidates(decision):
                           - date.fromisoformat(c.estimated_finish)).days
             slack = (f"{slack_days} days early" if slack_days >= 0
                      else f"{-slack_days} days late")
+        bar = queue_bar_html(live[c.workshop_id], added[c.workshop_id], scale)
         body = (f'<b>{c.name} ({c.workshop_id})</b>'
-                + (" ⭐" if is_chosen else "")
+                + (" ⭐" if is_chosen else "") + bar
+                + f'<div class="qbar-legend">queue {live[c.workshop_id]:.1f}d'
+                + (f' + {added[c.workshop_id]:.1f}d this order'
+                   if added[c.workshop_id] else ' (queue unchanged)')
+                + '</div>'
                 + f'<br>Finish {c.estimated_finish} · {slack}'
                 + f'<br>Cost {c.cost:.2f} · Defect {c.defect_risk:.2f}')
-        card(body)
+        card(body, delay=0.06 * i)
 
 
 def render_confirm(decision, desk):
@@ -158,7 +174,7 @@ def render_decision(decision, desk):
     render_understood(decision)
     for note in decision.warnings:
         st.warning(note, icon="⚠️")
-    render_candidates(decision)
+    render_candidates(decision, desk)
     render_confirm(decision, desk)
     render_split(decision, desk)
     # the 4th option, available on every uncommitted item (incl. ASK items
