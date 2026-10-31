@@ -244,27 +244,31 @@ def render_inbox(desk):
     if b_send.button("🚀 Dispatch", use_container_width=True, type="primary") and text.strip():
         msgs = split_chat_dump(text.strip())
         if _budget_ok(len(msgs)):
-            decisions = []
-            for i, msg in enumerate(msgs, 1):
-                desk.agent.new_conversation()  # inbox lines are independent
-                with st.spinner(f"Dispatching ({i}/{len(msgs)}: {msg[:40]}...)"):
-                    st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
-                    try:
-                        decision = desk.handle_message(msg, requester="dispatcher")
-                    except BudgetExceeded:
-                        decision = Decision(request_id="", behaviour=Behaviour.ASK,
-                            explanation="Request limit reached. Please try again later.")
-                    except Exception:
-                        decision = Decision(request_id="", behaviour=Behaviour.ASK,
-                            explanation="Request failed. Please retry later or check server configuration.")
-                    decisions.append({"msg": msg, "decision": decision})
-                    _save_thread(decision, desk)   # per-item conversation seed
-                    env = ENVELOPE.match(msg)
-                    _log_exchange(env.group(3) if env else "chat",
-                                  env.group(4) if env else msg,
-                                  decision.explanation,
-                                  link=f"d{id(decision)}")
-            st.session_state.decisions = decisions
+            st.session_state.dispatching = True   # locks the objective panel
+            try:
+                decisions = []
+                for i, msg in enumerate(msgs, 1):
+                    desk.agent.new_conversation()  # inbox lines are independent
+                    with st.spinner(f"Dispatching ({i}/{len(msgs)}: {msg[:40]}...)"):
+                        st.session_state.n_sent = st.session_state.get("n_sent", 0) + 1
+                        try:
+                            decision = desk.handle_message(msg, requester="dispatcher")
+                        except BudgetExceeded:
+                            decision = Decision(request_id="", behaviour=Behaviour.ASK,
+                                explanation="Request limit reached. Please try again later.")
+                        except Exception:
+                            decision = Decision(request_id="", behaviour=Behaviour.ASK,
+                                explanation="Request failed. Please retry later or check server configuration.")
+                        decisions.append({"msg": msg, "decision": decision})
+                        _save_thread(decision, desk)   # per-item conversation seed
+                        env = ENVELOPE.match(msg)
+                        _log_exchange(env.group(3) if env else "chat",
+                                      env.group(4) if env else msg,
+                                      decision.explanation,
+                                      link=f"d{id(decision)}")
+                st.session_state.decisions = decisions
+            finally:
+                st.session_state.dispatching = False   # unlock even on error
             # the sidebar chat log was drawn before this loop ran; rerun so
             # the new exchanges show up now, not after the next click
             st.rerun()

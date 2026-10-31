@@ -14,19 +14,44 @@ from app.ui_shared import queue_bar_html
 
 
 def render_objective_dock(desk):
-    """The allocator's four objectives as a right-rail panel. The pick is
-    stored as session_state.objective_pref and used by every card's
-    🔄 Re-rank button. Default is hybrid — the production allocator."""
+    """The allocator's four objectives as a right-rail panel, plus the
+    global re-rank. The objective locks ONLY while a dispatch run is in
+    progress (the inbox loop is mid-flight) — once the decisions are out,
+    switching is free; the global button re-ranks every open card
+    atomically so a switch never leaves half the cards on each objective."""
+    from dataclasses import replace
     from desk.allocator import OBJECTIVES
+    from desk.contracts import Behaviour
+    from app.streamlit_app import _log_exchange, _replace_item
+    items = st.session_state.get("decisions", [])
+    open_items = [x for x in items
+                  if x["decision"].behaviour is Behaviour.ALLOCATE
+                  and x["decision"].candidates
+                  and f"committed-{id(x['decision'])}" not in st.session_state]
+    locked = bool(st.session_state.get("dispatching"))
     with st.container(key="objective_dock"):
         st.markdown("**🎯 Re-rank objective**")
         pref = st.session_state.get("objective_pref", "hybrid")
         pick = st.segmented_control(
             "objective", list(OBJECTIVES), default=pref,
-            key="objective_dock_sel", label_visibility="collapsed")
+            key="objective_dock_sel", label_visibility="collapsed",
+            disabled=locked)
         if pick and pick != pref:
             st.session_state.objective_pref = pick
             st.rerun()
+        if locked:
+            st.caption("dispatching… objective is locked until the run finishes")
+        if open_items and not locked:
+            if st.button(f"🔄 Re-rank all ({pref})",
+                         key="rerank_all", use_container_width=True):
+                for x in open_items:
+                    d = x["decision"]
+                    fresh = desk.refresh(replace(d, objective=pref))
+                    _replace_item(d, fresh, f"Re-ranked by {pref}.")
+                _log_exchange("dispatcher", f"(re-rank all) {pref}",
+                              f"Re-ranked {len(open_items)} open dispatch(es) "
+                              f"by {pref}.")
+                st.rerun()
 
 
 def render_queue_dock(desk):
