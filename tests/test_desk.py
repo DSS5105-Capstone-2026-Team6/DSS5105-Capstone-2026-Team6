@@ -105,7 +105,10 @@ def test_dispatch_injects_live_queues_into_tools(desk):
     assert row["queue_days"] == pytest.approx(expected, abs=1e-2)
     assert row["recent_change"] == pytest.approx(expected - 1.0, abs=1e-2)
 
-    rank = dispatch_tool("rank_candidates", {"order_id": "ORD-041"}, desk=desk)
+    # lateness lists every eligible shop; hybrid (the default) filters to
+    # its plateau, and W6's just-grown queue pushes it out of the plateau
+    rank = dispatch_tool("rank_candidates", {"order_id": "ORD-041",
+                                             "objective": "lateness"}, desk=desk)
     w6 = next(c for c in rank["candidates"] if c["workshop_id"] == "W6")
     assert w6["components"]["queue_days"] == pytest.approx(expected, abs=1e-2)
 

@@ -38,7 +38,10 @@ class FakeAgent:
         return self.intent
 
     def chat(self, text, verbose=False):
-        args = {'order_id': self.next_order, 'excluded': self.excluded}
+        # pin the objective: these fixtures predate hybrid becoming the
+        # default and assert lateness-ordered candidates
+        args = {'order_id': self.next_order, 'excluded': self.excluded,
+                'objective': 'lateness'}
         result = dispatch_tool('rank_candidates', args, desk=self.desk)
         self.tool_log = [{'tool': 'rank_candidates', 'arguments': args, 'result': result}]
         self.history += [{'role': 'user', 'content': text},

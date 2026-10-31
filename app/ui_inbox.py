@@ -14,7 +14,8 @@ from desk.contracts import Behaviour, Decision
 from desk.chat_dump import ENVELOPE, split_chat_dump
 from desk.budget import BudgetExceeded
 from desk.tools import flag_at_risk
-from app.ui_shared import BADGE, NEEDS_HUMAN, _sync_anchor, card
+from app.ui_shared import (BADGE, NEEDS_HUMAN, _sync_anchor, card,
+                           queue_bar_html)
 
 
 # ---------------- decision rendering (worklist) ----------------
@@ -45,12 +46,22 @@ def _star_on_single(decision, c):
             and c.workshop_id == decision.chosen.workshop_id)
 
 
-def render_candidates(decision):
-    """Step 3 — candidate cards, chosen one highlighted."""
+def render_candidates(decision, desk):
+    """Step 3 — candidate cards, chosen one highlighted. Each card carries a
+    live queue bar: the workshop's CURRENT queue (re-read every rerun, so it
+    moves the moment another dispatch commits) with this order's expected
+    work stacked on top, animated in with the card."""
     if not decision.candidates:
         return
-    st.markdown("**🧭 Candidates**")
-    for i, c in enumerate(decision.candidates[:3]):
+    st.markdown("**🧭 Candidates · live queue**")
+    shown = decision.candidates[:3]
+    live = {c.workshop_id: desk.state.queues.get(c.workshop_id, 0.0)
+            for c in shown}
+    added = {c.workshop_id: float(c.components.get("work_days_expected", 0.0))
+             for c in shown}
+    scale = max([live[c.workshop_id] + added[c.workshop_id] for c in shown]
+                + [0.1])
+    for i, c in enumerate(shown):
         is_chosen = _star_on_single(decision, c)
         slack = ""
         if decision.parsed.due_date:
@@ -59,11 +70,16 @@ def render_candidates(decision):
                           - date.fromisoformat(c.estimated_finish)).days
             slack = (f"{slack_days} days early" if slack_days >= 0
                      else f"{-slack_days} days late")
+        bar = queue_bar_html(live[c.workshop_id], added[c.workshop_id], scale)
         body = (f'<b>{c.name} ({c.workshop_id})</b>'
-                + (" ⭐" if is_chosen else "")
+                + (" ⭐" if is_chosen else "") + bar
+                + f'<div class="qbar-legend">queue {live[c.workshop_id]:.1f}d'
+                + (f' + {added[c.workshop_id]:.1f}d this order'
+                   if added[c.workshop_id] else ' (queue unchanged)')
+                + '</div>'
                 + f'<br>Finish {c.estimated_finish} · {slack}'
                 + f'<br>Cost {c.cost:.2f} · Defect {c.defect_risk:.2f}')
-        card(body)
+        card(body, delay=0.06 * i)
 
 
 def render_confirm(decision, desk):
@@ -145,10 +161,39 @@ def _committed_line(records):
     return f"{ids} — {records[0].order_id} → {shops}"
 
 
+def render_actions(decision, desk):
+    """Fine-grained per-card controls: re-rank (live queues, objective from
+    the right-side panel) or dismiss the request — one tap, no chat round."""
+    from dataclasses import replace
+    from app.streamlit_app import _log_exchange, _replace_item
+    if not decision.parsed.order_id or not decision.candidates:
+        return
+    pref = st.session_state.get("objective_pref", "hybrid")
+    c_note, c_refresh, c_dismiss = st.columns([3, 1, 1])
+    note = f"objective: {decision.objective}"
+    if pref != decision.objective:
+        note += f" → {pref} on re-rank"
+    c_note.caption(note)
+    if c_refresh.button("🔄 Re-rank", key=f"refresh-{id(decision)}",
+                        help="Rank again against the live queues, with the "
+                             "objective from the right panel"):
+        fresh = desk.refresh(replace(decision, objective=pref))
+        _replace_item(decision, fresh, f"Re-ranked by {pref}, live queues.")
+        _log_exchange("dispatcher", f"(re-rank) {pref}",
+                      f"Re-ranked {decision.parsed.order_id} by {pref}.")
+        st.rerun()
+    if c_dismiss.button("🗑 Dismiss", key=f"dismiss-{id(decision)}",
+                        help="Drop this request from the worklist"):
+        items = st.session_state.get("decisions", [])
+        st.session_state.decisions = [x for x in items
+                                      if x["decision"] is not decision]
+        st.rerun()
+
+
 def render_decision(decision, desk):
-    """Pre-commit: understood / candidates / confirm buttons, plus the 4th
-    option — an expander with the live candidate board and the per-item
-    conversation (the agent's reply shows there, first bubble).
+    """Pre-commit: understood / candidates / confirm buttons, actions row,
+    split options, plus the 4th option — an expander with the live
+    candidate board and the per-item conversation.
     Post-commit: a single line — the confirm UI deletes itself."""
     from app.streamlit_app import render_item_chat
     r = st.session_state.get(f"committed-{id(decision)}")
@@ -158,8 +203,9 @@ def render_decision(decision, desk):
     render_understood(decision)
     for note in decision.warnings:
         st.warning(note, icon="⚠️")
-    render_candidates(decision)
+    render_candidates(decision, desk)
     render_confirm(decision, desk)
+    render_actions(decision, desk)
     render_split(decision, desk)
     # the 4th option, available on every uncommitted item (incl. ASK items
     # with no candidates): an expander — st.chat_input/popover cannot hold

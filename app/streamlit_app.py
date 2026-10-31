@@ -46,6 +46,7 @@ from app.ui_inbox import render_inbox
 from app.ui_dashboard import render_dashboard
 from app.ui_sidebar import render_chat_log, render_performance_sidebar
 from app.ui_records import render_recent
+from app.ui_queuedock import render_objective_dock, render_queue_dock
 
 
 def get_desk():
@@ -302,16 +303,23 @@ def main():
     with st.sidebar:
         render_chat_log()
         render_performance_sidebar(desk)
-    tab_main, tab_dash, tab_recent = st.tabs(
-        ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
 
-    with tab_main:
-        render_inbox(desk)
-    install_scroll_sync()
-    with tab_dash:
-        render_dashboard(desk)
-    with tab_recent:
-        render_recent(desk)
+    # right rail: objective picker + live queues. A layout column, not a
+    # floating panel — so it never overlaps the dashboard charts
+    main_col, rail_col = st.columns([3.2, 1], gap="large")
+    with rail_col:
+        render_objective_dock(desk)
+        render_queue_dock(desk)
+    with main_col:
+        tab_main, tab_dash, tab_recent = st.tabs(
+            ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
+        with tab_main:
+            render_inbox(desk)
+        install_scroll_sync()
+        with tab_dash:
+            render_dashboard(desk)
+        with tab_recent:
+            render_recent(desk)
 
 
 if __name__ == "__main__":
