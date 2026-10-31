@@ -26,7 +26,9 @@ def render_recent(desk):
         st.info("No committed records yet.")
         return
     for r in reversed(records):
+        split = r.evidence.get("split")
+        part = f" · split {split['part']}/{split['of']}" if split else ""
         card(f"<b>{r.record_id}</b> · {r.order_id} → {r.workshop_id} "
-             f"({r.pieces} pcs)<br>"
+             f"({r.pieces} pcs{part})<br>"
              f"<span class='muted'>{r.committed_by} · {r.committed_at} · "
              f"queue {r.queue_before} → {r.queue_after} d</span>")

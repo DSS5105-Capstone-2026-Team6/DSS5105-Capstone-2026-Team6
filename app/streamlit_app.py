@@ -46,6 +46,7 @@ from app.ui_inbox import render_inbox
 from app.ui_dashboard import render_dashboard
 from app.ui_sidebar import render_chat_log, render_performance_sidebar
 from app.ui_records import render_recent
+from app.ui_queuedock import render_objective_dock, render_queue_dock
 
 
 def get_desk():
@@ -110,11 +111,15 @@ def _log_exchange(speaker, text, reply, link=None):
         {"speaker": speaker, "text": text, "reply": reply, "link": link})
 
 
-def _budget_ok(extra=1):
-    """Per-session request cap (Risk 6): the hosted demo shares one key."""
+def _budget_ok(extra=1, cap=100):
+    """Per-session request cap (Risk 6): the hosted demo shares one key.
+    Temporarily raised from 40 to 100; the global hourly/daily API limits
+    (API_CALLS_PER_HOUR / API_CALLS_PER_DAY) still apply across sessions.
+    The cap lives here, not in a module constant, because the tests exec
+    this function on its own."""
     n = st.session_state.get("n_sent", 0)
-    if n + extra > 40:
-        st.warning("Session request cap reached (40). Please reopen the page.")
+    if n + extra > cap:
+        st.warning(f"Session request cap reached ({cap}). Please reopen the page.")
         return False
     return True
 
@@ -144,7 +149,7 @@ def render_item_chat(decision, desk):
         st.markdown("**🧭 All candidates · live queue**")
         for c in decision.candidates:
             live_q = desk.state.queues.get(c.workshop_id, 0.0)
-            star = " ⭐" if (decision.chosen
+            star = " ⭐" if (decision.recommended_split is None and decision.chosen
                              and c.workshop_id == decision.chosen.workshop_id) else ""
             st.markdown(f"- **{c.name} ({c.workshop_id})**{star} — "
                         f"queue {live_q:.1f} d · finish {c.estimated_finish} · "
@@ -298,16 +303,23 @@ def main():
     with st.sidebar:
         render_chat_log()
         render_performance_sidebar(desk)
-    tab_main, tab_dash, tab_recent = st.tabs(
-        ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
 
-    with tab_main:
-        render_inbox(desk)
-    install_scroll_sync()
-    with tab_dash:
-        render_dashboard(desk)
-    with tab_recent:
-        render_recent(desk)
+    # right rail: objective picker + live queues. A layout column, not a
+    # floating panel — so it never overlaps the dashboard charts
+    main_col, rail_col = st.columns([3.2, 1], gap="large")
+    with rail_col:
+        render_objective_dock(desk)
+        render_queue_dock(desk)
+    with main_col:
+        tab_main, tab_dash, tab_recent = st.tabs(
+            ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
+        with tab_main:
+            render_inbox(desk)
+        install_scroll_sync()
+        with tab_dash:
+            render_dashboard(desk)
+        with tab_recent:
+            render_recent(desk)
 
 
 if __name__ == "__main__":

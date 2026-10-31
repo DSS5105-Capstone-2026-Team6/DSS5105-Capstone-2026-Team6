@@ -60,3 +60,15 @@ load by construction.
 Reproduce: `python harness/algorithm2.py` (tables + tolerance scan),
 `python harness/eft_benchmark.py --seeds 10` (EFT benchmark + the
 accessory-reservation experiment).
+
+## Appendix
+
+| Full scan across the four scenario cells (seeds 5105–5114, mean over 10 seeds)| [Tolerance_Scan.md](Tolerance_Scan.md) |
+| Splitting an order across workshops (chat desk only, not the simulator) | [SPLITS.md](SPLITS.md) |
+
+### Why these values were chosen
+
+- **Lateness is flat for small tolerances (0–0.5) and degrades quickly beyond ~5 days** — at tol = 10, % late rises to 8–14%. Since the selection hierarchy is *lateness first*, any tolerance that sacrifices lateness is eliminated at stage 1 of the scan.
+- **Larger tolerances trade lateness for fewer defects and lower cost** (% def pcs 7.5% → 5.0–5.4%, up to ~$6.7k cheaper), which violates the lateness-first hierarchy and is rejected despite looking attractive on the secondary metrics.
+- **Three of the four cells select `late_tol = 0`**; only NORMAL·--stages selects **0.5** (its stage-1 plateau favors 0.5's better late days, 0.23 vs 0.27). Production runs **0.5** — within 0.1pt of the best % late in every scenario and matching the pick for stages-normal, giving a single robust default across all cells.
+
