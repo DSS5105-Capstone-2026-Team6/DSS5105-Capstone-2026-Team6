@@ -11,7 +11,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import DEFAULT_AUDIT_PATH, CHAT_AS_OF
+from . import config
+from .config import DEFAULT_AUDIT_PATH
 from .contracts import AllocationRecord, allocation_from_dict, to_dict
 
 DEFAULT_PATH = DEFAULT_AUDIT_PATH
@@ -128,8 +129,8 @@ class AuditLog:
             order_id=order['order_id'], workshop_id=workshop.workshop_id,
             pieces=pieces, committed_by=committed_by,
             # world date + wall-clock time-of-day: the desk world sits at
-            # CHAT_AS_OF, but same-day records stay ordered by the clock
-            committed_at=f"{CHAT_AS_OF}T{datetime.now(timezone.utc):%H:%M:%S}+00:00",
+            # config.CHAT_AS_OF, but same-day records stay ordered
+            committed_at=f"{config.CHAT_AS_OF}T{datetime.now(timezone.utc):%H:%M:%S}+00:00",
             queue_before=before, queue_after=before + added,
             evidence=evidence or {})
         db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',

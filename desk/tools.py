@@ -32,7 +32,8 @@ try:
                                 order_rows, rank_candidates)
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
-    from desk.config import CHAT_AS_OF
+    from desk import config
+    from desk.config import chat_today
 except ImportError:  # run directly as a script: python desk/tools.py
     import sys
     from pathlib import Path
@@ -42,7 +43,8 @@ except ImportError:  # run directly as a script: python desk/tools.py
                                 order_rows, rank_candidates)
     from desk.contracts import to_dict
     from desk.performance import PerformanceStore, MIN_SAMPLES
-    from desk.config import CHAT_AS_OF
+    from desk import config
+    from desk.config import chat_today
 
 # algorithm2.py is a script-style module (imports `simulate` flat), so its
 # directory must be importable whether we run as a package or directly.
@@ -54,7 +56,6 @@ if _HARNESS not in sys.path:
 from harness.algorithm2 import est_turnaround_expected
 from harness.simulate import eligible_workshops, remaining_stages
 
-CHAT_TODAY = date.fromisoformat(CHAT_AS_OF)
 
 
 # ---------------- lookup_order ----------------
@@ -271,7 +272,7 @@ def get_queue(workshop_ids=None, *, store=None, queues=None):
         rows.append({"workshop_id": w.workshop_id, "name": w.name,
                      "queue_days": round(queues[wid], 2),
                      "recent_change": round(queues[wid] - w.queue0, 2)})
-    result = {"as_of": CHAT_AS_OF, "source": "live chat-side queues (2026-04-01 snapshot + commits)",
+    result = {"as_of": config.CHAT_AS_OF, "source": f"live chat-side queues ({config.CHAT_AS_OF} snapshot + commits)",
               "workshops": rows}
     if unknown:
         result["unknown"] = unknown
@@ -324,7 +325,7 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
     pieces = int(rec["pieces"])
     due_date = date.fromisoformat(rec["due_date"])
     batch = {"category": rec["category"], "pieces": pieces,
-             "sent_date": CHAT_TODAY, "due_date": due_date}
+             "sent_date": chat_today(), "due_date": due_date}
 
     # learned performance (roadmap §1.6): once MIN_SAMPLES returned batches
     # are on file, the estimate runs on the workshop's effective capacity and
@@ -336,7 +337,7 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
     else:
         total_days = est_turnaround_expected(batch, w, queues)
         work_days = pieces / w.capacity * (1 + 0.5 * w.defect_rate)
-    finish = CHAT_TODAY + timedelta(days=round(total_days))
+    finish = chat_today() + timedelta(days=round(total_days))
 
     out = {"order_id": order_id, "workshop_id": wid, "workshop_name": w.name,
            "estimated_finish": finish.isoformat(),
@@ -345,7 +346,7 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
            "cost": round(pieces * w.cost, 2),
            "defect_risk": w.defect_rate,
            "estimator": "learned" if learned else "profile_card",
-           "as_of": CHAT_TODAY.isoformat(),
+           "as_of": chat_today().isoformat(),
            "components": {"queue_days": round(queues[wid], 2),
                           "work_days_expected": round(work_days, 2),
                           "transport_days": learned["eff_lead_days"] if learned
@@ -353,7 +354,7 @@ def estimate_delivery(order_id=None, workshop_id=None, *,
     # cautious estimate: the date the workshop meets in ~80% of observed
     # batches, surfaced only when slack is tight (roadmap Table 5)
     if learned and 0 <= out["slack_days"] <= 2:
-        cautious = CHAT_TODAY + timedelta(days=round(total_days
+        cautious = chat_today() + timedelta(days=round(total_days
                                                      + learned["p80_delay"]))
         out["cautious"] = {"finish_p80": cautious.isoformat(),
                            "p80_delay_days": learned["p80_delay"],
@@ -489,7 +490,7 @@ def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
     # --- single batch: earliest finish over all eligible workshops
     single = None   # (finish date, workshop)
     for w in _eligible_for(pieces, category, store, excluded_ids):
-        finish = CHAT_TODAY + timedelta(days=round(_finish(pieces, w, queues, perf)))
+        finish = chat_today() + timedelta(days=round(_finish(pieces, w, queues, perf)))
         if single is None or finish < single[0]:
             single = (finish, w)
 
@@ -510,7 +511,7 @@ def earliest_feasible(order_id=None, excluded=None, *, orders=None, store=None,
                 if w2.workshop_id == w1.workshop_id:
                     continue            # same shop = serial, no parallelism
                 f2 = _finish(b, w2, queues, perf)
-                finish = CHAT_TODAY + timedelta(days=round(max(f1, f2)))
+                finish = chat_today() + timedelta(days=round(max(f1, f2)))
                 if best_split is None or finish < best_split[0]:
                     best_split = (finish, w1, a, w2, b)
 
@@ -607,11 +608,11 @@ def split_options(order_id=None, excluded=None, objective="lateness",
 
     pieces, category = int(rec["pieces"]), rec["category"]
     due = date.fromisoformat(rec["due_date"])
-    slack = (due - CHAT_TODAY).days
+    slack = (due - chat_today()).days
     single = min((_finish(pieces, w, queues, perf)
                   for w in _eligible_for(pieces, category, store, excluded_ids)),
                  default=None)
-    single_finish = (CHAT_TODAY + timedelta(days=round(single))) if single is not None else None
+    single_finish = (chat_today() + timedelta(days=round(single))) if single is not None else None
     shops = _eligible_for(1, category, store, excluded_ids)
     min_part = max(1, math.ceil(pieces * min_part_share))
 
@@ -622,7 +623,7 @@ def split_options(order_id=None, excluded=None, objective="lateness",
             if split is None:
                 continue
             days = max(_finish(split[w.workshop_id], w, queues, perf) for w in group)
-            finish = CHAT_TODAY + timedelta(days=round(days))
+            finish = chat_today() + timedelta(days=round(days))
             if single_finish is not None and finish >= single_finish:
                 continue
             options.append({
@@ -753,11 +754,11 @@ def flag_at_risk(*, desk=None):
         work = rec.pieces / w.capacity * (1 + 0.5 * w.defect_rate)
         # projection: the batch sat behind queue_before days of work at
         # commit; elapsed days since commit drain it day by day. The ledger
-        # records wall-clock time while the desk world sits at CHAT_TODAY,
+        # records wall-clock time while the desk world sits at chat_today(),
         # so a real-time timestamp lands "after" the world — clamp at 0.
-        elapsed = max(0, (CHAT_TODAY - committed).days)
+        elapsed = max(0, (chat_today() - committed).days)
         remaining = max(0.0, rec.queue_before + work + w.lead_days - elapsed)
-        projected = CHAT_TODAY + timedelta(days=round(remaining))
+        projected = chat_today() + timedelta(days=round(remaining))
         if projected > due:
             at_risk.append({
                 "order_id": rec.order_id, "record_id": rec.record_id,
@@ -766,7 +767,7 @@ def flag_at_risk(*, desk=None):
                 "projected_finish": projected.isoformat(),
                 "projected_days_late": (projected - due).days})
     at_risk.sort(key=lambda r: -r["projected_days_late"])
-    return {"as_of": CHAT_AS_OF, "at_risk": at_risk, "n_at_risk": len(at_risk),
+    return {"as_of": config.CHAT_AS_OF, "at_risk": at_risk, "n_at_risk": len(at_risk),
             "options": ["wait", "split the remainder", "reassign",
                         "escalate"],
             "read_only": True,
