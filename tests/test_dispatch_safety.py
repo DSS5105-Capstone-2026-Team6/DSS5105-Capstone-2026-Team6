@@ -293,7 +293,9 @@ class SafetyTests(unittest.TestCase):
 
     def test_hybrid_still_matches_simulator_for_all_orders(self):
         from datetime import date
-        from desk.allocator import CHAT_TODAY,rank_candidates
+        from desk.allocator import rank_candidates
+        from desk.config import chat_today
+        CHAT_TODAY = chat_today()
         from desk.register import OrderStore,WorkshopStore
         from harness.algorithm2 import make_hybrid_allocator
         store=WorkshopStore(); allocator=make_hybrid_allocator(.5)

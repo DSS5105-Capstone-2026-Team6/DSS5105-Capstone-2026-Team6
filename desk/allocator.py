@@ -37,7 +37,7 @@ if _HARNESS not in sys.path:
 from harness.algorithm2 import est_turnaround_expected, expected_days_late
 from harness.simulate import eligible_workshops
 
-CHAT_TODAY = date(2026, 4, 1)
+from desk.config import chat_today as _chat_today
 OBJECTIVES = ("lateness", "defects", "hybrid", "cost")
 
 
@@ -56,7 +56,7 @@ def est_finish_days(batch, w, queues, perf=None):
 
 def _candidate_row(w, batch, queues, perf=None):
     est = est_finish_days(batch, w, queues, perf)
-    finish = CHAT_TODAY + timedelta(days=round(est))
+    finish = _chat_today() + timedelta(days=round(est))
     due = batch["due_date"]
     pieces = batch["pieces"]
     slack = (due - batch["sent_date"]).days
@@ -133,7 +133,7 @@ def rank_candidates(order_id=None, objective="hybrid", late_tol=0.5,
         excluded_ids.add(wid)
 
     batch = {"category": rec["category"], "pieces": int(rec["pieces"]),
-             "sent_date": CHAT_TODAY,
+             "sent_date": _chat_today(),
              "due_date": date.fromisoformat(rec["due_date"])}
 
     if rec.get("dispatch_stage"):

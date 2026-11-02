@@ -11,7 +11,8 @@ from datetime import date
 
 import pytest
 
-from desk.allocator import CHAT_TODAY, rank_candidates
+from desk.allocator import rank_candidates
+from desk.config import chat_today
 from desk.register import OrderStore, WorkshopStore
 
 _HARNESS = str(Path(__file__).parent.parent / "harness")
@@ -47,7 +48,7 @@ def test_matches_simulator_allocator_on_all_orders(orders, store):
     mismatches = []
     for rec in orders.orders:
         batch = {"category": rec["category"], "pieces": int(rec["pieces"]),
-                 "sent_date": CHAT_TODAY,
+                 "sent_date": chat_today(),
                  "due_date": date.fromisoformat(rec["due_date"])}
         sim_winner = hybrid(batch, store.workshops, queues)
         tool = rank_candidates(rec["order_id"], objective="hybrid", store=store)

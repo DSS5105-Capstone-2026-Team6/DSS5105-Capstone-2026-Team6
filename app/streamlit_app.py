@@ -41,12 +41,14 @@ from desk.desk import DispatchDesk
 from desk.budget import BudgetExceeded
 from desk.chat_dump import ENVELOPE, split_chat_dump  # re-exported for tests
 
-from app.ui_shared import CSS, install_scroll_sync
+from app.ui_shared import CSS, icon, install_scroll_sync
 from app.ui_inbox import render_inbox
 from app.ui_dashboard import render_dashboard
 from app.ui_sidebar import render_chat_log, render_performance_sidebar
 from app.ui_records import render_recent
 from app.ui_queuedock import render_objective_dock, render_queue_dock
+from app.ui_shockdock import render_shockdock
+from app.ui_parser import render_llm_parser
 
 
 def get_desk():
@@ -68,7 +70,9 @@ def get_desk():
             "Model", options=PROVIDERS[provider]["models"],
             format_func=lambda m: m[1], key="model_sel")
         model = model_entry[0]            # api id; [1] is the display label
-    choice = (provider, model)
+    choice = (provider, model,
+              st.session_state.get("as_of"),
+              bool(st.session_state.get("stages_pref", False)))
     desk = st.session_state.get("desk")
     if desk is not None and (not hasattr(desk.agent, "new_conversation")
                              or st.session_state.get("desk_choice") != choice):
@@ -86,7 +90,8 @@ def get_desk():
             for var in key_vars:
                 if secrets.get(var) and not os.environ.get(var):
                     os.environ[var] = secrets[var]
-            desk = DispatchDesk(provider=provider, model=model)
+            desk = DispatchDesk(provider=provider, model=model,
+                                stages=choice[3], as_of=choice[2])
             st.session_state.desk = desk
             st.session_state.desk_choice = choice
         except Exception as exc:  # missing API key, unreadable data...
@@ -146,7 +151,15 @@ def render_item_chat(decision, desk):
     conv = st.session_state.setdefault(key, [])
 
     if decision.candidates:
-        st.markdown("**🧭 All candidates · live queue**")
+        # inline SVG (no helper import): the safety tests exec this function
+        # standalone and only supply their own namespace
+        st.markdown('**<svg width="15" height="15" viewBox="0 0 24 24" fill="none" '
+                    'stroke="#1971c2" stroke-width="2" stroke-linecap="round" '
+                    'stroke-linejoin="round" style="vertical-align:-2px">'
+                    '<circle cx="12" cy="12" r="9"/>'
+                    '<polygon points="15.5 8.5 10.8 10.8 8.5 15.5 13.2 13.2 15.5 8.5"/>'
+                    '</svg> All candidates · live queue**',
+                    unsafe_allow_html=True)
         for c in decision.candidates:
             live_q = desk.state.queues.get(c.workshop_id, 0.0)
             star = " ⭐" if (decision.recommended_split is None and decision.chosen
@@ -295,7 +308,7 @@ def main():
     st.set_page_config(page_title="Dispatch Desk", layout="wide",
                        initial_sidebar_state="auto")
     st.markdown(CSS, unsafe_allow_html=True)
-    st.title("🛰️ Dispatch Desk")
+    st.markdown(f"<h1>{icon('rss', 22)} Dispatch Desk</h1>", unsafe_allow_html=True)
     if not check_password():
         st.stop()
 
@@ -303,16 +316,22 @@ def main():
     with st.sidebar:
         render_chat_log()
         render_performance_sidebar(desk)
+        render_llm_parser(desk)
 
-    # right rail: objective picker + live queues. A layout column, not a
-    # floating panel — so it never overlaps the dashboard charts
-    main_col, rail_col = st.columns([3.2, 1], gap="large")
+    # right rail: objective picker + live queues, sticky so it follows the
+    # scroll instead of snapping back to the top on every rerun. (The
+    # column must NOT stretch to the row's full height — that is what makes
+    # room for the sticky rail to actually move; see ui_shared.CSS.)
+    with st.container(key="layout"):
+        main_col, rail_col = st.columns([3.2, 1], gap="large")
     with rail_col:
-        render_objective_dock(desk)
-        render_queue_dock(desk)
+        with st.container(key="rail"):
+            render_shockdock(desk)
+            render_objective_dock(desk)
+            render_queue_dock(desk)
     with main_col:
         tab_main, tab_dash, tab_recent = st.tabs(
-            ["🗂 Desk", "📊 Dashboard", "🧾 Records"])
+            ["Desk", "Dashboard", "Records"])
         with tab_main:
             render_inbox(desk)
         install_scroll_sync()
