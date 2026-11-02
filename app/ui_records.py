@@ -12,7 +12,7 @@ def render_recent(desk):
     top_l, top_r = st.columns([3, 1])
     top_l.caption("Allocations and queues are shared across sessions. Duplicate orders are refused. "
                   "Reset archives the demo allocations; API usage limits remain in effect.")
-    if top_r.button("↺ Reset demo", use_container_width=True,
+    if top_r.button("Reset demo", use_container_width=True,
                     help="Archive allocations, reset shared queues to the "
                          "queue on April 1, and wipe learned performance "
                          "for all sessions"):

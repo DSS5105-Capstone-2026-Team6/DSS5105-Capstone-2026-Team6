@@ -10,12 +10,14 @@ worklist and the right rail cannot show.
 
 import streamlit as st
 
-from app.ui_shared import BLUE_DEEP, BLUE_PALE, BLUE_SOFT
+from app.ui_shared import BLUE_DEEP, BLUE_PALE, BLUE_SOFT, icon, section
 
 
+@st.fragment(run_every=10)
 def _queue_timeline(desk):
     """Queue trajectory per workshop, replayed from the audit ledger — every
-    commit is a step point (queue_after), the first point is its queue_before."""
+    commit is a step point. Runs as a fragment: new commits appear within
+    seconds without a full page rerun."""
     import altair as alt
     import pandas as pd
     records = desk.audit.load_all()
@@ -39,8 +41,8 @@ def _queue_timeline(desk):
         points.append({"t": r.committed_at, "queue": r.queue_after,
                        "workshop": wname})
     df = pd.DataFrame(points)
-    st.markdown("**📈 Queue timeline** — how each workshop's load evolved "
-                "with every commit")
+    section("Queue timeline", "trending")
+    st.caption("how each workshop's load evolved with every commit")
     chart = alt.Chart(df).mark_line(interpolate="step-after",
                                     strokeWidth=2).encode(
         x=alt.X("t:T", title="committed at", axis=alt.Axis(grid=False)),
@@ -77,10 +79,10 @@ def _allocator_lens(desk):
         "days_late": [r["expected_days_late"] for r in rows],
         "chosen": [r["workshop_id"] == result["chosen"] for r in rows]})
     from datetime import date
-    from desk.tools import CHAT_TODAY
-    slack = (date.fromisoformat(rec["due_date"]) - CHAT_TODAY).days
-    st.markdown(f"**🎯 Allocator lens** — {oid}, objective **{objective}** "
-                f"(live queues)")
+    from desk.config import chat_today
+    slack = (date.fromisoformat(rec["due_date"]) - chat_today()).days
+    st.markdown(f"**{icon('eye')} Allocator lens** — {oid}, objective "
+                f"**{objective}** (live queues)", unsafe_allow_html=True)
     bars = alt.Chart(df).mark_bar().encode(
         x=alt.X("workshop:N", sort=None, title=None,
                 axis=alt.Axis(labelAngle=0)),
@@ -103,7 +105,7 @@ def _learned_drift(desk):
     import altair as alt
     import pandas as pd
     from desk.performance import MIN_SAMPLES
-    st.markdown("**🧪 Capacity: profile vs learned**")
+    section("Capacity: profile vs learned", "flask")
     view = st.segmented_control(
         "capacity view", ["current", "profile"], default="current",
         key="drift_view", label_visibility="collapsed")
@@ -151,7 +153,7 @@ def _objective_map(desk):
         defect.append(w.defect_rate)
     trade = pd.DataFrame({"cost_per_pc": cost, "defect_rate": defect,
                           "queue_days": live, "workshop": names})
-    st.markdown("**🧬 Objective map** — cost × defect (bubble = live queue)")
+    section("Objective map — cost × defect (bubble = live queue)", "grid")
     base = alt.Chart(trade).encode(
         x=alt.X("cost_per_pc:Q", title="Cost ($/pc)",
                 axis=alt.Axis(grid=False)),
@@ -169,7 +171,8 @@ def _objective_map(desk):
 
 
 def render_dashboard(desk):
-    _queue_timeline(desk)
-    _allocator_lens(desk)
-    _learned_drift(desk)
-    _objective_map(desk)
+    with st.container(key="dash_body", width=740):
+        _queue_timeline(desk)
+        _allocator_lens(desk)
+        _learned_drift(desk)
+        _objective_map(desk)
