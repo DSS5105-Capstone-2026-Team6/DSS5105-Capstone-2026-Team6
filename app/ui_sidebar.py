@@ -5,14 +5,14 @@ returned-batch recorder (update_workshop_performance's UI face).
 
 import streamlit as st
 
-from app.ui_shared import _sync_anchor
+from app.ui_shared import _sync_anchor, section
 
 
 def render_chat_log():
     """Sidebar record of everything the desk has handled, newest at the
     bottom. Read-only — actions live in the worklist."""
     log = st.session_state.get("chat_log", [])
-    st.markdown("**💬 Chat log**")
+    section("Chat log", "message")
     st.caption(f"{len(log)} messages")
     with st.container(height=420, border=False):
         for turn in log:
@@ -29,7 +29,7 @@ def render_performance_sidebar(desk):
     estimator learns (roadmap §1.6). Shows the learned-vs-profile state."""
     from desk.performance import MIN_SAMPLES
     from desk.tools import update_workshop_performance
-    with st.sidebar.expander("📥 Record a returned batch"):
+    with st.sidebar.expander("Record a returned batch"):
         workshops = sorted(desk.workshops.workshops.values(),
                            key=lambda w: w.workshop_id)
         with st.form("returned_batch", clear_on_submit=True):

@@ -74,8 +74,11 @@ def _restore_user_text(agent, wrapped, text):
 
 class DispatchDesk:
     def __init__(self, model=None, stages=False, audit_path=None,
-                 provider=None, api_key=None, persona="dispatcher", agent=None):
-        from desk.config import DEFAULT_PROVIDER
+                 provider=None, api_key=None, persona="dispatcher", agent=None,
+                 as_of=None):
+        from desk.config import DEFAULT_PROVIDER, set_as_of
+        if as_of is not None:
+            set_as_of(as_of)   # move the shared world clock (UI world switch)
         self.agent = agent or DispatchAgent(model=model, stages=stages, api_key=api_key,
                                    provider=provider or DEFAULT_PROVIDER,
                                    persona=persona)

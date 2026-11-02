@@ -6,6 +6,7 @@ the individual modules lives here now, so the layout has a single place to
 point at the data and results directories.
 """
 
+from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -18,9 +19,23 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 MAX_TOOL_ROUNDS = 8
 
 # The desk's world date: all business time math (queues, finishes, slack,
-# audit stamps) anchors here, not to the wall clock. (Becomes injectable
-# when the go-live date adaptation lands.)
+# audit stamps) anchors here, not to the wall clock. The UI can switch it
+# between the 1-Apr chat demo and the 1-Jan replay start (set_as_of), so
+# readers must go through chat_today()/this module, never a bound constant.
 CHAT_AS_OF = "2026-04-01"
+AS_OF_OPTIONS = ("2026-04-01", "2026-01-01")   # demo inbox / full replay
+
+
+def chat_today():
+    """CHAT_AS_OF as a date, read live (the UI can move the world)."""
+    return date.fromisoformat(CHAT_AS_OF)
+
+
+def set_as_of(value):
+    """Move the desk world. Process-wide by design: the Streamlit desk and
+    every tool share one world clock."""
+    global CHAT_AS_OF
+    CHAT_AS_OF = date.fromisoformat(str(value)).isoformat()
 
 # LLM provider presets. All three expose an OpenAI-compatible API, so one
 # SDK (openai) drives every provider. key_vars are the environment /

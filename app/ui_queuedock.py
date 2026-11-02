@@ -1,16 +1,18 @@
 """
-ui_queuedock — the live-queue dock pinned to the bottom-right corner.
+ui_queuedock — the right-rail live panels: the objective picker and the
+live-queue dock.
 
-Streamlit has no native floating panels, so this uses a keyed container
-(`st.container(key="queue_dock")`) plus a CSS rule (ui_shared.CSS, the
-[class*="st-key-queue_dock"] selector) that pins it out of the flow. The
-content is plain Python re-rendered on every rerun, so the bars move as
-soon as any session commits a dispatch.
+The queue dock body runs as an st.fragment (Streamlit 1.66): it re-renders
+on its own clock, so the bars move within seconds of any commit — no full
+page rerun needed. The objective dock stays a normal block (its widget owns
+interaction state).
 """
 
 import streamlit as st
 
-from app.ui_shared import queue_bar_html
+from app.ui_shared import queue_bar_html, section
+
+REFRESH_S = 5   # the queue dock's own refresh clock
 
 
 def render_objective_dock(desk):
@@ -30,12 +32,19 @@ def render_objective_dock(desk):
                   and f"committed-{id(x['decision'])}" not in st.session_state]
     locked = bool(st.session_state.get("dispatching"))
     with st.container(key="objective_dock"):
-        st.markdown("**🎯 Re-rank objective**")
+        section("Re-rank objective", "target")
         pref = st.session_state.get("objective_pref", "hybrid")
-        pick = st.segmented_control(
-            "objective", list(OBJECTIVES), default=pref,
-            key="objective_dock_sel", label_visibility="collapsed",
-            disabled=locked)
+        # custom 2x2 grid instead of st.segmented_control: its pill style
+        # wraps and clips inside the narrow rail
+        pick = None
+        for row in (OBJECTIVES[:2], OBJECTIVES[2:]):
+            cols = st.columns(2)
+            for col, obj in zip(cols, row):
+                if col.button(obj, key=f"objgrid-{obj}",
+                              use_container_width=True,
+                              type="primary" if obj == pref else "secondary",
+                              disabled=locked):
+                    pick = obj
         if pick and pick != pref:
             st.session_state.objective_pref = pick
             st.rerun()
@@ -54,19 +63,24 @@ def render_objective_dock(desk):
                 st.rerun()
 
 
+@st.fragment(run_every=REFRESH_S)
+def _queue_dock_body(desk):
+    queues = desk.state.queues
+    scale = max(list(queues.values()) + [0.1])
+    for wid in sorted(queues):
+        w = desk.workshops.workshops[wid]
+        bar = queue_bar_html(queues[wid], 0.0, scale)
+        st.markdown(
+            f'<div class="dock-row">'
+            f'<span class="dock-name">{w.name}</span>{bar}'
+            f'<span class="dock-days">{queues[wid]:.1f}d</span></div>',
+            unsafe_allow_html=True)
+    st.caption(f"live · refreshes every {REFRESH_S}s")
+
+
 def render_queue_dock(desk):
     """One compact line per workshop: name, live queue bar, days. Bars share
     one scale (the longest queue), so lengths are comparable at a glance."""
-    queues = desk.state.queues
-    scale = max(list(queues.values()) + [0.1])
     with st.container(key="queue_dock"):
-        st.markdown("**📡 Live queues**")
-        for wid in sorted(queues):
-            w = desk.workshops.workshops[wid]
-            bar = queue_bar_html(queues[wid], 0.0, scale)
-            st.markdown(
-                f'<div class="dock-row">'
-                f'<span class="dock-name">{w.name}</span>{bar}'
-                f'<span class="dock-days">{queues[wid]:.1f}d</span></div>',
-                unsafe_allow_html=True)
-        st.caption("updates on every interaction")
+        section("Live queues", "activity")
+        _queue_dock_body(desk)
