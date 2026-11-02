@@ -23,6 +23,12 @@ The allocator is a **lateness-first hybrid**: expected finish with defect
 rework priced in, a tolerance plateau among on-time workshops, lowest defect
 rate inside the plateau. Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
+The desk itself: 10 deterministic tools · LLM intake (DeepSeek/GPT/Claude)
+· code-assigned behaviour routing · transactional SQLite ledger · learned
+workshop performance · a Streamlit dispatcher UI (live queues, allocator
+lens, world switch Apr-1/Jan-1, stages mode, shock trigger, LLM parser)
+and a Telegram bot shell.
+
 Further reading: [deployment & migration notes](docs/DEPLOYMENT.md).
 
 ## Project Structure
@@ -44,13 +50,14 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md).
 │   └── algorithm2.py          # Lateness-first hybrid allocator + tolerance scan
 ├── desk/                        # application core: state, audit, orchestration
 │   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
-│   ├── config.py                # central constants: model, API and data/results paths
+│   ├── config.py                # central constants + the switchable world clock (Apr-1 / Jan-1)
 │   ├── register.py              # OrderStore + WorkshopStore (shared data stores)
 │   ├── tools.py                 # the 10 deterministic tools (no LLM) + tool registry
 │   ├── performance.py           # learned workshop performance (roadmap §1.6, SQLite-backed)
 │   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
 │   ├── agent.py                 # intake agent (tool-calling loop, temp 0; DeepSeek/GPT/Claude)
 │   ├── router.py                # code-assigned behaviour: tool log -> Decision
+│   ├── llm_parser.py            # semantic message parsing (JSON extraction), vs the rule splitter
 │   ├── prompts/dispatcher.txt   # system prompt, dispatcher persona (Streamlit desk)
 │   ├── prompts/group.txt        # system prompt, group-chat persona (Telegram bot)
 │   ├── state.py                 # DeskState: chat-side queues (1 Apr snapshot, commits only)
@@ -63,18 +70,22 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md).
 │   └── telegram_bot.py        # python-telegram-bot wiring; zero business logic
 ├── app/
 │   ├── streamlit_app.py       # entry: auth gate, get_desk, confirmation-flow core, main()
-│   ├── ui_inbox.py            # 🗂 Desk tab: paste box, KPI row, case filter, request cards
-│   ├── ui_dashboard.py        # 📊 charts (queues, cost × defect bubbles)
+│   ├── ui_inbox.py            # Desk tab: paste/upload/sample entry, dispatch loop, KPI + case filter
+│   ├── ui_cards.py            # one request card: understood, candidates w/ live queue bars, confirm, split
+│   ├── ui_dashboard.py        # queue timeline, allocator lens, capacity drift, objective map
+│   ├── ui_queuedock.py        # right rail: objective picker + live queues (5s fragment refresh)
+│   ├── ui_shockdock.py        # right rail: world switch (Apr-1/Jan-1), stages mode, shock trigger
 │   ├── ui_sidebar.py          # chat log + returned-batch recorder
-│   ├── ui_records.py          # 🧾 ledger view + demo reset
-│   ├── ui_shared.py           # palette/CSS, card(), scroll sync
+│   ├── ui_parser.py           # sidebar LLM parser panel (semantic vs rule-based)
+│   ├── ui_records.py          # ledger view + demo reset
+│   ├── ui_shared.py           # design tokens/CSS, SVG icon set, card(), scroll sync
 │   └── local_auth/            # remember-me localStorage component
 ├── eval/
 │   ├── run_eval.py              # batch runner: inbox -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
 ├── results/                   # committed eval artefacts (inbox_*/heldout_* runs + scores)
-├── tests/                     # pytest suite: one failure case per feature (189 tests)
+├── tests/                     # pytest suite: one failure case per feature (227 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
