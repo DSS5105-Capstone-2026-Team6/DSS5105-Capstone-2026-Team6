@@ -1,16 +1,19 @@
 """
 ui_shockdock — the right-rail world panel: start date, stages mode, and a
-manual shock trigger.
+seeded shock trigger.
 
 Start date moves the shared world clock (desk/config.set_as_of): April 1st
 is the 30-request chat demo, January 1st is the full replay start. Stages
 mode swaps the order/workshop stores to the *_stages data. Both rebuild the
 desk (session prefs live in st.session_state, get_desk re-reads them).
 
-Shock flips a workshop's status to SUSPENDED in the live WorkshopStore —
-eligibility, ranking, estimates and flag_at_risk all read the same store,
-so the whole desk reacts immediately. Resolve restores ACTIVE.
+Shock mirrors harness/simulate.py: a seeded random ACTIVE workshop is
+closed (Random(seed).choice, so the same seed always closes the same shop).
+Eligibility, ranking, estimates and flag_at_risk all read the same live
+store, so the whole desk reacts immediately. Resolve restores ACTIVE.
 """
+
+import random
 
 import streamlit as st
 
@@ -40,19 +43,29 @@ def render_shockdock(desk):
             st.session_state.desk = None      # force rebuild in the new world
             st.rerun()
 
-        st.caption("Shock: suspend a workshop live — eligibility, ranking "
-                   "and at-risk react immediately.")
-        shops = sorted(desk.workshops.workshops.values(),
-                       key=lambda w: w.workshop_id)
-        target = st.selectbox("Shock target", shops,
-                              format_func=lambda w: f"{w.name} ({w.status})",
-                              key="shock_target")
-        c_on, c_off = st.columns(2)
-        if c_on.button("Trigger", key="shock_on", use_container_width=True,
-                       disabled=target.status != "ACTIVE"):
-            target.status = "SUSPENDED"
-            st.rerun()
-        if c_off.button("Resolve", key="shock_off", use_container_width=True,
-                        disabled=target.status == "ACTIVE"):
-            target.status = "ACTIVE"
-            st.rerun()
+        # -------- seeded shock --------
+        active_shock = st.session_state.get("shock_target")
+        if active_shock:
+            w = desk.workshops.workshops[active_shock]
+            st.warning(f"⚡ {w.name} is SUSPENDED "
+                       f"(seed {st.session_state.get('shock_seed', 5105)})")
+            if st.button("Resolve shock", key="shock_off",
+                         use_container_width=True):
+                w.status = "ACTIVE"
+                st.session_state.shock_target = None
+                st.rerun()
+        else:
+            st.caption("Shock: close a workshop picked by seed "
+                       "(same seed → same shop, like the simulator).")
+            st.number_input("Shock seed", value=5105, step=1,
+                            key="shock_seed")
+            if st.button("⚡ Trigger shock", key="shock_on",
+                         use_container_width=True):
+                active = [w for w in desk.workshops.workshops.values()
+                          if w.status == "ACTIVE"]
+                target = random.Random(
+                    int(st.session_state.shock_seed)).choice(
+                        sorted(active, key=lambda w: w.workshop_id))
+                target.status = "SUSPENDED"
+                st.session_state.shock_target = target.workshop_id
+                st.rerun()
