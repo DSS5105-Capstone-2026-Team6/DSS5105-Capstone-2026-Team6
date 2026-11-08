@@ -48,6 +48,7 @@ from app.ui_sidebar import render_chat_log, render_performance_sidebar
 from app.ui_records import render_recent
 from app.ui_queuedock import render_objective_dock, render_queue_dock
 from app.ui_shockdock import render_shockdock
+from app.ui_sunday_preview import render_sunday_preview
 from app.ui_parser import render_llm_parser
 
 
@@ -333,6 +334,7 @@ def main():
         tab_main, tab_dash, tab_recent = st.tabs(
             ["Desk", "Dashboard", "Records"])
         with tab_main:
+            render_sunday_preview(desk)
             render_inbox(desk)
         install_scroll_sync()
         with tab_dash:
