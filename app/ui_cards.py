@@ -147,6 +147,14 @@ def render_split(decision, desk):
             st.rerun()
 
 
+def ledger_records(desk, order_id):
+    """The audit records already committed for order_id (one, or every
+    part of a split); [] when the order is still open."""
+    if not order_id:
+        return []
+    return [r for r in desk.audit.load_all() if r.order_id == order_id]
+
+
 def _committed_line(records):
     """'A-0003 — ORD-029 → W2 (549 pcs) + W6 (951 pcs)' for a split, the
     usual 'A-0001 — ORD-041 → W6' for one record."""
@@ -197,6 +205,13 @@ def render_decision(decision, desk):
         st.success(f"Committed {_committed_line(r)}")
         return
     render_understood(decision)
+    # another card (or an earlier session) already committed this order:
+    # say so and hide the confirm/split buttons, which would only be refused
+    earlier = ledger_records(desk, decision.parsed.order_id)
+    if earlier:
+        st.info(f"Already committed: {_committed_line(earlier if len(earlier) > 1 else earlier[0])}"
+                " — no further commit possible for this order.", icon="✅")
+        return
     for note in decision.warnings:
         st.warning(note, icon="⚠️")
     render_candidates(decision, desk)
