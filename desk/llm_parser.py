@@ -36,11 +36,18 @@ def parse_message(text, agent):
     """One freeform message -> structured dict. Uses the desk's agent client
     (provider/model the user picked). Returns {"error": ...} on bad output
     instead of raising."""
-    resp = agent.client.chat.completions.create(
-        model=agent.model,
-        messages=[{"role": "system", "content": PARSE_SYSTEM},
-                  {"role": "user", "content": text}],
-                temperature=0)
+    # Go through agent._completion, like every other LLM call in the desk:
+    # it adds reasoning_effort="none" and max_completion_tokens for OpenAI
+    # (GPT reasoning models reject temperature=0 without them -> 400) and
+    # counts the call against the API budget.
+    try:
+        resp = agent._completion(
+            model=agent.model,
+            messages=[{"role": "system", "content": PARSE_SYSTEM},
+                      {"role": "user", "content": text}],
+            temperature=0)
+    except Exception as exc:   # budget limit, 400, network: show, don't crash
+        return {"error": f"LLM call failed: {exc}"}
     raw = resp.choices[0].message.content or ""
     match = re.search(r"\{.*\}", raw, re.S)
     if not match:
