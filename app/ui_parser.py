@@ -3,7 +3,8 @@ ui_parser — the sidebar LLM parser panel (app-side of desk/llm_parser.py).
 
 Distinct from the rule-based inbox splitter: paste ONE freeform message and
 the model returns structured extraction (orders / intent / constraints).
-"Use in Dispatch" hands the same text to the normal inbox flow, so both
+"Use in Dispatch" puts the same text in the paste box and dispatches it
+through the normal inbox flow, so both
 parsers can be compared side by side.
 """
 
@@ -43,4 +44,5 @@ def render_llm_parser(desk):
                              use_container_width=True):
                     st.session_state.paste_box = text
                     st.session_state.inbox_src = "Paste"
+                    st.session_state.auto_dispatch = True   # ui_inbox runs it
                     st.rerun()
