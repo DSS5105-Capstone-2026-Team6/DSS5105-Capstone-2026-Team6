@@ -64,11 +64,16 @@ def _parser_controls(text, desk):
     from desk.llm_parser import parse_message
     from app.ui_parser import render_parse_result
     b_parse, b_send, b_clear = st.columns([2, 4, 1])
-    if b_parse.button("Parse", use_container_width=True, key="llm_parse_btn",
-                      disabled=not text.strip()):
-        with st.spinner("Parsing…"):
-            st.session_state.llm_parse_result = parse_message(text, desk.agent)
-            st.session_state.llm_parsed_text = text
+    # never disabled: a text area only sends its value on blur / Ctrl+Enter,
+    # so "disabled while empty" kept Parse grey right after typing. The
+    # click itself blurs the box, and this run already sees the new text.
+    if b_parse.button("Parse", use_container_width=True, key="llm_parse_btn"):
+        if not text.strip():
+            st.warning("Type or paste a message first.")
+        else:
+            with st.spinner("Parsing…"):
+                st.session_state.llm_parse_result = parse_message(text, desk.agent)
+                st.session_state.llm_parsed_text = text
     result = st.session_state.get("llm_parse_result")
     parsed_ok = (result is not None and "error" not in result
                  and st.session_state.get("llm_parsed_text") == text and text.strip())
