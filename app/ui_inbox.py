@@ -115,9 +115,16 @@ def render_inbox(desk):
         return Behaviour.NO_DATA if b is Behaviour.ANSWER else b
 
     # items per case still waiting on the dispatcher (committed ones drop out)
+    # an order committed on another card (or earlier) counts as done too
+    done_orders = {r.order_id for r in desk.audit.load_all()}
+
+    def is_done(d):
+        return (f"committed-{id(d)}" in st.session_state
+                or (d.parsed.order_id is not None and d.parsed.order_id in done_orders))
+
     pending = {}
     for x in items:
-        if f"committed-{id(x['decision'])}" not in st.session_state:
+        if not is_done(x["decision"]):
             pending[case_of(x)] = pending.get(case_of(x), 0) + 1
     to_confirm = pending.get(Behaviour.ALLOCATE, 0)
 
@@ -177,7 +184,7 @@ def render_inbox(desk):
         for item in shown:
             n += 1
             d = item["decision"]
-            committed = f"committed-{id(d)}" in st.session_state
+            committed = is_done(d)
             with st.expander(_row_label(n, item), expanded=not committed):
                 _sync_anchor(f"d{id(d)}")
                 st.caption(item["msg"])
