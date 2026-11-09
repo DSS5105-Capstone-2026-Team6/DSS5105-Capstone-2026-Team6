@@ -14,7 +14,7 @@ from desk.contracts import Behaviour, Decision
 from desk.chat_dump import ENVELOPE, split_chat_dump
 from desk.budget import BudgetExceeded
 from desk.tools import flag_at_risk
-from app.ui_shared import BADGE, NEEDS_HUMAN, _sync_anchor
+from app.ui_shared import BADGE, NEEDS_HUMAN, _sync_anchor, scroll_to_anchor
 from app.ui_cards import render_decision
 
 
@@ -264,3 +264,13 @@ def render_inbox(desk):
                 _sync_anchor(f"d{id(d)}")
                 st.caption(item["msg"])
                 render_decision(d, desk)
+
+        # after a commit, bring the next open request to the top of the page
+        # (ui_cards / item chat set scroll_from to the committed decision)
+        src_id = st.session_state.pop("scroll_from", None)
+        if src_id is not None:
+            ids = [id(x["decision"]) for x in shown]
+            after = shown[ids.index(src_id) + 1:] if src_id in ids else shown
+            nxt = next((x for x in after if not is_done(x["decision"])), None)
+            if nxt is not None:
+                scroll_to_anchor(f"d{id(nxt['decision'])}")

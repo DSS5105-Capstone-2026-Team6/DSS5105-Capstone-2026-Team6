@@ -207,6 +207,7 @@ def render_item_chat(decision, desk):
     if record is not None:
         _replace_item(decision, decision, reply)
         st.session_state[f"committed-{id(decision)}"] = record
+        st.session_state.scroll_from = id(decision)   # jump to the next order
     else:
         replacement = _replace_item(decision, updated, reply)
         st.session_state[f"conv-{id(replacement)}"] = [_norm_msg(m) for m in desk.agent.history]
