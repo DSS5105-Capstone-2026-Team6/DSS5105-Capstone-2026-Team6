@@ -108,6 +108,7 @@ def render_candidates(decision, desk):
                 st.error(str(exc))
                 return
             st.session_state[f"committed-{id(decision)}"] = record
+            st.session_state.scroll_from = id(decision)   # jump to the next order
             line = (f"Committed {record.record_id} — "
                     f"{record.order_id} → {record.workshop_id}.")
             _log_exchange("dispatcher", f"(card) {c.name} ({c.workshop_id})",
@@ -169,6 +170,7 @@ def render_split(decision, desk):
                 st.error(str(exc))
                 return
             st.session_state[f"committed-{id(decision)}"] = records
+            st.session_state.scroll_from = id(decision)   # jump to the next order
             _log_exchange("dispatcher", f"(card) split #{i + 1}: {parts}",
                           "Committed " + _committed_line(records) + ".")
             st.rerun()

@@ -387,3 +387,39 @@ def install_scroll_sync():
         " const s = d.createElement('script');"
         f" s.textContent = {json.dumps(SCROLL_SYNC_JS)};"
         " d.head.appendChild(s); }</script>", height=0)
+
+
+def scroll_to_anchor(link):
+    """Scroll the main area so the worklist expander holding the
+    .sync-anchor `link` sits at the top of the screen (just under the
+    Streamlit header). Retries briefly while the rerun is still drawing;
+    a counter makes each call a new component, so it runs every time."""
+    import json
+    import streamlit.components.v1 as components
+    n = st.session_state["_scroll_n"] = st.session_state.get("_scroll_n", 0) + 1
+    components.html(f"""<script>/* {n} */
+    (function () {{
+      const doc = window.parent.document, link = {json.dumps(link)};
+      let tries = 0;
+      function go() {{
+        const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+        const a = [...doc.querySelectorAll('.sync-anchor[data-sync="' + link + '"]')]
+                    .find(x => !(sidebar && sidebar.contains(x)));
+        if (!a) {{ if (tries++ < 20) setTimeout(go, 100); return; }}
+        const target = a.closest('[data-testid="stExpander"]') || a;
+        const header = doc.querySelector('[data-testid="stHeader"]');
+        const offset = (header ? header.getBoundingClientRect().height : 0) + 8;
+        let box = target.parentElement;
+        while (box && !(box.scrollHeight > box.clientHeight
+               && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+        box = box || doc.scrollingElement;
+        const top = box.scrollTop + target.getBoundingClientRect().top
+                    - box.getBoundingClientRect().top - offset;
+        box.scrollTo({{ top: top, behavior: tries < 99 ? "smooth" : "auto" }});
+        // the committed card collapses while we scroll and shifts the page:
+        // re-measure once the animation has settled and correct the offset
+        if (tries < 99) {{ tries = 99; setTimeout(go, 700); }}
+      }}
+      setTimeout(go, 150);
+    }})();
+    </script>""", height=0)
