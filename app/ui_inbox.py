@@ -32,6 +32,30 @@ def _row_label(i, item):
     return f"#{i} · {what} · {label}"
 
 
+def _refresh_stale(items, desk, is_done):
+    """Re-rank open proposals whose state_version is behind the ledger
+    (deterministic tools only, no LLM call)."""
+    version = desk.audit.version
+    for item in items:
+        old = item["decision"]
+        if (is_done(old) or not old.candidates or old.parsed.order_id is None
+                or old.state_version in (None, version)):
+            continue
+        fresh = desk.refresh(old)
+        same = (fresh.chosen and old.chosen
+                and fresh.chosen.workshop_id == old.chosen.workshop_id)
+        if same:
+            # same recommendation: keep the model's explanation, flag the update
+            fresh.explanation = old.explanation
+            note = "Queues changed after another commit; numbers updated to the live queues."
+            fresh.warnings = [*old.warnings] + ([note] if note not in old.warnings else [])
+        item["decision"] = fresh
+        # carry the card's per-item chat over to the new object
+        conv = st.session_state.pop(f"conv-{id(old)}", None)
+        if conv is not None:
+            st.session_state[f"conv-{id(fresh)}"] = conv
+
+
 def render_inbox(desk):
     from app.streamlit_app import _budget_ok, _log_exchange
     st.caption("Feed the desk — paste chat lines, drop a file, or load a sample inbox.")
@@ -115,9 +139,23 @@ def render_inbox(desk):
         return Behaviour.NO_DATA if b is Behaviour.ANSWER else b
 
     # items per case still waiting on the dispatcher (committed ones drop out)
+    # an order committed on another card (or earlier) counts as done too
+    done_orders = {r.order_id for r in desk.audit.load_all()}
+
+    def is_done(d):
+        return (f"committed-{id(d)}" in st.session_state
+                or (d.parsed.order_id is not None and d.parsed.order_id in done_orders))
+
+    # every commit bumps the ledger version, which makes every OTHER open
+    # proposal stale: its first Confirm click used to be spent on a silent
+    # refresh (ProposalChanged), so each order needed two clicks. Refresh
+    # stale open cards here instead, before they are drawn, so the numbers
+    # on screen are live and one click commits.
+    _refresh_stale(items, desk, is_done)
+
     pending = {}
     for x in items:
-        if f"committed-{id(x['decision'])}" not in st.session_state:
+        if not is_done(x["decision"]):
             pending[case_of(x)] = pending.get(case_of(x), 0) + 1
     to_confirm = pending.get(Behaviour.ALLOCATE, 0)
 
@@ -177,7 +215,7 @@ def render_inbox(desk):
         for item in shown:
             n += 1
             d = item["decision"]
-            committed = f"committed-{id(d)}" in st.session_state
+            committed = is_done(d)
             with st.expander(_row_label(n, item), expanded=not committed):
                 _sync_anchor(f"d{id(d)}")
                 st.caption(item["msg"])
