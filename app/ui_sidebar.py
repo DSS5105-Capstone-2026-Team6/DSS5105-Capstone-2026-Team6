@@ -32,7 +32,9 @@ def render_performance_sidebar(desk):
     with st.sidebar.expander("Record a returned batch"):
         workshops = sorted(desk.workshops.workshops.values(),
                            key=lambda w: w.workshop_id)
-        with st.form("returned_batch", clear_on_submit=True):
+        # keep the inputs after Record (no clear_on_submit): the user often
+        # logs several batches of the same size or workshop in a row
+        with st.form("returned_batch"):
             ws = st.selectbox("Workshop", workshops,
                               format_func=lambda w: f"{w.name} ({w.workshop_id})")
             pieces = st.number_input("Pieces", min_value=1, value=400, step=50)
