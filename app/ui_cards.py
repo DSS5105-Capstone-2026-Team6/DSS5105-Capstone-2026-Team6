@@ -41,14 +41,31 @@ def _star_on_single(decision, c):
             and c.workshop_id == decision.chosen.workshop_id)
 
 
+def clickable_card(key, body, delay=0.0, chosen=False, label="Confirm"):
+    """A card that IS the button: the card html plus a transparent
+    st.button stretched over it (CSS in ui_shared, .st-key-pick_*).
+    Returns True on click. The hover hint makes the action explicit,
+    because one click commits."""
+    with st.container(key=f"pick_{key}"):
+        card(body + f'<div class="pick-hint">▶ Click to {label[0].lower() + label[1:]}</div>',
+             delay=delay, cls="chosen" if chosen else "")
+        return st.button(label, key=f"btn-{key}", use_container_width=True)
+
+
 def render_candidates(decision, desk):
-    """Step 3 — candidate cards, chosen one highlighted. Compact two-line
-    layout: name + bar on top, all the numbers on one muted line. The bar
-    shows the workshop's CURRENT queue (re-read every rerun) with this
-    order's expected work stacked on top."""
+    """Step 3+4 — candidate cards; clicking a card confirms that workshop
+    (the recommendation, marked ⭐, is advisory). Compact layout: name + bar
+    on top, all numbers on one muted line. The bar shows the workshop's
+    CURRENT queue (re-read every rerun) with this order's expected work
+    stacked on top."""
+    from dataclasses import replace
+    from desk.desk import ProposalChanged
+    from app.streamlit_app import _log_exchange, _replace_item
     if not decision.candidates:
         return
-    section("Candidates · live queue", "compass")
+    can_commit = decision.parsed.order_id is not None
+    section("Candidates · live queue"
+            + (" · click a card to confirm" if can_commit else ""), "compass")
     shown = decision.candidates[:3]
     live = {c.workshop_id: desk.state.queues.get(c.workshop_id, 0.0)
             for c in shown}
@@ -72,27 +89,15 @@ def render_candidates(decision, desk):
             meta += f" · finish {c.estimated_finish}"
         meta += f" · cost {c.cost:.2f} · defect {c.defect_risk:.2f}"
         body = (f'<b>{c.name} ({c.workshop_id})</b>'
-                + (" ⭐" if is_chosen else "")
+                + (' ⭐ <span class="rec">recommended</span>' if is_chosen else "")
                 + queue_bar_html(live[c.workshop_id], added[c.workshop_id], scale)
                 + f'<div class="qbar-legend">{meta}</div>')
-        card(body, delay=0.06 * i)
-
-
-def render_confirm(decision, desk):
-    """Step 4 — one confirm button per top candidate (the recommendation is
-    advisory). The fourth option lives in render_decision, not here, so it
-    is available even when there are no candidates (ASK flows)."""
-    from desk.desk import ProposalChanged
-    from app.streamlit_app import _log_exchange, _replace_item
-    if not decision.candidates or decision.parsed.order_id is None:
-        return
-    section("Confirm · the recommendation is advisory", "sliders")
-    from dataclasses import replace
-    for c in decision.candidates[:3]:
-        is_chosen = _star_on_single(decision, c)
-        label = f"▶ Confirm {c.name} ({c.workshop_id})" + (" ⭐ recommended" if is_chosen else "")
-        if st.button(label, use_container_width=True,
-                     key=f"btn-{id(decision)}-{c.workshop_id}"):
+        if not can_commit:
+            card(body, delay=0.06 * i)
+            continue
+        if clickable_card(f"{id(decision)}-{c.workshop_id}", body,
+                          delay=0.06 * i, chosen=is_chosen,
+                          label=f"Confirm {c.name} ({c.workshop_id})"):
             try:
                 record = desk.confirm(replace(decision, chosen=c),
                                       committed_by="dispatcher")
@@ -105,34 +110,56 @@ def render_confirm(decision, desk):
             st.session_state[f"committed-{id(decision)}"] = record
             line = (f"Committed {record.record_id} — "
                     f"{record.order_id} → {record.workshop_id}.")
-            _log_exchange("dispatcher", f"(button) {c.name} ({c.workshop_id})",
+            _log_exchange("dispatcher", f"(card) {c.name} ({c.workshop_id})",
                           line)
             st.rerun()
 
 
+def _part_work_days(desk, wid, pieces):
+    """Expected work days one split part adds to its workshop's queue —
+    the allocator's formula, on the learned capacity when it is active."""
+    w = desk.workshops.workshops[wid]
+    perf = getattr(desk, "performance", None)
+    learned = perf.learned(wid, profile=w) if perf else None
+    cap = learned["eff_capacity"] if learned else w.capacity
+    return pieces / cap * (1 + 0.5 * w.defect_rate)
+
+
 def render_split(decision, desk):
     """Step 4b — split options over any number of workshops, ranked by days
-    late, each faster than the best single batch. All parts of the chosen
-    option commit together (one record each); the simulator itself still
-    sends one batch to one workshop."""
+    late, each faster than the best single batch. Same card style as the
+    candidates: one queue bar per part (live queue + this part's work);
+    clicking the card commits every part together (one record each). The
+    simulator itself still sends one batch to one workshop."""
     from desk.desk import ProposalChanged
     from app.streamlit_app import _log_exchange, _replace_item
     if not decision.splits or decision.parsed.order_id is None:
         return
-    section("Split options", "scissors")
+    section("Split options · click a card to confirm", "scissors")
+    queues = desk.state.queues
+    rows = [[(p, queues.get(p["workshop_id"], 0.0),
+              _part_work_days(desk, p["workshop_id"], int(p["pieces"])))
+             for p in split["parts"]] for split in decision.splits]
+    scale = max([q + a for parts in rows for _, q, a in parts] + [0.1])
     for i, split in enumerate(decision.splits):
         parts = " + ".join(f"{p['pieces']} pcs {p['name']} ({p['workshop_id']})"
                            for p in split["parts"])
         late = ("on time" if split["meets_due"]
-                else f"{split['days_late']} days late")
+                else f"{split['days_late']}d late")
         star = i == decision.recommended_split
-        card(f"<b>#{i + 1} · {split['n_shops']} workshops</b>"
-             + (" ⭐" if star else "") + f"<br>{parts}"
-             f"<br>Finish {split['earliest_finish']} · {late}"
-             f" · Cost {split['cost']:.2f} · Defect {split['defect_risk']:.2f}")
-        if st.button(f"▶ Confirm split #{i + 1}" + (" ⭐ recommended" if star else ""),
-                     use_container_width=True,
-                     key=f"btn-{id(decision)}-split-{i}"):
+        bars = "".join(
+            f'<div class="split-part"><div class="split-name">{p["pieces"]} pcs · '
+            f'{p["name"]} ({p["workshop_id"]})'
+            f'<span class="qbar-legend"> · queue {q:.1f}d + {a:.1f}d</span></div>'
+            + queue_bar_html(q, a, scale) + '</div>'
+            for p, q, a in rows[i])
+        body = (f"<b>#{i + 1} · {split['n_shops']} workshops</b>"
+                + (' ⭐ <span class="rec">recommended</span>' if star else "")
+                + bars
+                + f'<div class="qbar-legend">finish {split["earliest_finish"]} ({late})'
+                  f' · cost {split["cost"]:.2f} · defect {split["defect_risk"]:.2f}</div>')
+        if clickable_card(f"{id(decision)}-split-{i}", body, delay=0.06 * i,
+                          chosen=star, label=f"Confirm split #{i + 1}"):
             try:
                 records = desk.confirm_split(decision, i, committed_by="dispatcher")
             except ProposalChanged as exc:
@@ -142,7 +169,7 @@ def render_split(decision, desk):
                 st.error(str(exc))
                 return
             st.session_state[f"committed-{id(decision)}"] = records
-            _log_exchange("dispatcher", f"(button) split #{i + 1}: {parts}",
+            _log_exchange("dispatcher", f"(card) split #{i + 1}: {parts}",
                           "Committed " + _committed_line(records) + ".")
             st.rerun()
 
@@ -214,8 +241,7 @@ def render_decision(decision, desk):
         return
     for note in decision.warnings:
         st.warning(note, icon="⚠️")
-    render_candidates(decision, desk)
-    render_confirm(decision, desk)
+    render_candidates(decision, desk)   # cards are the confirm buttons
     render_actions(decision, desk)
     render_split(decision, desk)
     # the 4th option, available on every uncommitted item (incl. ASK items
