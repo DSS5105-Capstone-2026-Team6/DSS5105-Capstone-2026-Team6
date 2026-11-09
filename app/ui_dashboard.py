@@ -124,18 +124,22 @@ def _learned_drift(desk):
         else:
             status = "profile"
             current = w.capacity
-        rows.append({"workshop": w.name, "status": status,
+        # colour group: the scale below only knows these three names, so a
+        # raw "observing 1/3" status would match nothing and the bar vanished
+        group = status if status in ("learned", "profile") else "observing"
+        rows.append({"workshop": w.name, "status": status, "source": group,
                      "capacity": current if view == "current" else w.capacity})
     df = pd.DataFrame(rows)
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X("workshop:N", title=None, axis=alt.Axis(labelAngle=0)),
         y=alt.Y("capacity:Q", title=f"capacity (pcs/day) — {view}"),
-        color=alt.Color("status:N", legend=alt.Legend(orient="bottom",
+        color=alt.Color("source:N", legend=alt.Legend(orient="bottom",
                                                       title=None),
-                        scale=alt.Scale(domain=["learned", "profile"],
-                                        range=[BLUE_DEEP, BLUE_PALE])),
+                        scale=alt.Scale(domain=["learned", "observing", "profile"],
+                                        range=[BLUE_DEEP, BLUE_SOFT, BLUE_PALE])),
         tooltip=["workshop:N", "status:N", "capacity:Q"])
-    st.altair_chart(chart.interactive(), use_container_width=True)
+    # no .interactive(): panning let the y axis drift below zero
+    st.altair_chart(chart, use_container_width=True)
     if pending:
         st.caption("Observing: " + ", ".join(pending) +
                    " — learned capacity activates at the threshold")
