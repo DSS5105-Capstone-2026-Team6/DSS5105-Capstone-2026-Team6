@@ -392,34 +392,59 @@ def install_scroll_sync():
 def scroll_to_anchor(link):
     """Scroll the main area so the worklist expander holding the
     .sync-anchor `link` sits at the top of the screen (just under the
-    Streamlit header). Retries briefly while the rerun is still drawing;
-    a counter makes each call a new component, so it runs every time."""
+    Streamlit header).
+
+    The committed card collapses WHILE we scroll, which moves the target.
+    A fixed scrollTo(smooth) therefore overshot and had to jump back. This
+    eases toward the target's LIVE position every animation frame, so it
+    follows the layout shift in one continuous motion and settles without
+    a correction. A counter makes each call a new component (runs every
+    time); the user's own wheel/touch input cancels the animation."""
     import json
     import streamlit.components.v1 as components
     n = st.session_state["_scroll_n"] = st.session_state.get("_scroll_n", 0) + 1
     components.html(f"""<script>/* {n} */
     (function () {{
-      const doc = window.parent.document, link = {json.dumps(link)};
-      let tries = 0;
-      function go() {{
+      const w = window.parent, doc = w.document, link = {json.dumps(link)};
+      if (w.__deskScrollAnim) w.__deskScrollAnim.stop();   // one at a time
+      let tries = 0, stopped = false, still = 0, start = 0;
+      const stop = () => {{ stopped = true;
+        ["wheel", "touchstart", "keydown"].forEach(e => doc.removeEventListener(e, stop, true)); }};
+      w.__deskScrollAnim = {{ stop }};
+      ["wheel", "touchstart", "keydown"].forEach(e => doc.addEventListener(e, stop, true));
+      function find() {{
         const sidebar = doc.querySelector('[data-testid="stSidebar"]');
         const a = [...doc.querySelectorAll('.sync-anchor[data-sync="' + link + '"]')]
                     .find(x => !(sidebar && sidebar.contains(x)));
-        if (!a) {{ if (tries++ < 20) setTimeout(go, 100); return; }}
-        const target = a.closest('[data-testid="stExpander"]') || a;
+        return a && (a.closest('[data-testid="stExpander"]') || a);
+      }}
+      function scroller(el) {{
+        for (let b = el.parentElement; b; b = b.parentElement)
+          if (b.scrollHeight > b.clientHeight && /auto|scroll/.test(w.getComputedStyle(b).overflowY)) return b;
+        return doc.scrollingElement;
+      }}
+      function begin() {{
+        const target = find();
+        if (!target) {{ if (tries++ < 30) w.setTimeout(begin, 80); else stop(); return; }}
+        const box = scroller(target);
         const header = doc.querySelector('[data-testid="stHeader"]');
         const offset = (header ? header.getBoundingClientRect().height : 0) + 8;
-        let box = target.parentElement;
-        while (box && !(box.scrollHeight > box.clientHeight
-               && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
-        box = box || doc.scrollingElement;
-        const top = box.scrollTop + target.getBoundingClientRect().top
-                    - box.getBoundingClientRect().top - offset;
-        box.scrollTo({{ top: top, behavior: tries < 99 ? "smooth" : "auto" }});
-        // the committed card collapses while we scroll and shifts the page:
-        // re-measure once the animation has settled and correct the offset
-        if (tries < 99) {{ tries = 99; setTimeout(go, 700); }}
+        start = w.performance.now();
+        function frame(now) {{
+          if (stopped) return;
+          const want = box.scrollTop + target.getBoundingClientRect().top
+                       - box.getBoundingClientRect().top - offset;
+          const max = box.scrollHeight - box.clientHeight;
+          const goal = Math.max(0, Math.min(max, want));
+          const diff = goal - box.scrollTop;
+          if (Math.abs(diff) < 1) {{ box.scrollTop = goal; still++; }}
+          else {{ box.scrollTop += diff * 0.16; still = 0; }}   // ease-out, tracks moves
+          // done once settled for ~10 frames, or after 2.5 s at the latest
+          if (still > 10 || now - start > 2500) {{ stop(); return; }}
+          w.requestAnimationFrame(frame);
+        }}
+        w.requestAnimationFrame(frame);
       }}
-      setTimeout(go, 150);
+      w.setTimeout(begin, 60);
     }})();
     </script>""", height=0)
