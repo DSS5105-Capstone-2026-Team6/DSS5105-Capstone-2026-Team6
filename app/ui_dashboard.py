@@ -67,7 +67,8 @@ def _allocator_lens(desk):
                        key="lens_order")
     objective = st.session_state.get("objective_pref", "hybrid")
     result = rank_candidates(oid, objective=objective, orders=desk.orders,
-                             store=desk.workshops, queues=desk.state.queues)
+                             store=desk.workshops, queues=desk.state.queues,
+                             perf=desk.performance)   # learned capacity, like the desk
     if "error" in result or not result["candidates"]:
         st.info(result.get("error", "No eligible workshop."))
         return
