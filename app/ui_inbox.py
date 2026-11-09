@@ -68,7 +68,11 @@ def render_inbox(desk):
     if src == "Paste":
         b_clear.button("Clear", use_container_width=True,
                        on_click=lambda: st.session_state.update(paste_box=""))
-    if b_send.button("Dispatch", use_container_width=True, type="primary") and text.strip():
+    clicked = b_send.button("Dispatch", use_container_width=True, type="primary")
+    # "Use in Dispatch" in the LLM parser panel sets this flag and reruns:
+    # dispatch the pasted text straight away, as if Dispatch was clicked
+    auto = st.session_state.pop("auto_dispatch", False)
+    if (clicked or auto) and text.strip():
         msgs = split_chat_dump(text.strip())
         if _budget_ok(len(msgs)):
             st.session_state.dispatching = True   # locks the objective panel
