@@ -1,29 +1,16 @@
 from datetime import date, timedelta
-from math import ceil
+from desk.scenario import finish_production
 
 from desk import config
 from desk.allocator import est_finish_days, order_rows, rank_candidates
 
 
-def sunday_pause_days(start, work_days):
-    """Count Sundays that interrupt queued production and this batch."""
-    working_dates_left = ceil(max(0.0, work_days - 1e-9))
-    paused_days = 0
-
-    while working_dates_left > 0:
-        if start.weekday() == 6:
-            paused_days += 1
-        else:
-            working_dates_left -= 1
-        start += timedelta(days=1)
-
-    return paused_days
-
 
 def compare_sunday(
     order_id, orders, workshops, queues, sunday_closed,
-    transport_delay_days=0, perf=None,
+    transport_delay_days=0, perf=None, *, noise_pct=0, seed=5105,
 ):
+
     # perf: the desk's learned performance (returned batches). Without it
     # the preview stayed on the profile card while the desk itself used
     # the learned capacity, so recording a batch never moved these ETAs.
@@ -52,12 +39,17 @@ def compare_sunday(
 
         # The production calendar covers the queue and this batch's work.
         work_days = baseline_days - lead
-        pause = sunday_pause_days(start, work_days) if sunday_closed else 0
-        total_days = baseline_days + pause + transport_delay_days
+        production_finish, pause = finish_production(
+            start, 0, work_days, workshop.workshop_id,
+            sunday_closed=sunday_closed,
+            noise_pct=noise_pct,
+            seed=seed,
+        )
 
-        # Add transport delays as whole calendar days to the rounded ETA.
+        scenario_days = production_finish + lead
+        total_days = scenario_days + transport_delay_days
         finish = start + timedelta(
-            days=round(baseline_days + pause) + transport_delay_days
+            days=round(scenario_days) + transport_delay_days
         )
 
         scenario_rows.append({
@@ -88,6 +80,14 @@ def render_sunday_preview(desk):
         delay = int(st.number_input(
             "Extra transport days", min_value=0, max_value=14, value=0, step=1
         ))
+        noise_pct = st.number_input(
+            "Capacity noise (%)", min_value=0, max_value=50,
+            value=0, step=5, key="scenario_noise_pct",
+        )
+        seed = st.number_input(
+            "Scenario seed", min_value=0, value=5105,
+            step=1, key="scenario_capacity_seed",
+        )
         objective = st.session_state.get("objective_pref", "hybrid")
         queues = dict(desk.state.queues)
 
@@ -97,7 +97,10 @@ def render_sunday_preview(desk):
         result = compare_sunday(
             order_id, desk.orders, desk.workshops, queues, closed, delay,
             perf=desk.performance,
+            noise_pct=noise_pct,
+            seed=seed,
         )
+
         if "error" in result:
             st.warning(result["error"])
             return
@@ -119,6 +122,7 @@ def render_sunday_preview(desk):
                 "Workshop": before["name"],
                 "Baseline ETA": before["estimated_finish"],
                 "Scenario ETA": after["estimated_finish"],
+                "Scenario turnaround (days)": after["est_finish_days"],
                 "Sunday pause (days)": after["sunday_pause_days"],
                 "Extra transport (days)": delay,
                 "Scenario late days": after["days_late"],
