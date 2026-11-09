@@ -49,7 +49,6 @@ from app.ui_records import render_recent
 from app.ui_queuedock import render_objective_dock, render_queue_dock
 from app.ui_shockdock import render_shockdock
 from app.ui_sunday_preview import render_sunday_preview
-from app.ui_parser import render_llm_parser
 
 
 def get_desk():
@@ -317,7 +316,6 @@ def main():
     with st.sidebar:
         render_chat_log()
         render_performance_sidebar(desk)
-        render_llm_parser(desk)
 
     # right rail: objective picker + live queues, sticky so it follows the
     # scroll instead of snapping back to the top on every rerun. (The
