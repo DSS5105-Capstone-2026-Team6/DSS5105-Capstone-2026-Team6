@@ -107,18 +107,18 @@ def next_open_item(shown, src_id, is_done):
 
 def render_inbox(desk):
     from app.streamlit_app import _budget_ok, _log_exchange
-    st.caption("Feed the desk — paste chat lines, drop a file, load a sample "
+    st.caption("Feed the desk — paste group-chat lines, drop a file, load a sample "
                "inbox, or let the LLM parse one message first.")
     src = st.segmented_control(
-        "source", ["Paste", "Upload file", "Sample inbox", "LLM parser"],
-        default="Paste", label_visibility="collapsed", key="inbox_src")
+        "source", ["Group chat", "Upload file", "Sample inbox", "LLM parser"],
+        default="Group chat", label_visibility="collapsed", key="inbox_src")
     text = ""
     if src == "LLM parser":
         text = st.text_area("One freeform message — Parse first, then Dispatch",
                             height=120, key="llm_parse_text",
                             placeholder="Boss: ORD-045 — 150 vests for Cotton Club, "
                                         "due Apr 09. It's urgent.")
-    elif src == "Paste":
+    elif src == "Group chat":
         text = st.text_area("Paste group-chat messages", height=120,
                             placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29.",
                             key="paste_box")
@@ -147,7 +147,7 @@ def render_inbox(desk):
     else:
         b_send, b_clear = st.columns([5, 1])
         # Clear empties the paste box only; results and the chat log stay
-        if src == "Paste":
+        if src == "Group chat":
             b_clear.button("Clear", use_container_width=True,
                            on_click=lambda: st.session_state.update(paste_box=""))
         clicked = b_send.button("Dispatch", use_container_width=True, type="primary")
