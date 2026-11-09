@@ -56,14 +56,53 @@ def _refresh_stale(items, desk, is_done):
             st.session_state[f"conv-{id(fresh)}"] = conv
 
 
+def _parser_controls(text, desk):
+    """LLM parser tab: Parse | Dispatch | Clear. Dispatch unlocks only
+    after a successful parse of exactly the text now in the box; the
+    parse result is drawn as cards below the buttons. Returns True when
+    Dispatch was clicked."""
+    from desk.llm_parser import parse_message
+    from app.ui_parser import render_parse_result
+    b_parse, b_send, b_clear = st.columns([2, 4, 1])
+    if b_parse.button("Parse", use_container_width=True, key="llm_parse_btn",
+                      disabled=not text.strip()):
+        with st.spinner("Parsing…"):
+            st.session_state.llm_parse_result = parse_message(text, desk.agent)
+            st.session_state.llm_parsed_text = text
+    result = st.session_state.get("llm_parse_result")
+    parsed_ok = (result is not None and "error" not in result
+                 and st.session_state.get("llm_parsed_text") == text and text.strip())
+
+    def clear():
+        st.session_state.llm_parse_text = ""
+        st.session_state.pop("llm_parse_result", None)
+        st.session_state.pop("llm_parsed_text", None)
+    b_clear.button("Clear", use_container_width=True, key="llm_clear", on_click=clear)
+    clicked = b_send.button("Dispatch", use_container_width=True, type="primary",
+                            key="llm_dispatch", disabled=not parsed_ok,
+                            help=None if parsed_ok else "Parse this message first")
+    if result is not None:
+        if st.session_state.get("llm_parsed_text") != text:
+            st.caption("The message changed since the last parse — parse again "
+                       "to unlock Dispatch.")
+        render_parse_result(result, desk.orders)
+    return clicked
+
+
 def render_inbox(desk):
     from app.streamlit_app import _budget_ok, _log_exchange
-    st.caption("Feed the desk — paste chat lines, drop a file, or load a sample inbox.")
+    st.caption("Feed the desk — paste chat lines, drop a file, load a sample "
+               "inbox, or let the LLM parse one message first.")
     src = st.segmented_control(
-        "source", ["Paste", "Upload file", "Sample inbox"],
+        "source", ["Paste", "Upload file", "Sample inbox", "LLM parser"],
         default="Paste", label_visibility="collapsed", key="inbox_src")
     text = ""
-    if src == "Paste":
+    if src == "LLM parser":
+        text = st.text_area("One freeform message — Parse first, then Dispatch",
+                            height=120, key="llm_parse_text",
+                            placeholder="Boss: ORD-045 — 150 vests for Cotton Club, "
+                                        "due Apr 09. It's urgent.")
+    elif src == "Paste":
         text = st.text_area("Paste group-chat messages", height=120,
                             placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29.",
                             key="paste_box")
@@ -87,16 +126,16 @@ def render_inbox(desk):
                               key="inbox_sample")
         text = (DATA_DIR / choice).read_text(encoding="utf-8")
         st.caption(f"{choice} loaded")
-    b_send, b_clear = st.columns([5, 1])
-    # Clear empties the paste box only; results and the chat log stay
-    if src == "Paste":
-        b_clear.button("Clear", use_container_width=True,
-                       on_click=lambda: st.session_state.update(paste_box=""))
-    clicked = b_send.button("Dispatch", use_container_width=True, type="primary")
-    # "Use in Dispatch" in the LLM parser panel sets this flag and reruns:
-    # dispatch the pasted text straight away, as if Dispatch was clicked
-    auto = st.session_state.pop("auto_dispatch", False)
-    if (clicked or auto) and text.strip():
+    if src == "LLM parser":
+        clicked = _parser_controls(text, desk)
+    else:
+        b_send, b_clear = st.columns([5, 1])
+        # Clear empties the paste box only; results and the chat log stay
+        if src == "Paste":
+            b_clear.button("Clear", use_container_width=True,
+                           on_click=lambda: st.session_state.update(paste_box=""))
+        clicked = b_send.button("Dispatch", use_container_width=True, type="primary")
+    if clicked and text.strip():
         msgs = split_chat_dump(text.strip())
         if _budget_ok(len(msgs)):
             st.session_state.dispatching = True   # locks the objective panel
