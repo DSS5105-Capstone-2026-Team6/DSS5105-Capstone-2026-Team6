@@ -94,6 +94,17 @@ def _parser_controls(text, desk):
     return clicked
 
 
+def next_open_item(shown, src_id, is_done):
+    """The item to scroll to after committing decision `src_id`: the
+    nearest uncommitted one below it, else the nearest uncommitted one
+    above it, else None."""
+    ids = [id(x["decision"]) for x in shown]
+    i = ids.index(src_id) if src_id in ids else -1
+    below = shown[i + 1:]
+    above = shown[:i][::-1] if i >= 0 else []
+    return next((x for x in below + above if not is_done(x["decision"])), None)
+
+
 def render_inbox(desk):
     from app.streamlit_app import _budget_ok, _log_exchange
     st.caption("Feed the desk — paste chat lines, drop a file, load a sample "
@@ -266,11 +277,11 @@ def render_inbox(desk):
                 render_decision(d, desk)
 
         # after a commit, bring the next open request to the top of the page
-        # (ui_cards / item chat set scroll_from to the committed decision)
+        # (ui_cards / item chat set scroll_from to the committed decision):
+        # the nearest open one BELOW first; if none is left below, the
+        # nearest open one ABOVE (orders the user skipped for later)
         src_id = st.session_state.pop("scroll_from", None)
         if src_id is not None:
-            ids = [id(x["decision"]) for x in shown]
-            after = shown[ids.index(src_id) + 1:] if src_id in ids else shown
-            nxt = next((x for x in after if not is_done(x["decision"])), None)
+            nxt = next_open_item(shown, src_id, is_done)
             if nxt is not None:
                 scroll_to_anchor(f"d{id(nxt['decision'])}")
