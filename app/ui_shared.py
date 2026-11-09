@@ -159,6 +159,36 @@ h1 { font-size: 1.4rem !important; letter-spacing: -0.01em; }
 @keyframes qgrow { from { width: 0; } }
 .qbar-legend { color: var(--muted); font-size: 0.8em; }
 
+/* ---------- clickable cards (candidates / splits) ----------
+   ui_cards.clickable_card: a keyed container holding the card and a
+   transparent st.button stretched over it, so the whole card is the
+   button. Hover lifts the card and reveals the "Click to confirm" hint. */
+[class*="st-key-pick_"] { position: relative; gap: 0 !important; }
+[class*="st-key-pick_"] > [class*="st-key-btn-"] {
+    position: absolute !important; inset: 0; z-index: 2; margin: 0;
+    width: 100% !important; height: 100%;
+}
+[class*="st-key-pick_"] .stButton { height: 100%; }
+[class*="st-key-pick_"] .stButton > button {
+    width: 100%; height: 100%; opacity: 0; cursor: pointer;
+}
+[class*="st-key-pick_"] { margin: 6px 0; }
+[class*="st-key-pick_"] .card { cursor: pointer; margin: 0; }
+[class*="st-key-pick_"] .stMarkdown div:has(> .card) { margin-bottom: 0 !important; }
+[class*="st-key-pick_"]:hover .card {
+    transform: translateY(-2px); box-shadow: var(--shadow-md);
+    border-color: var(--blue);
+}
+.pick-hint {
+    font-size: .78em; color: var(--blue-deep); font-weight: 600;
+    text-align: right; height: 0; overflow: visible; opacity: 0;
+    transform: translateY(-1.25em); transition: opacity .2s var(--ease);
+}
+[class*="st-key-pick_"]:hover .pick-hint { opacity: 1; }
+.card .rec { color: var(--blue-deep); font-size: .82em; font-weight: 600; }
+.split-part { margin-top: 6px; }
+.split-name { font-size: .88em; }
+
 /* ---------- right-rail panels ---------- */
 [class*="st-key-objective_dock"], [class*="st-key-queue_dock"] {
     background: #fff; border: 1px solid var(--line); border-radius: 14px;
@@ -248,10 +278,11 @@ h1 { font-size: 1.4rem !important; letter-spacing: -0.01em; }
 """
 
 
-def card(html, delay=0.0):
-    """One card. delay staggers the entrance animation (seconds)."""
+def card(html, delay=0.0, cls=""):
+    """One card. delay staggers the entrance animation (seconds); cls adds
+    classes (e.g. "chosen" for the recommended option)."""
     style = f' style="animation-delay:{delay}s"' if delay else ""
-    st.markdown(f'<div class="card"{style}>{html}</div>',
+    st.markdown(f'<div class="card {cls}"{style}>{html}</div>',
                 unsafe_allow_html=True)
 
 
