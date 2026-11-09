@@ -81,7 +81,7 @@ def render_sunday_preview(desk):
     import streamlit as st
 
     with st.expander(
-        "Scenario preview · Production and transport", expanded=True
+        "Scenario preview · Production and transport", expanded=False
     ):
         order_id = st.text_input("Order ID", "ORD-063", key="sunday_order")
         closed = st.checkbox("Close workshops on Sundays", key="sunday_closed")
