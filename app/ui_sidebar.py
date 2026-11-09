@@ -32,15 +32,20 @@ def render_performance_sidebar(desk):
     with st.sidebar.expander("Record a returned batch"):
         workshops = sorted(desk.workshops.workshops.values(),
                            key=lambda w: w.workshop_id)
-        # keep the inputs after Record (no clear_on_submit): the user often
-        # logs several batches of the same size or workshop in a row
-        with st.form("returned_batch"):
-            ws = st.selectbox("Workshop", workshops,
+        # no st.form: a form only reruns on submit, so Pieces could not
+        # follow the workshop picker. Each workshop remembers its own last
+        # Pieces value (rb_pieces); the other inputs keep their values too.
+        with st.container(border=True):
+            ws = st.selectbox("Workshop", workshops, key="rb_workshop",
                               format_func=lambda w: f"{w.name} ({w.workshop_id})")
-            pieces = st.number_input("Pieces", min_value=1, value=400, step=50)
-            promised = st.date_input("Promised date")
-            actual = st.date_input("Actual return date")
-            submitted = st.form_submit_button("Record")
+            memory = st.session_state.setdefault("rb_pieces", {})
+            pieces = st.number_input("Pieces", min_value=1, step=50,
+                                     value=memory.get(ws.workshop_id, 400),
+                                     key=f"rb_pieces_{ws.workshop_id}")
+            memory[ws.workshop_id] = int(pieces)
+            promised = st.date_input("Promised date", key="rb_promised")
+            actual = st.date_input("Actual return date", key="rb_actual")
+            submitted = st.button("Record", key="rb_record")
         if submitted:
             out = update_workshop_performance(
                 ws.workshop_id, int(pieces), promised.isoformat(),

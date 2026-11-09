@@ -22,14 +22,18 @@ def sunday_pause_days(start, work_days):
 
 def compare_sunday(
     order_id, orders, workshops, queues, sunday_closed,
-    transport_delay_days=0,
+    transport_delay_days=0, perf=None,
 ):
+    # perf: the desk's learned performance (returned batches). Without it
+    # the preview stayed on the profile card while the desk itself used
+    # the learned capacity, so recording a batch never moved these ETAs.
     baseline = rank_candidates(
         order_id,
         objective="lateness",
         orders=orders,
         store=workshops,
         queues=queues,
+        perf=perf,
     )
     if "error" in baseline:
         return baseline
@@ -42,10 +46,12 @@ def compare_sunday(
 
     for row in baseline["candidates"]:
         workshop = workshops.workshops[row["workshop_id"]]
-        baseline_days = est_finish_days(batch, workshop, queues)
+        baseline_days = est_finish_days(batch, workshop, queues, perf)
+        learned = perf.learned(workshop.workshop_id, profile=workshop) if perf else None
+        lead = learned["eff_lead_days"] if learned else workshop.lead_days
 
         # The production calendar covers the queue and this batch's work.
-        work_days = baseline_days - workshop.lead_days
+        work_days = baseline_days - lead
         pause = sunday_pause_days(start, work_days) if sunday_closed else 0
         total_days = baseline_days + pause + transport_delay_days
 
@@ -86,10 +92,11 @@ def render_sunday_preview(desk):
         queues = dict(desk.state.queues)
 
         st.caption(f"Simulated date: {config.chat_today()} · Objective: {objective}")
-        st.caption("Workshop profiles and a snapshot of current queues.")
+        st.caption("Workshop profiles (learned capacity where active) and a snapshot of current queues.")
 
         result = compare_sunday(
-            order_id, desk.orders, desk.workshops, queues, closed, delay
+            order_id, desk.orders, desk.workshops, queues, closed, delay,
+            perf=desk.performance,
         )
         if "error" in result:
             st.warning(result["error"])
