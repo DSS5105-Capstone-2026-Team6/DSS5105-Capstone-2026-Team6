@@ -33,7 +33,6 @@ charts, yes all).
 
 Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 [shared database setup & acceptance](docs/SHARED_DATABASE.md).
-Sprint 3 plan, acceptance checklist and test log: [docs/SPRINT3_VALIDATION.md](docs/SPRINT3_VALIDATION.md).
 
 ## Project Structure
 
@@ -94,7 +93,7 @@ Sprint 3 plan, acceptance checklist and test log: [docs/SPRINT3_VALIDATION.md](d
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
 ├── results/                   # committed eval artefacts (inbox_*/heldout_* runs + scores)
-├── tests/                     # pytest suite: one failure case per feature (274 tests)
+├── tests/                     # pytest suite: one failure case per feature (267 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
@@ -136,8 +135,7 @@ Key milestones since Oct 30, in the order they landed:
 - **Planning, validation and testing** ([Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann) · [XuantingWang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/ADEdreambridge)): sprint
   planning and task coordination, acceptance checks on the shared-ledger
   rollout and the UI changes, and the demo test passes that caught the
-  rough edges before they shipped
-  ([docs/SPRINT3_VALIDATION.md](docs/SPRINT3_VALIDATION.md)).
+  rough edges before they shipped.
 - **Latency hunt and operations** ([kimi](kimi.moonshot.cn/),
   [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46)):
   the flat 2,100-line app/ layer reorganised by surface; bot proposals

@@ -90,10 +90,9 @@
 uv run pytest tests -q
 ```
 
-| 时间点 | 结果 |
-|---|---|
-| 修复前 | 266 passed、**2 failed**、6 skipped |
-| 修复后（本次提交） | **268 passed**、6 skipped、136 subtests passed（共 274 个） |
+结果：266 passed、**2 failed**、6 skipped、136 subtests passed（共 274 个）。
+2 个失败都是 `tests/test_telegram_adapter.py` 的 `/queue` 图表测试，原因见 F1；
+单独 `pip install matplotlib` 后再跑为 268 passed、6 skipped。
 
 6 个 skip：5 个是需要显式开启的云端测试（`tests/test_shared_postgres.py`），
 1 个是学习模型下 ORD-063 在 W6 不是紧余量场景（`tests/test_adaptive_tools.py:85`）。
@@ -102,7 +101,7 @@ uv run pytest tests -q
 
 | # | 问题 | 影响 | 状态 |
 |---|---|---|---|
-| F1 | `matplotlib` 只在 `adapter/requirements.txt`，不在 `pyproject.toml`；按项目方式安装后 `test_queue_chart_png_*` 两个测试失败 | 本地/CI 测试变红；线上 bot 不受影响（Render 装的是 adapter/requirements.txt） | ✅ 已修：加入 dev 依赖组 |
-| F2 | README 写 "267 tests"，实际 274 | 文档数字过时 | ✅ 已修 |
+| F1 | `matplotlib` 只在 `adapter/requirements.txt`，不在 `pyproject.toml`；按项目方式安装后 `test_queue_chart_png_*` 两个测试失败 | 本地/CI 测试变红；线上 bot 不受影响（Render 装的是 adapter/requirements.txt） | 已记录，告知依赖负责人 |
+| F2 | README 写 "267 tests"，实际 274 | 文档数字过时 | 已记录，告知 README 负责人 |
 | F3 | 对已分配订单再次请求时，AI 回复仍推荐别的工坊并邀请回复 yes，和卡片上的 "Already committed" 提示矛盾。`desk/desk.py` 的 `handle_message` 在调用 LLM 前没有检查账本 | 不会产生重复分配（UI 和数据库都会拦截），但回复会误导调度员 | ❌ 未修复，需交给 desk 负责人 |
 | F4 | 线上两端尚未完成端到端演示（§2） | 展示时不能说"线上已连通" | ⏳ 待测 |

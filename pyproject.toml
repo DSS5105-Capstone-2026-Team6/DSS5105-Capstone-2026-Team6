@@ -16,7 +16,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=7.0",
-    "matplotlib>=3.5",   # bot-only at runtime (adapter/requirements.txt); tests render /queue charts
 ]
 
 [tool.pytest.ini_options]
