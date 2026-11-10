@@ -75,7 +75,8 @@ class ChatSession:
     def _add(self, decision):
         """(Re)list a proposal in pending_all. Proposals without an order id
         can never commit, so they stay out."""
-        if decision is None or not decision.candidates or not decision.parsed.order_id:
+        if (decision is None or not decision.candidates or not decision.parsed.order_id
+                or getattr(decision, "already_committed", "")):
             return
         self.pending_all = [d for d in self.pending_all
                             if d.parsed.order_id != decision.parsed.order_id]
@@ -142,25 +143,27 @@ class ChatSession:
                     self._add(previous)
                 self.pending = decision if decision and decision.candidates else None
                 self.options = list(decision.options) if decision else []
-                self._skip_if_committed(decision)
                 self._add_commit_options()
+                self._offer_skip(decision)
             self._add(self.pending)
             return reply or "(no reply)", self.options
         decision = self.desk.handle_message(text, requester=requester or None)
         self.pending = decision if decision.candidates else None
         self.options = list(decision.options)
-        self._skip_if_committed(decision)
         self._add_commit_options()
+        self._offer_skip(decision)
         self._add(self.pending)
         return decision.explanation or "(no reply)", self.options
 
-    def _skip_if_committed(self, decision):
-        """An order already in the ledger can never commit again: keep the
-        desk's reply (it says so up front), but nothing stays pending and
-        the only button is skip."""
-        if decision is not None and getattr(decision, "already_committed", ""):
-            self.pending = None
-            self.options = ["skip"]
+    def _offer_skip(self, decision):
+        """An order already in the ledger: the conversation carries on as
+        usual (the model's reply, its options and the proposal stay, so a
+        follow-up still goes to the model), plus a one-tap skip that closes
+        the request. It stays out of "yes all", which could only refuse it."""
+        if decision is None or not getattr(decision, "already_committed", ""):
+            return
+        if "skip" not in self.options:
+            self.options.append("skip")
 
     def _add_commit_options(self):
         """An open proposal gets one-tap buttons: yes commits the desk's

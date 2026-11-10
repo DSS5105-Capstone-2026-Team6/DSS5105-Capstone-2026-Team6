@@ -158,8 +158,8 @@ Reset demo 会影响同一数据库上的所有用户，仅在约定的演示环
   与卡片的已分配提示冲突。分配被 UI 和数据库保护拦截，但对话文案需要改进；
   此次测试没有将该文案问题记为通过。
   （后续已修复：desk 在生成回复后检查账本，已分配的订单在回复开头标明
-  "already committed"，推荐仅供参考；Telegram 只提供 skip 按钮，网页卡片
-  提供 ⏭ Skip。见 tests/test_skip_and_duplicates.py。）
+  "already committed"，推荐仅供参考；Telegram 照常对话并额外提供 skip
+  按钮，网页卡片提供 ⏭ Skip。见 tests/test_skip_and_duplicates.py。）
 - 已停止并重新启动本机 Streamlit 服务和测试机器人进程，非仅刷新页面。
 - 新机器人进程通过正式 _session_factory 创建 DispatchDesk，读回 2 条原有记录；
   W6=5.73076923076923、W8=1.02。重启后的网页 Records 也实际显示 A-0001/A-0002。

@@ -95,7 +95,7 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 │   ├── shock.py                 # periodic shock calendar + shock-aware labels
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
 ├── results/                   # committed eval artefacts (inbox_*/heldout_* runs + scores)
-├── tests/                     # pytest suite: one failure case per feature (287 tests)
+├── tests/                     # pytest suite: one failure case per feature (289 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 

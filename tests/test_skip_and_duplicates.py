@@ -2,8 +2,8 @@
 Duplicate requests, one-tap skip, and refusals that come with an alternative.
 
 - an order already in the ledger keeps its ranking for reference, but the
-  desk says so up front and marks the decision; the bot offers only "skip"
-  and keeps nothing pending (a "yes" could only be refused);
+  desk says so up front and marks the decision; the bot carries on as usual
+  (model reply, options, follow-ups) and adds a "skip" button;
 - "skip" closes a request with no LLM round and no commit (bot), and the
   web card's Skip button closes it in one tap;
 - a REFUSE whose flow stopped at check_eligibility gets the best eligible
@@ -107,14 +107,42 @@ def test_duplicate_still_cannot_commit(desk):
     assert len(desk.audit.load_all()) == 1
 
 
-def test_bot_duplicate_offers_only_skip_and_keeps_nothing_pending(desk):
+def test_bot_duplicate_keeps_the_conversation_and_adds_skip(desk):
     _commit(desk, "ORD-041")
     session = ChatSession(lambda: desk)
     desk.agent.flow = _rank_flow("ORD-041")
     reply, options = session.handle("allocate ORD-041", "Ravi")
-    assert options == ["skip"]
-    assert session.pending is None and session.pending_all == []
     assert reply.startswith("⚠️ ORD-041 is already committed")
+    assert options[0] == "yes" and options[-1] == "skip"   # model's flow + skip
+    assert session.pending is not None                     # follow-ups still work
+    assert session.pending_all == []                       # "yes all" leaves it out
+
+
+def test_bot_duplicate_follow_up_still_goes_to_the_model(desk):
+    _commit(desk, "ORD-041")
+    session = ChatSession(lambda: desk)
+    desk.agent.flow = _rank_flow("ORD-041")
+    session.handle("allocate ORD-041", "Ravi")
+    calls = []
+
+    def flow(d):
+        calls.append(1)
+        return _rank_flow("ORD-041")(d)
+    desk.agent.flow = flow
+    desk.agent.classify_followup = lambda text, decision: FollowupIntent("question")
+    session.handle("why W6 and not W2?", "Ravi")
+    assert calls                                           # the model answered
+
+
+def test_bot_yes_on_duplicate_says_why_instead_of_crashing(desk):
+    _commit(desk, "ORD-041")
+    session = ChatSession(lambda: desk)
+    desk.agent.flow = _rank_flow("ORD-041")
+    session.handle("allocate ORD-041", "Ravi")
+    reply, options = session.handle("yes", "Ravi")
+    assert reply.startswith("Not committed") and "already committed" in reply
+    assert "skip" in options                               # can still close it
+    assert len(desk.audit.load_all()) == 1
 
 
 def test_bot_skip_button_closes_without_llm_or_commit(desk):
@@ -123,8 +151,10 @@ def test_bot_skip_button_closes_without_llm_or_commit(desk):
     desk.agent.flow = _rank_flow("ORD-041")
     session.handle("allocate ORD-041", "Ravi")
     desk.agent.flow = lambda _: pytest.fail("skip must not reach the model")
-    reply, options = session.handle_option(session.options_token, 0, "Ravi")
-    assert reply.startswith("Skipped") and options == []
+    reply, options = session.handle_option(session.options_token,
+                                           session.options.index("skip"), "Ravi")
+    assert reply == "Skipped ORD-041 — nothing was committed." and options == []
+    assert session.pending is None
     assert len(desk.audit.load_all()) == 1
 
 

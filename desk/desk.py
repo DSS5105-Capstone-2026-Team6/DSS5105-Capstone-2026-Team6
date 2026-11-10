@@ -299,6 +299,10 @@ class DispatchDesk:
                     record = self.confirm(replace(decision, chosen=target), committed_by=requester)
                 except ProposalChanged as exc:
                     return exc.decision, None, str(exc)
+                except ValueError as exc:
+                    # refused by the checks/ledger (e.g. the order is already
+                    # committed): say why, keep the proposal open
+                    return decision, None, f"Not committed: {exc}"
                 return None, record, f"Committed {record.record_id} — {record.order_id} → {record.workshop_id}."
         if any(x in intent.changes for x in ("pieces", "due_date", "other")):
             return None, None, ("This changes the source order. Update the order register and reload the desk first, "
