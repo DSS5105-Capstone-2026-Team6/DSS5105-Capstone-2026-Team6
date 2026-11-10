@@ -1,28 +1,42 @@
 """
-tabs.desk.scenario — the scenario preview on the Desk tab: what changes if
-workshops close on Sundays, transport takes extra days, or capacity gets
-noisy (seeded).
+Scenario preview for the Desk dialog.
 
-compare_sunday() is the pure computation (unit-tested); render_sunday_preview()
-is its expander UI above the inbox.
+compare_sunday() computes baseline and scenario ETAs.
+render_sunday_preview() displays the date and scenario controls.
 """
 
 from datetime import date, timedelta
-from desk.scenario import finish_production
 
 from desk import config
 from desk.allocator import est_finish_days, order_rows, rank_candidates
-
+from desk.scenario import finish_production
 
 
 def compare_sunday(
-    order_id, orders, workshops, queues, sunday_closed,
-    transport_delay_days=0, perf=None, *, noise_pct=0, seed=5105,
+    order_id,
+    orders,
+    workshops,
+    queues,
+    sunday_closed,
+    transport_delay_days=0,
+    perf=None,
+    *,
+    noise_pct=0,
+    seed=5105,
+    preview_date=None,
 ):
+    order = orders.by_id(order_id) if order_id else None
+    if order is None:
+        return {"error": f"unknown order {order_id!r}"}
 
-    # perf: the desk's learned performance (returned batches). Without it
-    # the preview stayed on the profile card while the desk itself used
-    # the learned capacity, so recording a batch never moved these ETAs.
+    order_date = date.fromisoformat(order["order_date"])
+    due = date.fromisoformat(order["due_date"])
+    start = (
+        config.chat_today()
+        if preview_date is None
+        else max(preview_date, order_date)
+    )
+
     baseline = rank_candidates(
         order_id,
         objective="lateness",
@@ -30,13 +44,11 @@ def compare_sunday(
         store=workshops,
         queues=queues,
         perf=perf,
+        as_of=start,
     )
     if "error" in baseline:
         return baseline
 
-    order = orders.by_id(order_id)
-    start = config.chat_today()
-    due = date.fromisoformat(order["due_date"])
     batch = {"pieces": int(order["pieces"])}
     scenario_rows = []
 
@@ -49,7 +61,10 @@ def compare_sunday(
         # The production calendar covers the queue and this batch's work.
         work_days = baseline_days - lead
         production_finish, pause = finish_production(
-            start, 0, work_days, workshop.workshop_id,
+            start,
+            0,
+            work_days,
+            workshop.workshop_id,
             sunday_closed=sunday_closed,
             noise_pct=noise_pct,
             seed=seed,
@@ -73,6 +88,8 @@ def compare_sunday(
         })
 
     return {
+        "start_date": start,
+        "due_date": due,
         "baseline": baseline["candidates"],
         "scenario": scenario_rows,
     }
@@ -81,38 +98,113 @@ def compare_sunday(
 def render_sunday_preview(desk):
     import streamlit as st
 
-    with st.expander(
-        "Scenario preview · Production and transport", expanded=False
-    ):
+    with st.container():
         order_id = st.text_input("Order ID", "ORD-063", key="sunday_order")
-        closed = st.checkbox("Close workshops on Sundays", key="sunday_closed")
+        order = desk.orders.by_id(order_id) if order_id else None
+        if order is None:
+            st.warning("Enter a valid order ID, for example ORD-063.")
+            return
+
+        order_date = date.fromisoformat(order["order_date"])
+        date_options = {
+            "Order date": order_date,
+            "January 1, 2026": date(2026, 1, 1),
+            "April 1, 2026": date(2026, 4, 1),
+            "Custom date": None,
+        }
+        date_choice = st.selectbox(
+            "Preview start date",
+            list(date_options),
+            key="scenario_date_choice",
+        )
+        preview_date = date_options[date_choice]
+
+        if date_choice == "Custom date":
+            preview_date = st.date_input(
+                "Pick a date",
+                value=order_date,
+                min_value=order_date,
+                key=f"scenario_custom_date_{order['order_id']}",
+            )
+            if preview_date is None:
+                st.info("Pick a date to calculate ETAs.")
+                return
+
+        closed = st.checkbox(
+            "Close workshops on Sundays",
+            key="sunday_closed",
+        )
         delay = int(st.number_input(
-            "Extra transport days", min_value=0, max_value=14, value=0, step=1
+            "Extra transport days",
+            min_value=0,
+            max_value=14,
+            value=0,
+            step=1,
         ))
         noise_pct = st.number_input(
-            "Capacity noise (%)", min_value=0, max_value=50,
-            value=0, step=5, key="scenario_noise_pct",
+            "Capacity noise (%)",
+            min_value=0,
+            max_value=50,
+            value=0,
+            step=5,
+            key="scenario_noise_pct",
         )
         seed = st.number_input(
-            "Scenario seed", min_value=0, value=5105,
-            step=1, key="scenario_capacity_seed",
+            "Scenario seed",
+            min_value=0,
+            value=5105,
+            step=1,
+            key="scenario_capacity_seed",
         )
         objective = st.session_state.get("objective_pref", "hybrid")
         queues = dict(desk.state.queues)
 
-        st.caption(f"Simulated date: {config.chat_today()} · Objective: {objective}")
-        st.caption("Workshop profiles (learned capacity where active) and a snapshot of current queues.")
+        st.caption(f"Desk date: {config.chat_today()} · Objective: {objective}")
+        st.caption(
+            "Workshop profiles (learned capacity where active) "
+            "and a snapshot of current queues."
+        )
 
         result = compare_sunday(
-            order_id, desk.orders, desk.workshops, queues, closed, delay,
+            order_id,
+            desk.orders,
+            desk.workshops,
+            queues,
+            closed,
+            delay,
             perf=desk.performance,
             noise_pct=noise_pct,
             seed=seed,
+            preview_date=preview_date,
         )
-
         if "error" in result:
             st.warning(result["error"])
             return
+
+        start = result["start_date"]
+        due = result["due_date"]
+        st.caption(
+            f"Order date: {order_date} · Selected date: {preview_date} · "
+            f"ETA start: {start} · Due date: {due}"
+        )
+
+        if preview_date < order_date:
+            st.info(
+                f"The order was placed after {preview_date}. "
+                f"ETAs start on {start}, the order date."
+            )
+
+        days_to_due = (due - start).days
+        if days_to_due < 0:
+            st.warning(
+                f"The deadline had already passed by {-days_to_due} day(s) "
+                f"at the preview start."
+            )
+        elif days_to_due == 0:
+            st.warning("The order is due on the preview start date.")
+        else:
+            st.caption(f"{days_to_due} day(s) from ETA start to the deadline.")
+
         if not result["baseline"]:
             st.warning("No eligible workshops for this order.")
             return
@@ -121,6 +213,7 @@ def render_sunday_preview(desk):
         scenario_pick = order_rows(result["scenario"], objective)[0]
         if all(row["days_late"] > 0 for row in result["scenario"]):
             st.warning("No eligible single-workshop option meets the due date.")
+
         st.write(
             f"Baseline pick: {baseline_pick['name']} · "
             f"Scenario pick: {scenario_pick['name']}"
