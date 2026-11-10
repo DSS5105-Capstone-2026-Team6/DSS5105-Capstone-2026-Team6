@@ -80,7 +80,7 @@ def _restore_user_text(agent, wrapped, text):
 class DispatchDesk:
     def __init__(self, model=None, stages=False, audit_path=None,
                  provider=None, api_key=None, persona="dispatcher", agent=None,
-                 as_of=None):
+                 as_of=None, storage_dir=None):
         from desk.config import DEFAULT_PROVIDER, set_as_of
         if as_of is not None:
             set_as_of(as_of)   # move the shared world clock (UI world switch)
@@ -92,11 +92,23 @@ class DispatchDesk:
         self.workshops = self.agent.workshops   # shared with the agent
         self.state = DeskState(stages=stages)
         audit_kwargs = {"initial_queues": self.state.queues}
-        self.audit = AuditLog(audit_path, **audit_kwargs) if audit_path else AuditLog(**audit_kwargs)
-        self.state.audit = self.audit
         from desk.performance import PerformanceStore
-        self.performance = PerformanceStore()   # learned shop performance,
-                                                # shared via the ledger db
+        if storage_dir is not None:
+            # Local sandbox: audit, learned performance and the API budget all
+            # live in session-owned SQLite files — nothing in this desk ever
+            # touches the shared database (the bot keeps using it).
+            from pathlib import Path
+            from desk.budget import CallBudget
+            d = Path(storage_dir)
+            d.mkdir(parents=True, exist_ok=True)
+            self.audit = AuditLog(str(d / "audit.sqlite3"), **audit_kwargs)
+            self.performance = PerformanceStore(str(d / "performance.sqlite3"))
+            self.agent.budget = CallBudget(str(d / "api_usage.sqlite3"))
+        else:
+            self.audit = AuditLog(audit_path, **audit_kwargs) if audit_path else AuditLog(**audit_kwargs)
+            self.performance = PerformanceStore()   # learned shop performance,
+                                                    # shared via the ledger db
+        self.state.audit = self.audit
 
     # ---------------- conversation ----------------
 

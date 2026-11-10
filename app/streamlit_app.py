@@ -82,7 +82,8 @@ def get_desk():
         model = model_entry[0]            # api id; [1] is the display label
     choice = (provider, model,
               st.session_state.get("as_of"),
-              bool(st.session_state.get("stages_pref", False)))
+              bool(st.session_state.get("stages_pref", False)),
+              bool(st.session_state.get("share_db", False)))
     desk = st.session_state.get("desk")
     if desk is not None and (not hasattr(desk.agent, "new_conversation")
                              or st.session_state.get("desk_choice") != choice):
@@ -100,8 +101,23 @@ def get_desk():
             for var in key_vars:
                 if secrets.get(var) and not os.environ.get(var):
                     os.environ[var] = secrets[var]
-            desk = DispatchDesk(provider=provider, model=model,
-                                stages=choice[3], as_of=choice[2])
+            share = choice[4]
+            if share:
+                # shared mode: reads/writes go to the same database as the bot
+                desk = DispatchDesk(provider=provider, model=model,
+                                    stages=choice[3], as_of=choice[2])
+            else:
+                # default sandbox: session-local SQLite files, zero contact
+                # with the shared database (debugging and tests stay fast)
+                from desk.config import RESULTS_DIR
+                from uuid import uuid4
+                store = st.session_state.get("_local_store")
+                if store is None:
+                    store = str(RESULTS_DIR / "local_sessions" / uuid4().hex[:12])
+                    st.session_state._local_store = store
+                desk = DispatchDesk(provider=provider, model=model,
+                                    stages=choice[3], as_of=choice[2],
+                                    storage_dir=store)
             st.session_state.desk = desk
             st.session_state.desk_choice = choice
         except Exception as exc:  # missing API key, unreadable data...
