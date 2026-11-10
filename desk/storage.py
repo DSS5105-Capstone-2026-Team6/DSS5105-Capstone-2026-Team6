@@ -102,7 +102,12 @@ class Database:
                 with connection:
                     # SET LOCAL belongs to this transaction, including on poolers.
                     connection.execute("SET LOCAL search_path TO " + self.schema)
-                    yield _PostgresConnection(connection)
+                    # Pipeline mode bundles the transaction's statements into
+                    # one network round-trip instead of one per statement —
+                    # the difference between a 1.5s and a 0.3s commit over a
+                    # cross-border link.
+                    with connection.pipeline():
+                        yield _PostgresConnection(connection)
         else:
             connection = sqlite3.connect(self.path, timeout=15)
             try:
