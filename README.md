@@ -97,10 +97,31 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
-## Sprint 3 — one ledger, two front-ends, and the latency hunt
+## Sprint 3 — realism, polish, and one shared ledger
 
 What shipped after Sprint 2, told as the problems we hit:
 
+- **A more honest world.** The desk gained a switchable world clock (Apr-1
+  demo ↔ Jan-1 full replay), stages mode, and a seeded shock trigger — close
+  a workshop and eligibility, ranking and risk flags all react
+  ([desk/config.py](desk/config.py), [eval/shock.py](eval/shock.py)). The
+  scenario preview prices Sunday closures, extra transport days and seeded
+  capacity noise against the baseline ranking
+  ([app/tabs/desk/scenario.py](app/tabs/desk/scenario.py),
+  [#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36)).
+- **Full-scale timeline evaluation.** All 120 F-series requests replayed
+  against the world clock with periodic shock windows and shock-aware labels
+  ([notebooks/full120_timeline_shock.ipynb](notebooks/full120_timeline_shock.ipynb));
+  held-out behaviour/faithfulness scoring stayed the gate
+  ([docs/EVALUATION.md](docs/EVALUATION.md)).
+- **The UI grew up.** Cards became the confirm buttons, the page scrolls to
+  the next open order after each commit, already-committed orders mark
+  themselves, the LLM parser became an inbox tab with field-level register
+  checks, and learned capacity flows through every estimate
+  ([#21](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/21)–[#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36)).
+  Then the 2,100-line flat app/ layer was reorganised by surface (theme /
+  components / tabs / rail / sidebar), zero behaviour change
+  ([#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)).
 - **Two front-ends, two ledgers.** The hosted web app and the Telegram bot
   each kept their own SQLite file — a commit on one was invisible to the
   other. Both can now share one Supabase PostgreSQL ledger
@@ -135,10 +156,6 @@ What shipped after Sprint 2, told as the problems we hit:
   local sandbox; the Records tab carries Reset & connect to shared DB for
   when the two front-ends should share state
   ([#45](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/45)).
-- **The UI layer was one 2,100-line pile.** The app/ modules are now
-  grouped by surface (theme / components / tabs / rail / sidebar), zero
-  behaviour change
-  ([#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)).
 
 ## Safety and deployment
 
