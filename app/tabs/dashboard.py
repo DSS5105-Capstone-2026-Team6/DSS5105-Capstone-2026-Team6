@@ -21,7 +21,8 @@ def _queue_timeline(desk):
     seconds without a full page rerun."""
     import altair as alt
     import pandas as pd
-    records = desk.audit.load_all()
+    from app.components.ledger_cache import ledger_records
+    records = ledger_records(desk)
     if not records:
         st.caption("Queue timeline appears after the first commit — every "
                    "commit is a step point here.")

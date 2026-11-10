@@ -5,6 +5,7 @@ tabs.records — the Records tab: the audit ledger view + demo reset.
 import streamlit as st
 
 from app.components.cards import card
+from app.components.ledger_cache import ledger_records
 
 
 def render_recent(desk):
@@ -23,7 +24,7 @@ def render_recent(desk):
                 del st.session_state[key]
         st.rerun()
 
-    records = desk.audit.load_all()
+    records = ledger_records(desk)   # version-gated cache; reset bumps the version
     if not records:
         st.info("No committed records yet.")
         return
