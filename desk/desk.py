@@ -37,6 +37,11 @@ from desk.allocator import rank_candidates
 from desk.contracts import Behaviour, Constraint, canonical_order_id
 from desk.tools import split_options
 
+# The fixed reply for a cancelled proposal, so adapters can tell "user
+# cancelled" apart from "the model answered without re-ranking" (both return
+# decision=None, record=None) without matching on wording inline.
+CANCEL_REPLY = "Cancelled the pending proposal. Nothing was allocated."
+
 _OPTIONS_LINE = re.compile(r"(?im)^OPTIONS:\s*(.+?)\s*$")
 
 
@@ -219,7 +224,7 @@ class DispatchDesk:
         if intent is None:
             intent = self.agent.classify_followup(text, decision)
         if intent.intent == "cancel":
-            return None, None, "Cancelled the pending proposal. Nothing was allocated."
+            return None, None, CANCEL_REPLY
         if intent.intent == "confirm":
             target = next((c for c in decision.candidates if c.workshop_id == intent.workshop_id), None)
             if target is not None:

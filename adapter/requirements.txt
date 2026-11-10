@@ -4,3 +4,4 @@ openai>=1.0
 psycopg[binary]>=3.2
 python-dotenv>=1.0
 python-telegram-bot>=21
+matplotlib>=3.5   # /queue chart photos (Agg, headless)

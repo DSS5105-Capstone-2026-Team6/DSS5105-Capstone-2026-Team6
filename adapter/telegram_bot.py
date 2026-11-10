@@ -81,6 +81,16 @@ def build_application(token, make_session=None, proxy=None):
             "Dispatch desk is live. Send an order line, or @mention me in a "
             "group. I never commit an allocation until someone says yes.")
 
+    async def on_queue(update, context):
+        """/queue — the live workshop queues as a bar chart photo, the
+        Telegram-side answer to the web dashboard's queue view."""
+        from adapter.charts import queue_chart_png
+        session = session_for(update.effective_chat.id)
+        queues = dict(session.desk.state.queues)
+        photo = queue_chart_png(queues, session.desk.workshops.workshops)
+        await update.effective_message.reply_photo(
+            photo, caption=f"Live queues · total {sum(queues.values()):.1f} days")
+
     async def on_message(update, context):
         msg, chat = update.effective_message, update.effective_chat
         if msg is None or not msg.text:
@@ -134,6 +144,7 @@ def build_application(token, make_session=None, proxy=None):
         builder = builder.proxy(proxy).get_updates_proxy(proxy)
     app = builder.build()
     app.add_handler(CommandHandler("start", on_start))
+    app.add_handler(CommandHandler("queue", on_queue))
     app.add_handler(CallbackQueryHandler(on_option))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
                                    on_message))

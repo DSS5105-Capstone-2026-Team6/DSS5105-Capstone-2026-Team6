@@ -161,3 +161,81 @@ def test_unknown_persona_fails_loudly():
 def test_agent_accepts_persona_kwarg():
     agent = DispatchAgent(api_key="dummy", persona="group")
     assert agent.system_prompt == load_system_prompt("group")
+
+
+# ---------------- bot UX hardening ----------------
+
+def test_yes_without_pending_gets_a_plain_answer_no_llm():
+    # failure case: after a bot restart the pending proposal is gone; a bare
+    # "yes" must not burn an LLM round on an empty conversation
+    session, fake = make_session(FakeDesk(decision=None))
+    reply, options = session.handle("yes", "Ravi")
+    assert "Nothing is awaiting confirmation" in reply
+    assert fake.messages == []          # the agent was never called
+    assert options == []
+
+
+def test_answer_without_rerank_keeps_proposal_open():
+    # a follow-up the model answers without calling tools used to drop the
+    # pending proposal silently; it must survive so a later yes still commits
+    session, fake = make_session()
+    session.handle("ORD-073 please", "Ravi")
+
+    class AnsweringDesk(FakeDesk):
+        def follow_up(self, text, decision, requester="group"):
+            if "defect" in text:
+                # model answered without re-ranking: no commit, no new proposal
+                return None, None, "Defect risk comes from the workshop profile card."
+            return DispatchDesk.follow_up(self, text, decision, requester)
+
+    session2 = ChatSession(lambda: AnsweringDesk(_alloc_decision()))
+    session2.handle("ORD-073 please", "Ravi")
+    reply, _ = session2.handle("what is the defect risk?", "Priya")
+    assert "still open" in reply
+    reply, _ = session2.handle("yes", "Priya")
+    assert "Committed A-0001" in reply
+
+
+def test_cancel_clears_pending_for_good():
+    # failure case for the keep-open rule: a real cancel must clear it
+    session, fake = make_session()
+    session.handle("ORD-073 please", "Ravi")
+    reply, _ = session.handle("cancel", "Priya")
+    assert "Cancelled" in reply
+    assert session.pending is None
+    reply, _ = session.handle("yes", "Priya")
+    assert "Nothing is awaiting confirmation" in reply
+    assert fake.commits == []
+
+
+def test_proposal_offers_commit_buttons():
+    session, _ = make_session()
+    reply, options = session.handle("ORD-073 please", "Ravi")
+    assert options[0] == "yes"
+    # the non-chosen candidate gets its own one-tap commit button
+    assert "commit to W2" in options
+
+
+def test_commit_button_text_commits_via_fast_path():
+    session, fake = make_session()
+    session.handle("ORD-073 please", "Ravi")
+    token = session.options_token
+    idx = session.options.index("commit to W2")
+    reply, _ = session.handle_option(token, idx, "Priya")
+    assert "→ W2" in reply
+    assert fake.commits == [("W2", "Priya")]
+
+
+def test_queue_chart_png_renders():
+    from types import SimpleNamespace
+    from adapter.charts import queue_chart_png
+    queues = {"W1": 2.5, "W2": 0.0, "W3": 5.1}
+    shops = {w: SimpleNamespace(name=f"Shop {w}") for w in queues}
+    png = queue_chart_png(queues, shops)
+    assert png.read(8) == b"\x89PNG\r\n\x1a\n"
+
+
+def test_queue_chart_png_handles_empty():
+    from adapter.charts import queue_chart_png
+    png = queue_chart_png({}, {})
+    assert png.read(8) == b"\x89PNG\r\n\x1a\n"

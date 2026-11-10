@@ -74,19 +74,51 @@ class ChatSession:
     def handle(self, text, requester=""):
         """One incoming message -> (reply, options). Confirmation is checked
         first; anything that is not an explicit commit goes to the agent."""
+        from desk.confirmation import looks_like_confirmation
+        from desk.desk import CANCEL_REPLY
         text = (text or "").strip()
         self.options_token = uuid4().hex
         self.options = []
+        if self.pending is None and looks_like_confirmation(text):
+            # A yes with no open proposal means the process restarted (the
+            # pending proposal lives in memory) or the proposal lapsed. Say
+            # so plainly instead of spending an LLM round on a bare "yes".
+            return ("Nothing is awaiting confirmation right now — a bot "
+                    "restart clears pending proposals. Send the order line "
+                    "again and I'll re-rank it."), []
         if self.pending is not None:
             previous, self.pending = self.pending, None
             decision, record, reply = self.desk.follow_up(text, previous, requester or "group")
-            self.pending = decision if decision and decision.candidates else None
-            self.options = list(decision.options) if decision else []
+            if record is None and decision is None and reply != CANCEL_REPLY:
+                # The follow-up was answered without re-ranking (no commit,
+                # no cancel): keep the proposal open so a later "yes" still
+                # commits, instead of silently dropping it.
+                self.pending = previous
+                reply = (reply or "") + ("\n(The earlier proposal is still "
+                                         "open — reply yes to commit it.)")
+            else:
+                self.pending = decision if decision and decision.candidates else None
+                self.options = list(decision.options) if decision else []
+                self._add_commit_options()
             return reply or "(no reply)", self.options
         decision = self.desk.handle_message(text, requester=requester or None)
         self.pending = decision if decision.candidates else None
         self.options = list(decision.options)
+        self._add_commit_options()
         return decision.explanation or "(no reply)", self.options
+
+    def _add_commit_options(self):
+        """An open proposal gets one-tap buttons: yes commits the desk's
+        choice; each other candidate gets its own commit button. The tapped
+        text re-enters handle() and matches the deterministic commit
+        patterns in desk.confirmation (no LLM round)."""
+        if self.pending is None or self.options:
+            return
+        others = [c for c in self.pending.candidates[:3]
+                  if self.pending.chosen is None
+                  or c.workshop_id != self.pending.chosen.workshop_id]
+        self.options = ["yes"] + [f"commit to {c.workshop_id}"
+                                  for c in others]
 
     def handle_option(self, token, index, requester=""):
         if token != self.options_token or not 0 <= index < len(self.options):
