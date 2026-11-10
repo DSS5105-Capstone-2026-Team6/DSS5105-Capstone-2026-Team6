@@ -3,7 +3,8 @@
 Scope: every request that failed at least one metric in the last live runs
 (dev 30 requests, `results/inbox_run_v22b.jsonl`, 28 Oct; held-out 20
 requests, `results/heldout_run.jsonl`, 29 Oct), re-checked against the code
-on `main` @ `18ccf99` (10 Nov). Labels: `data/labels_inbox.json`,
+on `main` @ `18ccf99` (10 Nov) plus the refusal-alternative fix on `spr3`
+(case 7). Labels: `data/labels_inbox.json`,
 `data/labels_heldout.json`; held-out labels were not edited after review.
 
 ## 1. How the re-evaluation was done
@@ -14,7 +15,8 @@ we ran an **offline replay** instead (`python eval/replay_offline.py`):
 
 - each record's **recorded LLM reply and tool log** are fed back through the
   **current** `DispatchDesk.handle_message`: the router, ranking attach,
-  recommendation consistency, `_fill_impossible` and split attach;
+  recommendation consistency, `_fill_impossible`, the refusal alternative
+  and split attach;
 - the output is scored with the unchanged `eval/score_run.py`.
 
 The LLM step is held fixed, so the difference from the original scores comes only
@@ -26,13 +28,13 @@ committed numbers exactly.
 | Set | Run | Behaviour | Workshop | Faithfulness |
 |---|---|---|---|---|
 | Dev (30) | v2.2b, 28 Oct (as reported) | 0.933 (28/30) | 0.842 (16/19) | 0.967 (29/30) |
-| Dev (30) | Sprint 3 code, offline replay | 0.933 (28/30) | 0.842 (16/19) | 0.967 (29/30) |
+| Dev (30) | Sprint 3 code, offline replay | 0.933 (28/30) | **0.895 (17/19)** | 0.967 (29/30) |
 | Held-out (20) | v2.2b, 29 Oct (as reported) | 0.800 (16/20) | 0.692 (9/13) | 1.000 (20/20) |
 | Held-out (20) | Sprint 3 code, offline replay | 0.800 (16/20) | **0.846 (11/13)** | 1.000 (20/20) |
 
-Dev behaviour/workshop totals are unchanged, but the failing cases moved:
-one case was fixed (R21) and one new failure appeared (R17), see below. The
-dev set was used for tuning; the held-out set was never tuned on.
+On dev, two cases were fixed (R21, R24) and one new failure appeared (R17),
+see below. The dev set was used for tuning; the held-out set was never tuned
+on.
 
 Behaviour accuracy by request kind (held-out, unchanged by the replay):
 ambiguous 2/2, constraint 4/4, impossible 2/2, ineligible 3/3,
@@ -48,15 +50,16 @@ unanswerable 2/3, **complete 2/4, missing 1/2**.
 | 4 | R28 | dev | impossible | impossible, W1 | ask | behaviour + workshop | model stopped to question an overdue date instead of checking feasibility | open |
 | 5 | H07 | held-out | complete | allocate W6 | ask | behaviour + workshop | model looked up by customer only; asked although one open order fits | open; tool fix exists, needs live re-run |
 | 6 | H20 | held-out | complete | allocate W6/W2 | ask | behaviour + workshop | same as H07: the pieces filter was not used | open; tool fix exists, needs live re-run |
-| 7 | R24 | dev | ineligible | refuse + W6 | refuse, no alternative | workshop | refusal correct, but model offered to rank instead of ranking | open |
+| 7 | R24 | dev | ineligible | refuse + W6 | refuse + W6 | — | refusal correct, but model offered to rank instead of ranking | **fixed** (refusal alternative, `spr3`) |
 | 8 | R15 | dev | ambiguous | ask | ask | faithfulness | model counted "6 open orders" itself (number not in tool output) | open; tool now states the count, needs live re-run |
 | 9 | R17 | dev | complete | allocate W1 | allocate **W6** | workshop | model overrode the allocator in prose; button now follows prose | **new in Sprint 3** |
 | 10 | R21 | dev | constraint | allocate W5 | allocate W5 | — | "cheapest on time" handled in prose, button followed the ranking | **fixed** (PR #20) |
 | 11 | H09 | held-out | constraint | allocate W3 | allocate W3 | — | same as R21 | **fixed** (PR #20) |
 | 12 | H14 | held-out | impossible | impossible, W2 | impossible, W2 | — | IMPOSSIBLE via `earliest_feasible` carried no best-attempt shop | **fixed** (`_fill_impossible`, PR #20) |
 
-Nine cases still fail on the current code; three were fixed by Sprint 3
-changes, and one of those same changes caused a new failure (R17).
+Eight cases still fail on the current code; four were fixed (three by PR #20,
+R24 by the refusal-alternative change), and one of the PR #20 changes caused a
+new failure (R17).
 
 ## 3. Case-by-case analysis
 
@@ -152,8 +155,11 @@ changes, and one of those same changes caused a new failure (R17).
   listed the six eligible shops and asked "Want me to rank them?"
 - **Why:** the model stopped after `check_eligibility`. With no
   `rank_candidates` call there is no alternative to attach.
-- **Fix next:** after a REFUSE, run the ranking in code (the same pattern as
-  `_fill_impossible`) so the refusal always comes with a ready alternative.
+- **Fixed:** after a REFUSE with no candidates, the desk now ranks the
+  eligible workshops in code (`_fill_refusal_alternative` in `desk/desk.py`,
+  the same pattern as `_fill_impossible`) and appends the best alternative to
+  the reply ("Reply yes to commit ORD-015 to W6"). The offline replay now
+  picks W6 ✅. Tests: `tests/test_skip_and_duplicates.py`.
 
 ### Case 8 — R15 (dev, ambiguous; faithfulness)
 
@@ -220,12 +226,12 @@ changes, and one of those same changes caused a new failure (R17).
 
 ## 4. Patterns, limitations, and what we would fix next
 
-**Failure patterns (9 open cases):**
+**Failure patterns (8 open cases):**
 
 | Pattern | Cases | Next fix |
 |---|---|---|
 | Keyword intent rules miss phrasings | R05, H04, H08 | pattern-based / classifier intent, drop "outside" as a lone signal |
-| Model stops before the deciding tool call | R28, R24 | run feasibility / ranking in code when the situation is known (overdue date, refusal) |
+| Model stops before the deciding tool call | R28 (R24 fixed) | run feasibility in code when the due date is already past, as the refusal fix now does for ranking |
 | Model under-uses lookup filters | H07, H20 | tool fix shipped; confirm with a live run |
 | Model does its own counting | R15 | tool now returns the count; confirm with a live run |
 | Model prose overrides the allocator | R17 | follow prose only when the user stated a constraint |

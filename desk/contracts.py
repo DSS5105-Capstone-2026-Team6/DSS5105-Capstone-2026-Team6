@@ -113,6 +113,9 @@ class Decision:
     # `chosen` then stays the best single-workshop fallback
     recommended_split: Optional[int] = None
     warnings: list = field(default_factory=list)     # consistency notes shown to the human
+    # "A-0001 — ORD-017 → W6" when the order is already in the ledger: the
+    # ranking stays for reference, the UI/bot offer skip instead of commit
+    already_committed: str = ""
 
 
 @dataclass

@@ -227,6 +227,25 @@ def render_actions(decision, desk):
         st.rerun()
 
 
+def is_skipped(decision):
+    """The dispatcher closed this request with Skip (nothing committed)."""
+    return f"skipped-{id(decision)}" in st.session_state
+
+
+def render_skip(decision, help_text):
+    """One-tap close for a request that cannot or should not be committed
+    (already in the ledger, order not found, refused, ...): no chat round,
+    nothing committed; the page moves on to the next open request."""
+    from app.streamlit_app import _log_exchange
+    if st.button("⏭ Skip", key=f"skip-{id(decision)}", help=help_text):
+        st.session_state[f"skipped-{id(decision)}"] = True
+        st.session_state.scroll_from = id(decision)   # jump to the next order
+        what = decision.parsed.order_id or "request"
+        _log_exchange("dispatcher", f"(skip) {what}",
+                      f"Skipped {what} — nothing was committed.")
+        st.rerun()
+
+
 def render_decision(decision, desk):
     """Pre-commit: understood / candidates / confirm buttons, actions row,
     split options, plus the 4th option — an expander with the live
@@ -237,6 +256,14 @@ def render_decision(decision, desk):
     if r is not None:
         st.success(f"Committed {_committed_line(r)}")
         return
+    if is_skipped(decision):
+        c_note, c_undo = st.columns([4, 1])
+        c_note.caption("⏭ Skipped — nothing was committed.")
+        if c_undo.button("↩ Undo", key=f"unskip-{id(decision)}",
+                         help="Reopen this request"):
+            del st.session_state[f"skipped-{id(decision)}"]
+            st.rerun()
+        return
     render_understood(decision)
     # another card (or an earlier session) already committed this order:
     # say so and hide the confirm/split buttons, which would only be refused
@@ -244,12 +271,17 @@ def render_decision(decision, desk):
     if earlier:
         st.info(f"Already committed: {_committed_line(earlier if len(earlier) > 1 else earlier[0])}"
                 " — no further commit possible for this order.", icon="✅")
+        render_skip(decision, "Duplicate request: close it without committing")
         return
     for note in decision.warnings:
         st.warning(note, icon="⚠️")
     render_candidates(decision, desk)   # cards are the confirm buttons
     render_actions(decision, desk)
     render_split(decision, desk)
+    if not (decision.parsed.order_id and decision.candidates):
+        # nothing to confirm here (order not found, refused, a question...):
+        # close it in one tap instead of typing "skip" into the chat
+        render_skip(decision, "Close this request without committing")
     # the 4th option, available on every uncommitted item (incl. ASK items
     # with no candidates): an expander — st.chat_input/popover cannot hold
     # a working chat input, so the dialog uses a text form

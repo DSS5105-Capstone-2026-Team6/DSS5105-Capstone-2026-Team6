@@ -38,7 +38,7 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 
 ```
 ├── README.md                  # This file
-├── docs/                      # ALLOCATOR (algorithm) · EVALUATION (routing, faithfulness) · DEPLOYMENT
+├── docs/                      # ALLOCATOR (algorithm) · EVALUATION (routing, faithfulness) · FAILURE_ANALYSIS · DEPLOYMENT
 ├── data/                      # Track 2 dataset (shared simulator input)
 │   ├── orders.csv             # 120 orders
 │   ├── workshops.csv          # 8 workshop profile cards
@@ -91,9 +91,11 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 ├── eval/
 │   ├── run_eval.py              # batch runner: inbox -> JSONL of Decisions (+ latency)
 │   ├── score_run.py             # scores a run vs labels: behaviour / workshop / faithfulness
+│   ├── replay_offline.py        # re-scores recorded runs on the current code, no API key
+│   ├── shock.py                 # periodic shock calendar + shock-aware labels
 │   └── faithfulness.py          # every number in the reply must trace to the tool log
 ├── results/                   # committed eval artefacts (inbox_*/heldout_* runs + scores)
-├── tests/                     # pytest suite: one failure case per feature (267 tests)
+├── tests/                     # pytest suite: one failure case per feature (287 tests)
 └── pyproject.toml             # uv project, Python 3.11
 ```
 
@@ -165,7 +167,13 @@ record wins).
 
 ## Quick Start
 
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Copy `.env.example`
+to `.env` and fill in `DEEPSEEK_API_KEY` (the chat smoke test and the UI's
+dispatching need it) and `APP_PASSWORD` (the UI asks for it). The simulator,
+benchmarks and tests run without any key. Never commit `.env`.
+
 ```bash
+cp .env.example .env                        # then edit the values
 uv sync                                     # install deps (generates uv.lock)
 python harness/simulate.py                  # runs the three baselines (random / greedy_biggest / cheapest)
 python harness/eft_benchmark.py --seeds 10  # EFT benchmark, normal + shock, averaged over 10 seeds

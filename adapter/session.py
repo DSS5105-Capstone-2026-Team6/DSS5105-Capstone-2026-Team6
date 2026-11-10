@@ -90,7 +90,7 @@ class ChatSession:
         """One incoming message -> (reply, options). Confirmation is checked
         first; anything that is not an explicit commit goes to the agent."""
         from desk.confirmation import (looks_like_confirmation,
-                                       looks_like_confirm_all)
+                                       looks_like_confirm_all, looks_like_skip)
         from desk.desk import CANCEL_REPLY
         text = (text or "").strip()
         self.options_token = uuid4().hex
@@ -108,6 +108,14 @@ class ChatSession:
                      for _, r in records]
             lines += [f"NOT committed: {oid} ({why})" for oid, why in failures]
             return "\n".join(lines), []
+        if looks_like_skip(text):
+            # one tap closes the request: no LLM round, nothing committed
+            skipped, self.pending = self.pending, None
+            if skipped is not None:
+                self._drop(skipped)
+                return (f"Skipped {skipped.parsed.order_id} — nothing was "
+                        "committed."), []
+            return "Skipped — nothing was committed.", []
         if self.pending is None and looks_like_confirmation(text):
             # A yes with no open proposal means the process restarted (the
             # pending proposal lives in memory) or the proposal lapsed. Say
@@ -134,15 +142,25 @@ class ChatSession:
                     self._add(previous)
                 self.pending = decision if decision and decision.candidates else None
                 self.options = list(decision.options) if decision else []
+                self._skip_if_committed(decision)
                 self._add_commit_options()
             self._add(self.pending)
             return reply or "(no reply)", self.options
         decision = self.desk.handle_message(text, requester=requester or None)
         self.pending = decision if decision.candidates else None
         self.options = list(decision.options)
+        self._skip_if_committed(decision)
         self._add_commit_options()
         self._add(self.pending)
         return decision.explanation or "(no reply)", self.options
+
+    def _skip_if_committed(self, decision):
+        """An order already in the ledger can never commit again: keep the
+        desk's reply (it says so up front), but nothing stays pending and
+        the only button is skip."""
+        if decision is not None and getattr(decision, "already_committed", ""):
+            self.pending = None
+            self.options = ["skip"]
 
     def _add_commit_options(self):
         """An open proposal gets one-tap buttons: yes commits the desk's
