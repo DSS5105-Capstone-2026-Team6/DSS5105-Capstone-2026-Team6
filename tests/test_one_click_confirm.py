@@ -12,7 +12,7 @@ def test_stale_cards_refresh_then_confirm_in_one_click(tmp_path, monkeypatch):
     monkeypatch.setenv("DISPATCH_DB_PATH", str(tmp_path / "ledger.sqlite3"))
     from types import SimpleNamespace
     from desk.contracts import Behaviour, Decision, ParsedRequest
-    from app import ui_inbox
+    from app.tabs.desk import worklist as ui_inbox
     from desk.agent import DispatchAgent
     desk = DispatchDesk(audit_path=tmp_path / "audit.sqlite3",
                         agent=DispatchAgent(provider="deepseek", client=FakeClient()))

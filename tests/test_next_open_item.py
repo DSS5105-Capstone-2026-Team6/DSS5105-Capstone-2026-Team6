@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from app.ui_inbox import next_open_item
+from app.tabs.desk.worklist import next_open_item
 
 
 def _items(n):

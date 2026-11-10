@@ -1,27 +1,10 @@
 """
-ui_sidebar — everything the sidebar carries: the running chat log and the
-returned-batch recorder (update_workshop_performance's UI face).
+sidebar.batch_recorder — the returned-batch recorder:
+update_workshop_performance's UI face. Record a returned batch so the
+estimator learns, and see the learned-vs-profile state per workshop.
 """
 
 import streamlit as st
-
-from app.ui_shared import _sync_anchor, section
-
-
-def render_chat_log():
-    """Sidebar record of everything the desk has handled, newest at the
-    bottom. Read-only — actions live in the worklist."""
-    log = st.session_state.get("chat_log", [])
-    section("Chat log", "message")
-    st.caption(f"{len(log)} messages")
-    with st.container(height=420, border=False):
-        for turn in log:
-            with st.chat_message("user", avatar="🧑‍🔧"):
-                if turn.get("link"):
-                    _sync_anchor(turn["link"])
-                st.write(f"**{turn['speaker']}:** {turn['text']}")
-            with st.chat_message("assistant", avatar="🤖"):
-                st.text(turn["reply"] if turn["reply"] else "(no reply)")
 
 
 def render_performance_sidebar(desk):

@@ -1,10 +1,10 @@
 """
-ui_records — the 🧾 tab: the audit ledger view + demo reset.
+tabs.records — the Records tab: the audit ledger view + demo reset.
 """
 
 import streamlit as st
 
-from app.ui_shared import card
+from app.components.cards import card
 
 
 def render_recent(desk):

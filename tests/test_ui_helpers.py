@@ -1,7 +1,7 @@
-"""Unit tests for the presentational helpers in app/ui_shared.py — the
+"""Unit tests for the presentational helpers in app/components/cards.py — the
 animated queue bar rendered inside order cards."""
 
-from app.ui_shared import queue_bar_html
+from app.components.cards import queue_bar_html
 
 
 def test_bar_widths_proportional_to_scale():

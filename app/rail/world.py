@@ -1,5 +1,5 @@
 """
-ui_shockdock — the right-rail world panel: start date, stages mode, and a
+rail.world — the right-rail world panel: start date, stages mode, and a
 seeded shock trigger.
 
 Start date moves the shared world clock (desk/config.set_as_of): April 1st
@@ -18,7 +18,7 @@ import random
 import streamlit as st
 
 from desk import config
-from app.ui_shared import section
+from app.theme.icons import section
 
 
 def render_shockdock(desk):

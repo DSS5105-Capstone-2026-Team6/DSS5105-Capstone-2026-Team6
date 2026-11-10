@@ -5,7 +5,7 @@ from streamlit.testing.v1 import AppTest
 
 def _app():
     from types import SimpleNamespace
-    import app.ui_sidebar as sb
+    from app.sidebar import batch_recorder as sb
     import desk.tools as tools
     ws = {wid: SimpleNamespace(workshop_id=wid, name=n, capacity=100, lead_days=2)
           for wid, n in [("W1", "QuickStitch"), ("W2", "SteadyHands")]}

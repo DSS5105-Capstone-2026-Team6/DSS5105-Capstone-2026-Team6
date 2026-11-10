@@ -9,7 +9,7 @@ def _app(order_id, db):
     from desk.agent import DispatchAgent
     from desk.contracts import Behaviour, Decision, ParsedRequest
     from desk.desk import DispatchDesk
-    from app.ui_cards import render_decision
+    from app.tabs.desk.cards import render_decision
     if "desk" not in st.session_state:
         d = DispatchDesk(audit_path=db, agent=DispatchAgent(provider="deepseek", client=object()))
         st.session_state.desk = d

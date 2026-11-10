@@ -1,3 +1,12 @@
+"""
+tabs.desk.scenario — the scenario preview on the Desk tab: what changes if
+workshops close on Sundays, transport takes extra days, or capacity gets
+noisy (seeded).
+
+compare_sunday() is the pure computation (unit-tested); render_sunday_preview()
+is its expander UI above the inbox.
+"""
+
 from datetime import date, timedelta
 from desk.scenario import finish_production
 

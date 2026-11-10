@@ -1,14 +1,13 @@
 """
-ui_parser — the "LLM parser" inbox tab (app-side of desk/llm_parser.py).
+components.parser_view — the card view of one LLM parse (the app-side of
+desk/llm_parser.py, used by the "LLM parser" inbox tab).
 
-Distinct from the rule-based splitter behind Paste: one freeform message
-goes to the model, which returns structured JSON (orders / intent /
+Distinct from the rule-based splitter behind Group chat: one freeform
+message goes to the model, which returns structured JSON (orders / intent /
 constraints). render_parse_result() turns that JSON into a readable card
 view and checks every extracted value against the order register, so the
 reader sees at a glance what the model understood, what it left unknown,
 and where the message disagrees with the register (e.g. a new deadline).
-Dispatch on this tab is unlocked only after a successful parse of the
-exact text in the box.
 """
 
 import html
