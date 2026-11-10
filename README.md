@@ -132,6 +132,10 @@ Key milestones since Oct 30, in the order they landed:
   serialised writers, duplicates refused by the database itself
   ([docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md),
   [scripts/check_database.py](scripts/check_database.py)).
+- **Planning, validation and testing** (Xuehann · ADEdreambridge): sprint
+  planning and task coordination, acceptance checks on the shared-ledger
+  rollout and the UI changes, and the demo test passes that caught the
+  rough edges before they shipped.
 - **Latency hunt and operations** (kimi,
   [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46)):
   the flat 2,100-line app/ layer reorganised by surface; bot proposals
