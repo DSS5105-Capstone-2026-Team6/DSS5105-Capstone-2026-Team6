@@ -99,63 +99,47 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 
 ## Sprint 3 — realism, polish, and one shared ledger
 
-What shipped after Sprint 2, told as the problems we hit:
+Key milestones since Oct 30, in the order they landed:
 
-- **A more honest world.** The desk gained a switchable world clock (Apr-1
-  demo ↔ Jan-1 full replay), stages mode, and a seeded shock trigger — close
-  a workshop and eligibility, ranking and risk flags all react
-  ([desk/config.py](desk/config.py), [eval/shock.py](eval/shock.py)). The
-  scenario preview prices Sunday closures, extra transport days and seeded
-  capacity noise against the baseline ranking
-  ([app/tabs/desk/scenario.py](app/tabs/desk/scenario.py),
-  [#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36)).
-- **Full-scale timeline evaluation.** All 120 F-series requests replayed
-  against the world clock with periodic shock windows and shock-aware labels
-  ([notebooks/full120_timeline_shock.ipynb](notebooks/full120_timeline_shock.ipynb));
-  held-out behaviour/faithfulness scoring stayed the gate
-  ([docs/EVALUATION.md](docs/EVALUATION.md)).
-- **The UI grew up.** Cards became the confirm buttons, the page scrolls to
-  the next open order after each commit, already-committed orders mark
-  themselves, the LLM parser became an inbox tab with field-level register
-  checks, and learned capacity flows through every estimate
-  ([#21](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/21)–[#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36)).
-  Then the 2,100-line flat app/ layer was reorganised by surface (theme /
-  components / tabs / rail / sidebar), zero behaviour change
-  ([#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)).
-- **Two front-ends, two ledgers.** The hosted web app and the Telegram bot
-  each kept their own SQLite file — a commit on one was invisible to the
-  other. Both can now share one Supabase PostgreSQL ledger
-  ([docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md),
+- **Splits and review fixes** (Claude · SishuoZhou,
+  [#20](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/20)):
+  orders no single workshop can finish get ranked multi-workshop split
+  options ([docs/SPLITS.md](docs/SPLITS.md)); the held-out review's three
+  desk problems (lookup filters, recommendation consistency) fixed.
+- **The UI grew up** (Zhangruikai): hybrid became the default objective,
+  candidate cards got live queue bars and entrance animations, the dashboard
+  gained queue timeline / allocator lens / capacity drift views, and the
+  world clock made the Apr-1 demo ↔ Jan-1 replay switchable with a seeded
+  shock trigger ([desk/config.py](desk/config.py)).
+- **Full-scale timeline evaluation** (Zhangruikai): all 120 F-series
+  requests replayed on the world clock with periodic shock windows and
+  shock-aware labels
+  ([notebooks/full120_timeline_shock.ipynb](notebooks/full120_timeline_shock.ipynb),
+  [eval/shock.py](eval/shock.py)).
+- **One-tap dispatching** (Claude · SishuoZhou,
+  [#21](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/21)–[#35](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/35)):
+  cards became the confirm buttons, the page scrolls to the next open order
+  after each commit, already-committed orders mark themselves, and the LLM
+  parser became an inbox tab with field-level register checks.
+- **A more honest world** (beibei323,
+  [#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36)):
+  the scenario preview prices Sunday closures, extra transport days and
+  seeded capacity noise against the baseline ranking
+  ([app/tabs/desk/scenario.py](app/tabs/desk/scenario.py)).
+- **One shared ledger** (chikD666,
   [#38](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/38)):
-  advisory-lock serialised writers, duplicate orders refused by the database
-  itself, plus a read-only [connectivity check](scripts/check_database.py).
-- **The bot's "yes" didn't commit.** Pending proposals lived in process
-  memory; a free-tier restart (or an answer-without-rerank follow-up) dropped
-  them, and a lone yes fell into a fresh conversation. The adapter now
-  answers yes-with-nothing-pending deterministically, keeps proposals alive
-  across answer-only follow-ups, tracks them per order, and adds one-tap
-  commit buttons plus a `/queue` chart photo
-  ([#39](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/39)).
-- **Every click felt frozen.** Sharing a cross-border database made each
-  click pay several connection handshakes, and the UI re-read the whole
-  ledger once per card. Three stacked fixes: pooled connections
-  ([#40](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/40)),
-  a version-gated ledger cache (dozens of reads per rerun → one cheap
-  version check,
-  [#41](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/41)),
-  and pipelined transactions
-  ([#43](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/43)).
-  The all-"Request failed" dispatch wave was a hard-coded 30 s LLM timeout
-  with no retries — now 120 s with retries
-  ([#42](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/42)).
-- **Twenty cards, twenty clicks.** Batch confirm: a Confirm-all button in
-  the web worklist and "yes all" in the bot — every order still passes the
-  full per-order validation chain
-  ([#44](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/44)).
-- **Debugging shouldn't touch production data.** The web app starts in a
-  local sandbox; the Records tab carries Reset & connect to shared DB for
-  when the two front-ends should share state
-  ([#45](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/45)).
+  web and bot can share one Supabase PostgreSQL ledger — advisory-lock
+  serialised writers, duplicates refused by the database itself
+  ([docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md),
+  [scripts/check_database.py](scripts/check_database.py)).
+- **Latency hunt and operations** (kimi,
+  [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46)):
+  the flat 2,100-line app/ layer reorganised by surface; bot proposals
+  survive restarts and confirm via one-tap buttons or "yes all", with
+  `/queue` chart photos; pooled connections, a version-gated ledger cache,
+  pipelined transactions and a longer LLM timeout fixed the cross-border
+  lag; batch confirm for the web worklist; and a local sandbox by default
+  with Reset & connect to shared DB on the Records tab.
 
 ## Safety and deployment
 
