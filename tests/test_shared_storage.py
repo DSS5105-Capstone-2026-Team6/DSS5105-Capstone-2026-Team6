@@ -27,10 +27,11 @@ def test_concurrent_returned_batches_preserve_all_observations(tmp_path):
 
 
 def test_cloud_connection_failure_does_not_disclose_password(monkeypatch):
-    import psycopg
+    psycopg = pytest.importorskip("psycopg")
     monkeypatch.setattr('desk.storage.database_setting', lambda _: '')
     db = Database(url='postgresql://user:private_password@host/db')
-    with patch('psycopg.connect', side_effect=psycopg.OperationalError('private_password')):
+    with patch('psycopg_pool.ConnectionPool.open',
+               side_effect=psycopg.OperationalError('private_password')):
         with pytest.raises(RuntimeError) as error:
             with db.connect():
                 pass
@@ -38,12 +39,28 @@ def test_cloud_connection_failure_does_not_disclose_password(monkeypatch):
 
 
 def test_no_fallback_to_local_storage_when_cloud_is_unavailable(tmp_path, monkeypatch):
-    import psycopg
+    psycopg = pytest.importorskip("psycopg")
     monkeypatch.setattr('desk.storage.database_setting', lambda _: '')
     monkeypatch.setenv('DISPATCH_DB_PATH', str(tmp_path / 'must_not_exist.sqlite3'))
     db = Database(url='postgresql://user@host/db')
-    with patch('psycopg.connect', side_effect=psycopg.OperationalError()):
+    with patch('psycopg_pool.ConnectionPool.open',
+               side_effect=psycopg.OperationalError()):
         with pytest.raises(RuntimeError):
             with db.connect():
                 pass
     assert not (tmp_path / 'must_not_exist.sqlite3').exists()
+
+
+def test_pool_created_once_and_reused(monkeypatch):
+    """The whole point: the pool opens once per Database, not once per op."""
+    psycopg = pytest.importorskip("psycopg")
+    from unittest.mock import MagicMock
+    monkeypatch.setattr('desk.storage.database_setting', lambda _: '')
+    db = Database(url='postgresql://user@host/db')
+    pool = MagicMock()
+    pool.open.return_value = None
+    with patch('psycopg_pool.ConnectionPool', return_value=pool) as ctor:
+        db._pg_pool()
+        db._pg_pool()
+    assert ctor.call_count == 1
+    assert pool.open.call_count == 1

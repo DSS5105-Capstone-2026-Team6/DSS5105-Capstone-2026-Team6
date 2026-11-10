@@ -50,6 +50,7 @@ class Database:
         # Explicit paths keep offline tests/local experiments isolated.
         self._url = (database_url() if path is None else "") if url is None else url
         self.is_postgres = bool(self._url)
+        self._pool = None
         if self.is_postgres:
             if not self._url.startswith(("postgresql://", "postgres://")):
                 raise ValueError("DISPATCH_DATABASE_URL must be a PostgreSQL connection URI.")
@@ -63,26 +64,45 @@ class Database:
                              or RESULTS_DIR / "audit_log.sqlite3")
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _pg_pool(self):
+        """One connection pool per Database, created on first use. Reusing
+        pooled connections skips the cross-border TCP+TLS+auth handshake that
+        previously cost ~1s on EVERY operation (each click rebuilt one)."""
+        if self._pool is not None:
+            return self._pool
+        try:
+            from psycopg_pool import ConnectionPool
+        except ImportError:
+            raise RuntimeError("Install psycopg[binary,pool] to use the shared database.") from None
+        kwargs = {"password": self._password} if self._password else {}
+        pool = ConnectionPool(
+            self._url, min_size=1, max_size=4, open=False,
+            kwargs={"connect_timeout": 10, "sslmode": "require",
+                    "prepare_threshold": None, **kwargs})
+        try:
+            pool.open(wait=True, timeout=10)
+        except Exception:
+            raise RuntimeError(
+                "Cannot connect to the shared database. Check the connection URI, "
+                "database password, network and Supabase project status.") from None
+        self._pool = pool
+        return pool
+
     @contextmanager
     def connect(self):
         if self.is_postgres:
+            pool = self._pg_pool()
             try:
-                import psycopg
-            except ImportError:
-                raise RuntimeError("Install psycopg[binary] to use the shared database.") from None
-            try:
-                kwargs = {"password": self._password} if self._password else {}
-                connection = psycopg.connect(
-                    self._url, connect_timeout=10, sslmode="require",
-                    prepare_threshold=None, **kwargs)
-            except psycopg.Error:
+                checkout = pool.connection(timeout=10)
+            except Exception:
                 raise RuntimeError(
-                    "Cannot connect to the shared database. Check the connection URI, "
-                    "database password, network and Supabase project status.") from None
-            with connection:
-                # SET LOCAL belongs to this transaction, including on poolers.
-                connection.execute("SET LOCAL search_path TO " + self.schema)
-                yield _PostgresConnection(connection)
+                    "Cannot reach the shared database right now. "
+                    "It may be paused (Supabase free tier) or the network dropped.") from None
+            with checkout as connection:
+                with connection:
+                    # SET LOCAL belongs to this transaction, including on poolers.
+                    connection.execute("SET LOCAL search_path TO " + self.schema)
+                    yield _PostgresConnection(connection)
         else:
             connection = sqlite3.connect(self.path, timeout=15)
             try:
