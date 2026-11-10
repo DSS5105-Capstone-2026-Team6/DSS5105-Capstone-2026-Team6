@@ -14,24 +14,22 @@ Guards from the roadmap:
   even the first batch gets no free pass)
 - observation history is capped at KEEP_MOST_RECENT
 
-Storage lives in the same SQLite file as the allocation ledger
-(D results/audit_log.sqlite3 or DISPATCH_DB_PATH), so learned performance
-survives restarts and is shared by every desk on the host.
+Storage uses the same backend as the allocation ledger: local SQLite or a
+shared PostgreSQL database configured through DISPATCH_DATABASE_URL.
 """
 
 import json
-import os
-import sqlite3
-from contextlib import closing
 from datetime import date
 from pathlib import Path
 
 try:
     from desk.config import RESULTS_DIR
+    from desk.storage import Database
 except ImportError:  # run directly as a script
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from desk.config import RESULTS_DIR
+    from desk.storage import Database
 
 MIN_SAMPLES = 3        # below this, estimate_delivery stays on the profile card
 MAX_STEP = 0.2         # bounded update: ±20% capacity move per observation
@@ -42,10 +40,12 @@ RATIO_CLAMP = (0.5, 1.5)  # effective capacity never leaves this band
 
 class PerformanceStore:
     def __init__(self, path=None):
-        self.path = Path(path or os.environ.get("DISPATCH_DB_PATH")
-                         or RESULTS_DIR / "audit_log.sqlite3")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
+        self.database = Database(path)
+        self.path = self.database.path
+        if self.database.is_postgres:
+            self.database.require_tables('performance')
+            return
+        with self.database.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS performance "
                        "(workshop_id TEXT PRIMARY KEY, samples TEXT NOT NULL, "
                        " ratio REAL, updated_at TEXT NOT NULL)")
@@ -58,11 +58,17 @@ class PerformanceStore:
         and the resulting learned state (or why it is not active yet).
         `profile` (the WorkshopStore record) makes the delay->capacity
         conversion proportional to the batch's work content."""
+        with self.database.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return self._observe(db, workshop_id, pieces, promised_date, actual_date, profile)
+
+    def _observe(self, db, workshop_id, pieces, promised_date, actual_date, profile):
         promised = date.fromisoformat(str(promised_date))
         actual = date.fromisoformat(str(actual_date))
         delay = (actual - promised).days
         pieces = int(pieces)
-        samples = self._samples(workshop_id)
+        row = self._row(workshop_id, db=db)
+        samples = row[0] if row else []
         samples.append({"promised": promised.isoformat(),
                         "actual": actual.isoformat(),
                         "pieces": pieces, "delay": delay})
@@ -75,7 +81,7 @@ class PerformanceStore:
         work_days = (pieces / profile.capacity * (1 + 0.5 * profile.defect_rate)
                      if profile is not None else 10.0)
         observed = self._observed_ratio(delay, work_days)
-        ratio = self._ratio(workshop_id)
+        ratio = row[1] if row else None
         if ratio is None:
             ratio = 1.0
         step = max(-MAX_STEP, min(MAX_STEP, observed - ratio))
@@ -83,14 +89,13 @@ class PerformanceStore:
         ratio = round(ratio + step, 4)
         ratio = max(RATIO_CLAMP[0], min(RATIO_CLAMP[1], ratio))
 
-        with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
-            db.execute("INSERT INTO performance VALUES (?, ?, ?, ?) "
-                       "ON CONFLICT(workshop_id) DO UPDATE SET "
-                       "samples=excluded.samples, ratio=excluded.ratio, "
-                       "updated_at=excluded.updated_at",
-                       (workshop_id, json.dumps(samples), ratio,
-                        date.today().isoformat()))
-        state = self.learned(workshop_id, profile=profile) or {}
+        db.execute("INSERT INTO performance VALUES (?, ?, ?, ?) "
+                   "ON CONFLICT(workshop_id) DO UPDATE SET "
+                   "samples=excluded.samples, ratio=excluded.ratio, "
+                   "updated_at=excluded.updated_at",
+                   (workshop_id, json.dumps(samples), ratio,
+                    date.today().isoformat()))
+        state = self.learned(workshop_id, profile=profile, _db=db) or {}
         return {"workshop_id": workshop_id, "delay_days": delay,
                 "observations": len(samples),
                 "active": len(samples) >= MIN_SAMPLES, **state}
@@ -98,17 +103,18 @@ class PerformanceStore:
     def clear(self):
         """Drop every learned observation (demo reset wipes these too, so a
         fresh world starts back on the profile cards)."""
-        with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
+        with self.database.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             db.execute("DELETE FROM performance")
 
     # ---------------- read ----------------
 
-    def learned(self, workshop_id, profile=None):
+    def learned(self, workshop_id, profile=None, *, _db=None):
         """The learned estimate for one workshop, or None while fewer than
         MIN_SAMPLES batches have been observed (profile card fallback).
         profile: the WorkshopStore record, used to convert the capacity
         ratio into pieces/day."""
-        row = self._row(workshop_id)
+        row = self._row(workshop_id, db=_db)
         if row is None:
             return None
         samples, ratio = row
@@ -129,10 +135,12 @@ class PerformanceStore:
 
     # ---------------- internals ----------------
 
-    def _row(self, workshop_id):
-        with closing(sqlite3.connect(self.path, timeout=15)) as db:
-            row = db.execute("SELECT samples, ratio FROM performance "
-                             "WHERE workshop_id=?", (workshop_id,)).fetchone()
+    def _row(self, workshop_id, db=None):
+        if db is None:
+            with self.database.connect() as connection:
+                return self._row(workshop_id, db=connection)
+        row = db.execute("SELECT samples, ratio FROM performance "
+                         "WHERE workshop_id=?", (workshop_id,)).fetchone()
         if row is None:
             return None
         return json.loads(row[0]), row[1]

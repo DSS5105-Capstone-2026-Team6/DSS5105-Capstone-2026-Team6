@@ -5,6 +5,7 @@ description = "Track 2: The Quick-Response Subcontracting Desk — a dispatcher 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "psycopg[binary]>=3.2",
     "anthropic>=0.40",
     "openai>=1.0",
     "streamlit>=1.30",
