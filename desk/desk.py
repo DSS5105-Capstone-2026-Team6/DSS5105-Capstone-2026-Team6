@@ -309,6 +309,29 @@ class DispatchDesk:
         except StaleAllocation:
             raise ProposalChanged(self.refresh(decision)) from None
 
+    def confirm_all(self, decisions, committed_by="dispatcher"):
+        """Commit every given proposal's chosen workshop, one audited
+        transaction per order — per-order validation (version, eligibility,
+        duplicates) is fully intact, this only saves the human N-1 clicks.
+
+        A commit bumps the ledger version, so the NEXT proposal is stale by
+        construction: on ProposalChanged we confirm the refreshed decision it
+        carries (same order, live numbers). Returns (results, failures) —
+        results are (decision, record) pairs, failures are (order_id, reason)
+        and never stop the batch."""
+        results, failures = [], []
+        for d in decisions:
+            oid = d.parsed.order_id or "?"
+            try:
+                try:
+                    results.append((d, self.confirm(d, committed_by=committed_by)))
+                except ProposalChanged as exc:
+                    results.append((d, self.confirm(exc.decision,
+                                                    committed_by=committed_by)))
+            except (ProposalChanged, ValueError) as exc:
+                failures.append((oid, str(exc)))
+        return results, failures
+
     def confirm_split(self, decision, index=0, committed_by="dispatcher"):
         """The human confirmed split option `index`: commit every part (each
         moves its own workshop's queue) in one transaction and return the
