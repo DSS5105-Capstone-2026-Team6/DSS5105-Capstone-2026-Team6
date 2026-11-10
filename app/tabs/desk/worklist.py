@@ -13,6 +13,7 @@ from desk.tools import flag_at_risk
 from app.theme.tokens import BADGE, NEEDS_HUMAN
 from app.theme.motion import _sync_anchor, scroll_to_anchor
 from app.tabs.desk.cards import render_decision
+from app.components.ledger_cache import ledger_records
 
 
 def _row_label(i, item):
@@ -68,7 +69,8 @@ def render_worklist(desk, items):
 
     # items per case still waiting on the dispatcher (committed ones drop out)
     # an order committed on another card (or earlier) counts as done too
-    done_orders = {r.order_id for r in desk.audit.load_all()}
+    records = ledger_records(desk)   # version-gated: one round-trip per rerun
+    done_orders = {r.order_id for r in records}
 
     def is_done(d):
         return (f"committed-{id(d)}" in st.session_state
@@ -98,7 +100,7 @@ def render_worklist(desk, items):
             with k2, st.container(key="kpi_confirm"):
                 st.metric("To confirm", to_confirm)
             with k3, st.container(key="kpi_committed"):
-                st.metric("Committed", len({r.order_id for r in desk.audit.load_all()}))
+                st.metric("Committed", len({r.order_id for r in records}))
             with k4, st.container(key="kpi_queue"):
                 st.metric("Total queue (days)", round(sum(desk.state.queues.values()), 1))
             with k5, st.container(key="kpi_risk"):

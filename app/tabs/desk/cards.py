@@ -16,6 +16,7 @@ from desk.contracts import Behaviour
 from app.theme.tokens import BADGE
 from app.theme.icons import icon, section
 from app.components.cards import card, queue_bar_html
+from app.components.ledger_cache import ledger_records
 
 
 def render_understood(decision):
@@ -178,12 +179,13 @@ def render_split(decision, desk):
             st.rerun()
 
 
-def ledger_records(desk, order_id):
+def ledger_records_for(desk, order_id):
     """The audit records already committed for order_id (one, or every
-    part of a split); [] when the order is still open."""
+    part of a split); [] when the order is still open. Reads go through the
+    version-gated cache — with a long worklist this runs once per card."""
     if not order_id:
         return []
-    return [r for r in desk.audit.load_all() if r.order_id == order_id]
+    return [r for r in ledger_records(desk) if r.order_id == order_id]
 
 
 def _committed_line(records):
@@ -238,7 +240,7 @@ def render_decision(decision, desk):
     render_understood(decision)
     # another card (or an earlier session) already committed this order:
     # say so and hide the confirm/split buttons, which would only be refused
-    earlier = ledger_records(desk, decision.parsed.order_id)
+    earlier = ledger_records_for(desk, decision.parsed.order_id)
     if earlier:
         st.info(f"Already committed: {_committed_line(earlier if len(earlier) > 1 else earlier[0])}"
                 " — no further commit possible for this order.", icon="✅")
