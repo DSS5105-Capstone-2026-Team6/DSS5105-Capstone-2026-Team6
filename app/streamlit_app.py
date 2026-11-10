@@ -330,9 +330,6 @@ def check_password():
         st.error("Wrong password.")
     return False
 
-@st.dialog("Scenario preview · Production and transport", width="large")
-def open_scenario_preview(desk):
-    render_sunday_preview(desk)
 
 def main():
     st.set_page_config(page_title="Dispatch Desk", layout="wide",
@@ -362,8 +359,7 @@ def main():
         tab_main, tab_dash, tab_recent = st.tabs(
             ["Desk", "Dashboard", "Records"])
         with tab_main:
-            if st.button("Open scenario preview", key="open_scenario_preview"):
-                open_scenario_preview(desk)
+            render_sunday_preview(desk)
             render_inbox(desk)
         install_scroll_sync()
         with tab_dash:

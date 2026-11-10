@@ -56,7 +56,7 @@ def est_finish_days(batch, w, queues, perf=None):
 
 def _candidate_row(w, batch, queues, perf=None):
     est = est_finish_days(batch, w, queues, perf)
-    finish = batch["sent_date"] + timedelta(days=round(est))
+    finish = _chat_today() + timedelta(days=round(est))
     due = batch["due_date"]
     pieces = batch["pieces"]
     slack = (due - batch["sent_date"]).days
@@ -110,7 +110,7 @@ def order_rows(rows, objective="lateness", late_tol=0.5):
 
 def rank_candidates(order_id=None, objective="hybrid", late_tol=0.5,
                     excluded=None, *, orders=None, store=None, queues=None,
-                    perf=None, as_of=None):
+                    perf=None):
     """Rank every eligible workshop for an order. Returns candidates sorted
     best-first plus the chosen id; an error dict for a bad order/objective;
     empty candidates when no workshop can take it (never a silent pick).
@@ -133,7 +133,7 @@ def rank_candidates(order_id=None, objective="hybrid", late_tol=0.5,
         excluded_ids.add(wid)
 
     batch = {"category": rec["category"], "pieces": int(rec["pieces"]),
-             "sent_date": as_of if as_of is not None else _chat_today(),
+             "sent_date": _chat_today(),
              "due_date": date.fromisoformat(rec["due_date"])}
 
     if rec.get("dispatch_stage"):
