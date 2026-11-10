@@ -239,3 +239,62 @@ def test_queue_chart_png_handles_empty():
     from adapter.charts import queue_chart_png
     png = queue_chart_png({}, {})
     assert png.read(8) == b"\x89PNG\r\n\x1a\n"
+
+
+# ---------------- batch confirm ("yes all") ----------------
+
+def _second_decision():
+    return Decision(request_id="TG2", behaviour=Behaviour.ALLOCATE,
+                    parsed=ParsedRequest(order_id="ORD-045", pieces=600,
+                                         category="TOPS"),
+                    candidates=[W2], chosen=W2,
+                    explanation="SteadyHands is free. Reply yes to commit.")
+
+
+class TwoOrderDesk(FakeDesk):
+    """First request proposes ORD-073, a different order follows up and
+    proposes ORD-045 (the ORD-073 proposal stays open)."""
+    confirm_all = DispatchDesk.confirm_all
+
+    def handle_message(self, text, requester=None):
+        self.messages.append((text, requester))
+        return _alloc_decision() if "073" in text else _second_decision()
+
+    def follow_up(self, text, decision, requester="group"):
+        # a new order line is not a follow-up to the pending proposal
+        if "045" in text:
+            return _second_decision(), None, _second_decision().explanation
+        return DispatchDesk.follow_up(self, text, decision, requester)
+
+
+def test_yes_all_commits_every_open_proposal():
+    session = ChatSession(lambda: TwoOrderDesk())
+    fake = session.desk
+    session.handle("ORD-073 please", "Ravi")
+    session.handle("ORD-045 please", "Priya")
+    assert len(session.pending_all) == 2
+    reply, _ = session.handle("yes all", "Ravi")
+    assert "ORD-073" in reply and "ORD-045" in reply
+    assert sorted(fake.commits) == [("W2", "Ravi"), ("W6", "Ravi")]
+    assert session.pending_all == [] and session.pending is None
+
+
+def test_yes_all_without_pending_gets_a_plain_answer_no_llm():
+    # failure case: nothing open -> deterministic reply, agent never called
+    session, fake = make_session(FakeDesk(decision=None))
+    reply, _ = session.handle("全部确认", "Ravi")
+    assert "Nothing is awaiting confirmation" in reply
+    assert fake.messages == []
+
+
+def test_single_yes_still_commits_only_the_latest():
+    # the per-order flow is unchanged: yes commits the active proposal,
+    # the other open one stays for later
+    session = ChatSession(lambda: TwoOrderDesk())
+    fake = session.desk
+    session.handle("ORD-073 please", "Ravi")
+    session.handle("ORD-045 please", "Priya")
+    reply, _ = session.handle("yes", "Priya")
+    assert "ORD-045" in reply
+    assert fake.commits == [("W2", "Priya")]
+    assert [d.parsed.order_id for d in session.pending_all] == ["ORD-073"]

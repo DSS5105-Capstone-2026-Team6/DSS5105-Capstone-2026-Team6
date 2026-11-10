@@ -7,6 +7,10 @@ from desk.contracts import canonical_order_id
 YES = {'yes', 'y', 'yep', 'yes please', 'ok', 'okay', 'sure', 'commit', 'confirm',
        'confirmed', 'go ahead', 'please do', 'do it', 'sounds good', '确认', '好的',
        '行', '可以', '就这样', '确认吧', '好', '就这么办', '没问题'}
+# Batch commit: every open proposal's chosen workshop, one audited
+# transaction each (adapters call desk.confirm_all, never the model).
+YES_ALL = {'yes all', 'confirm all', 'commit all', '全部确认', '都确认',
+           '全部提交', '都提交', '全部通过'}
 CANCEL = {'no', 'cancel', 'stop', 'wait', 'hold on', 'not yet', '取消', '先等等',
           '等等', '先别下单', '暂停', '算了'}
 # These messages must be interpreted as questions/changes, never a confirmation.
@@ -31,6 +35,10 @@ def normalise(text):
 
 def looks_like_confirmation(text):
     return normalise(text) in YES
+
+
+def looks_like_confirm_all(text):
+    return normalise(text) in YES_ALL
 
 
 def commit_intent_workshop(text, decision):

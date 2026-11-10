@@ -139,6 +139,28 @@ def render_worklist(desk, items):
         if not shown:
             st.info("Nothing in this case.")
 
+        # batch confirm: every open ALLOCATE card, one audited transaction
+        # each — the human spends one click instead of N
+        open_alloc = [x["decision"] for x in shown
+                      if picked is Behaviour.ALLOCATE
+                      and x["decision"].candidates and x["decision"].chosen]
+        if len(open_alloc) > 1:
+            if st.button(f"✅ Confirm all open ({len(open_alloc)})",
+                         key="confirm_all", type="primary",
+                         help="Commit the recommended workshop for every open "
+                              "ALLOCATE card; per-order checks still apply"):
+                from app.streamlit_app import _log_exchange
+                results, failures = desk.confirm_all(
+                    open_alloc, committed_by="dispatcher")
+                for d, record in results:
+                    st.session_state[f"committed-{id(d)}"] = record
+                    _log_exchange("dispatcher", f"(confirm all) {d.parsed.order_id}",
+                                  f"Committed {record.record_id} — "
+                                  f"{record.order_id} → {record.workshop_id}.")
+                for oid, why in failures:
+                    st.warning(f"Not committed: {oid} — {why}", icon="⚠️")
+                st.rerun()
+
         # pending items expanded (read before you confirm), committed items
         # collapse to their one-line record
         n = 0

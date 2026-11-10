@@ -68,17 +68,46 @@ class ChatSession:
     def __init__(self, make_desk):
         self.desk = make_desk()
         self.pending = None   # last decision with candidates, awaiting confirm
+        self.pending_all = []   # every open proposal, for "yes all"
         self.options_token = uuid4().hex
         self.options = []
+
+    def _add(self, decision):
+        """(Re)list a proposal in pending_all. Proposals without an order id
+        can never commit, so they stay out."""
+        if decision is None or not decision.candidates or not decision.parsed.order_id:
+            return
+        self.pending_all = [d for d in self.pending_all
+                            if d.parsed.order_id != decision.parsed.order_id]
+        self.pending_all.append(decision)
+
+    def _drop(self, decision):
+        oid = decision.parsed.order_id if decision else None
+        self.pending_all = [d for d in self.pending_all
+                            if d.parsed.order_id != oid]
 
     def handle(self, text, requester=""):
         """One incoming message -> (reply, options). Confirmation is checked
         first; anything that is not an explicit commit goes to the agent."""
-        from desk.confirmation import looks_like_confirmation
+        from desk.confirmation import (looks_like_confirmation,
+                                       looks_like_confirm_all)
         from desk.desk import CANCEL_REPLY
         text = (text or "").strip()
         self.options_token = uuid4().hex
         self.options = []
+        if looks_like_confirm_all(text):
+            if not self.pending_all:
+                return ("Nothing is awaiting confirmation right now — a bot "
+                        "restart clears pending proposals. Send the order "
+                        "lines again and I'll re-rank them."), []
+            records, failures = self.desk.confirm_all(
+                list(self.pending_all), committed_by=requester or "group")
+            self.pending = None
+            self.pending_all = []
+            lines = [f"Committed {r.record_id} — {r.order_id} → {r.workshop_id}."
+                     for _, r in records]
+            lines += [f"NOT committed: {oid} ({why})" for oid, why in failures]
+            return "\n".join(lines), []
         if self.pending is None and looks_like_confirmation(text):
             # A yes with no open proposal means the process restarted (the
             # pending proposal lives in memory) or the proposal lapsed. Say
@@ -89,6 +118,8 @@ class ChatSession:
         if self.pending is not None:
             previous, self.pending = self.pending, None
             decision, record, reply = self.desk.follow_up(text, previous, requester or "group")
+            if record is not None or reply == CANCEL_REPLY:
+                self._drop(previous)          # committed or cancelled
             if record is None and decision is None and reply != CANCEL_REPLY:
                 # The follow-up was answered without re-ranking (no commit,
                 # no cancel): keep the proposal open so a later "yes" still
@@ -97,14 +128,20 @@ class ChatSession:
                 reply = (reply or "") + ("\n(The earlier proposal is still "
                                          "open — reply yes to commit it.)")
             else:
+                if (decision is not None and decision.candidates
+                        and decision.parsed.order_id != previous.parsed.order_id):
+                    # a different order arrived: the old proposal stays open
+                    self._add(previous)
                 self.pending = decision if decision and decision.candidates else None
                 self.options = list(decision.options) if decision else []
                 self._add_commit_options()
+            self._add(self.pending)
             return reply or "(no reply)", self.options
         decision = self.desk.handle_message(text, requester=requester or None)
         self.pending = decision if decision.candidates else None
         self.options = list(decision.options)
         self._add_commit_options()
+        self._add(self.pending)
         return decision.explanation or "(no reply)", self.options
 
     def _add_commit_options(self):
