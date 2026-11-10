@@ -122,9 +122,10 @@ class DispatchAgent:
         self.desk = None   # set by desk.DispatchDesk; tools then share its state
         self.tool_log = []   # [{"tool", "arguments", "result"}] per call
         self.history = []    # the conversation so far (excl. system prompt)
+        self.budget = None   # desk may inject a session-local CallBudget
 
     def _completion(self, **kwargs):
-        CallBudget().reserve()
+        (self.budget or CallBudget()).reserve()
         try:
             token_param = "max_completion_tokens" if self.provider == "openai" else "max_tokens"
             kwargs[token_param] = int(os.environ.get("MAX_OUTPUT_TOKENS", "2048"))
