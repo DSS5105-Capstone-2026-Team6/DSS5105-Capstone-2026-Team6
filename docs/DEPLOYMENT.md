@@ -1,5 +1,14 @@
 # Dispatch safety update
 
+## Optional shared PostgreSQL ledger
+
+The shared-database extension is documented in [SHARED_DATABASE.md](SHARED_DATABASE.md).
+With `DISPATCH_DATABASE_URL` configured, allocations, learned performance and
+API usage use PostgreSQL instead of the host-local SQLite file described below.
+Both Streamlit and Telegram must run the updated code and use the same database
+settings. Existing SQLite records are not automatically imported into PostgreSQL.
+The two live deployments have not yet been verified together.
+
 ## Apply and validate
 
 This change is based on main commit `ac3b96d78c26cb7c07a2f9346dd2bc9c393ae58a`.

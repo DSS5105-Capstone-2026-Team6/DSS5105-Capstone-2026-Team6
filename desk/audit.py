@@ -1,11 +1,10 @@
-"""Transactional allocation ledger shared by every desk in this deployment.
+"""Transactional allocation ledger shared by every desk using this database.
 
 Existing JSONL ledgers are imported once. SQLite is authoritative afterwards;
 set DISPATCH_DB_PATH to a durable volume for persistence across redeployments.
 """
 import json
 import os
-import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -14,6 +13,7 @@ from pathlib import Path
 from . import config
 from .config import DEFAULT_AUDIT_PATH
 from .contracts import AllocationRecord, allocation_from_dict, to_dict
+from .storage import Database
 
 DEFAULT_PATH = DEFAULT_AUDIT_PATH
 
@@ -26,9 +26,23 @@ class AuditLog:
     def __init__(self, path=DEFAULT_PATH, *, initial_queues=None):
         legacy = Path(path)
         configured = os.environ.get('DISPATCH_DB_PATH') if legacy == DEFAULT_PATH else None
-        self.path = Path(configured) if configured else legacy.with_suffix('.sqlite3')
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        local_path = Path(configured) if configured else legacy.with_suffix('.sqlite3')
+        self.database = Database(None if legacy == DEFAULT_PATH else local_path)
+        self.path = self.database.path
         self.initial_queues = dict(initial_queues or {})
+        if self.database.is_postgres:
+            self.database.require_tables('allocations', 'ledger_meta', 'allocation_archive')
+            with self.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                db.execute("INSERT INTO ledger_meta (key, value) VALUES ('version', ?) "
+                           "ON CONFLICT (key) DO NOTHING", (uuid.uuid4().hex,))
+                # Both channels must reconstruct queues from the same baseline.
+                baseline = db.execute("SELECT value FROM ledger_meta WHERE key='initial_queues'").fetchone()
+                if baseline and self.initial_queues != json.loads(baseline[0]):
+                    raise ValueError('Shared queue baseline differs. Use the same workshop data in web and bot.')
+                db.execute("INSERT INTO ledger_meta (key, value) VALUES ('initial_queues', ?) "
+                           "ON CONFLICT (key) DO NOTHING", (json.dumps(self.initial_queues, sort_keys=True),))
+            return
         with self.connection() as db:
             db.executescript('''
                 CREATE TABLE IF NOT EXISTS allocations (
@@ -63,13 +77,8 @@ class AuditLog:
 
     @contextmanager
     def connection(self):
-        db = sqlite3.connect(self.path, timeout=15)
-        try:
-            with db:
-                db.execute('PRAGMA busy_timeout=15000')
-                yield db
-        finally:
-            db.close()
+        with self.database.connect() as db:
+            yield db
 
     @staticmethod
     def _version(db):
@@ -123,7 +132,10 @@ class AuditLog:
                 decision_id, evidence):
         before = self._queues(db)[workshop.workshop_id]
         added = pieces / workshop.capacity * (1 + .5 * workshop.defect_rate)
-        seq = db.execute("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='allocations'), 0) + 1").fetchone()[0]
+        if self.database.is_postgres:
+            seq = db.execute("SELECT nextval(pg_get_serial_sequence('allocations', 'seq'))").fetchone()[0]
+        else:
+            seq = db.execute("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='allocations'), 0) + 1").fetchone()[0]
         record = AllocationRecord(
             record_id=f'A-{seq:04d}', decision_id=decision_id or order['order_id'],
             order_id=order['order_id'], workshop_id=workshop.workshop_id,
@@ -133,8 +145,8 @@ class AuditLog:
             committed_at=f"{config.CHAT_AS_OF}T{datetime.now(timezone.utc):%H:%M:%S}+00:00",
             queue_before=before, queue_after=before + added,
             evidence=evidence or {})
-        db.execute('INSERT INTO allocations(order_id, record) VALUES (?, ?)',
-                   (key, json.dumps(to_dict(record), ensure_ascii=False)))
+        db.execute('INSERT INTO allocations(seq, order_id, record) VALUES (?, ?, ?)',
+                   (seq, key, json.dumps(to_dict(record), ensure_ascii=False)))
         return record
 
     def allocate(self, order, workshop, *, committed_by, expected_version=None,

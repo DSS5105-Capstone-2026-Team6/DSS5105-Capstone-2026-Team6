@@ -1,11 +1,7 @@
 """Shared, transactional API-call budgets. Demo resets never clear this table."""
-from contextlib import closing
 import os
-import sqlite3
 import time
-from pathlib import Path
-
-from .config import RESULTS_DIR
+from .storage import Database
 
 
 class BudgetExceeded(RuntimeError):
@@ -14,10 +10,12 @@ class BudgetExceeded(RuntimeError):
 
 class CallBudget:
     def __init__(self, path=None):
-        self.path = Path(path or os.environ.get('DISPATCH_DB_PATH')
-                         or RESULTS_DIR / 'audit_log.sqlite3')
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
+        self.database = Database(path)
+        self.path = self.database.path
+        if self.database.is_postgres:
+            self.database.require_tables('api_usage')
+            return
+        with self.database.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS api_usage '
                        '(scope TEXT NOT NULL, at REAL NOT NULL)')
             db.execute('CREATE INDEX IF NOT EXISTS usage_scope_at ON api_usage(scope, at)')
@@ -27,7 +25,7 @@ class CallBudget:
             limits = [(3600, int(os.environ.get('API_CALLS_PER_HOUR', '200'))),
                       (86400, int(os.environ.get('API_CALLS_PER_DAY', '1000')))]
         now = time.time() if now is None else now
-        with closing(sqlite3.connect(self.path, timeout=15)) as db, db:
+        with self.database.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             for seconds, maximum in limits:
                 count = db.execute('SELECT COUNT(*) FROM api_usage WHERE scope=? AND at>?',
