@@ -110,7 +110,11 @@ class DispatchAgent:
         if client is None:
             from openai import OpenAI
             client = OpenAI(api_key=api_key or load_api_key(provider),
-                            base_url=spec["base_url"], timeout=30, max_retries=0)
+                            base_url=spec["base_url"],
+                            # slow/cross-border networks: 30s with no retry
+                            # turned every dispatch into "Request failed"
+                            timeout=float(os.environ.get("LLM_TIMEOUT", "120")),
+                            max_retries=int(os.environ.get("LLM_MAX_RETRIES", "2")))
         self.client = client   # None -> api.openai.com
         self.model = model or spec["models"][0][0]   # display list, api id
         self.store = OrderStore(stages=stages)

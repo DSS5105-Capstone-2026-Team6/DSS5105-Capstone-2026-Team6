@@ -59,3 +59,18 @@ def test_missing_key_raises_with_provider_hint(monkeypatch, tmp_path):
             monkeypatch.delenv(var, raising=False)
     with pytest.raises(RuntimeError, match="Anthropic"):
         load_api_key("anthropic", env_path=tmp_path / "nope.env")
+
+
+def test_agent_client_timeout_and_retries_configurable(monkeypatch):
+    """Slow/cross-border networks: the LLM client defaults to a 120s timeout
+    with 2 retries (30s/0 used to turn every dispatch into Request failed),
+    both overridable via LLM_TIMEOUT / LLM_MAX_RETRIES."""
+    from desk.agent import DispatchAgent
+    a = DispatchAgent(api_key="dummy")
+    assert a.client.timeout == 120.0
+    assert a.client.max_retries == 2
+    monkeypatch.setenv("LLM_TIMEOUT", "10")
+    monkeypatch.setenv("LLM_MAX_RETRIES", "0")
+    b = DispatchAgent(api_key="dummy")
+    assert b.client.timeout == 10.0
+    assert b.client.max_retries == 0
