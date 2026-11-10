@@ -8,7 +8,7 @@ def _app(committed):
     from types import SimpleNamespace
     import streamlit as st
     from desk.contracts import Behaviour, Decision, ParsedRequest
-    from app.ui_cards import render_decision
+    from app.tabs.desk.cards import render_decision
     recs = ([SimpleNamespace(record_id=f"A-003{i}", order_id="ORD-103",
                              workshop_id=w, pieces=n)
              for i, (w, n) in enumerate([("W2", 514), ("W4", 834), ("W6", 652)])]

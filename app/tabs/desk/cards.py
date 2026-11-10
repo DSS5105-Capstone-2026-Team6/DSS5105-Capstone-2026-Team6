@@ -1,7 +1,7 @@
 """
-ui_cards — everything one expanded request card renders: understood line,
-candidate cards with live queue bars, confirm buttons, the actions row,
-split options, and the 4th-option chat entry.
+tabs.desk.cards — everything one expanded request card renders: understood
+line, candidate cards with live queue bars, confirm buttons, the actions
+row, split options, and the 4th-option chat entry.
 
 render_decision() is the entry point (called once per worklist row). The
 confirmation-flow helpers (_replace_item, _log_exchange, render_item_chat)
@@ -13,7 +13,9 @@ need them (a top-level import would be circular).
 import streamlit as st
 
 from desk.contracts import Behaviour
-from app.ui_shared import (BADGE, card, icon, queue_bar_html, section)
+from app.theme.tokens import BADGE
+from app.theme.icons import icon, section
+from app.components.cards import card, queue_bar_html
 
 
 def render_understood(decision):
@@ -43,7 +45,7 @@ def _star_on_single(decision, c):
 
 def clickable_card(key, body, delay=0.0, chosen=False, label="Confirm"):
     """A card that IS the button: the card html plus a transparent
-    st.button stretched over it (CSS in ui_shared, .st-key-pick_*).
+    st.button stretched over it (CSS in theme.styles, .st-key-pick_*).
     Returns True on click. The hover hint makes the action explicit,
     because one click commits."""
     with st.container(key=f"pick_{key}"):

@@ -1,6 +1,6 @@
 """
-ui_dashboard — the 📊 tab: four views of the system at work that the
-worklist and the right rail cannot show.
+tabs.dashboard — the Dashboard tab: four views of the system at work that
+the worklist and the right rail cannot show.
 
   📈 Queue timeline     per-workshop queue trajectory, from the ledger
   🎯 Allocator lens     one order through the hybrid's eyes (plateau + due)
@@ -10,7 +10,8 @@ worklist and the right rail cannot show.
 
 import streamlit as st
 
-from app.ui_shared import BLUE_DEEP, BLUE_PALE, BLUE_SOFT, icon, section
+from app.theme.tokens import BLUE_DEEP, BLUE_PALE, BLUE_SOFT
+from app.theme.icons import icon, section
 
 
 @st.fragment(run_every=10)

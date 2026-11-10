@@ -9,7 +9,7 @@ def _app():
     import streamlit as st
     import desk.llm_parser as lp
     from desk.register import OrderStore
-    from app import ui_inbox
+    from app.tabs.desk import intake as ui_inbox
     lp.parse_message = lambda text, agent: {
         "orders": [{"order_id": "ORD-095", "customer": "Bright Basics", "product": "hoodies",
                     "category": "TOPS", "pieces": 800, "due_date": "2026-04-20"}],

@@ -70,15 +70,14 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md).
 │   └── telegram_bot.py        # python-telegram-bot wiring; zero business logic
 ├── app/
 │   ├── streamlit_app.py       # entry: auth gate, get_desk, confirmation-flow core, main()
-│   ├── ui_inbox.py            # Desk tab: paste/upload/sample entry, dispatch loop, KPI + case filter
-│   ├── ui_cards.py            # one request card: understood, candidates w/ live queue bars, confirm, split
-│   ├── ui_dashboard.py        # queue timeline, allocator lens, capacity drift, objective map
-│   ├── ui_queuedock.py        # right rail: objective picker + live queues (5s fragment refresh)
-│   ├── ui_shockdock.py        # right rail: world switch (Apr-1/Jan-1), stages mode, shock trigger
-│   ├── ui_sidebar.py          # chat log + returned-batch recorder
-│   ├── ui_parser.py           # sidebar LLM parser panel (semantic vs rule-based)
-│   ├── ui_records.py          # ledger view + demo reset
-│   ├── ui_shared.py           # design tokens/CSS, SVG icon set, card(), scroll sync
+│   ├── theme/                 # design system: tokens (palette/badges), icons, styles (CSS), motion (scroll sync)
+│   ├── components/            # leaf renderers: cards + queue bars, LLM parse result view
+│   ├── tabs/
+│   │   ├── desk/              # Desk tab: intake (4 sources) -> dispatch loop -> worklist; cards; scenario preview
+│   │   ├── dashboard.py       # queue timeline, allocator lens, capacity drift, objective map
+│   │   └── records.py         # ledger view + demo reset
+│   ├── rail/                  # right rail: world & shock, objective picker, live queues (5s fragment refresh)
+│   ├── sidebar/               # chat log + returned-batch recorder
 │   └── local_auth/            # remember-me localStorage component
 ├── eval/
 │   ├── run_eval.py              # batch runner: inbox -> JSONL of Decisions (+ latency)

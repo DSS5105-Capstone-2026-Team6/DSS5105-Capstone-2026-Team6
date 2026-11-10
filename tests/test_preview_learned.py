@@ -1,6 +1,6 @@
 """Scenario preview must use learned capacity once it is active."""
 
-from app.ui_sunday_preview import compare_sunday
+from app.tabs.desk.scenario import compare_sunday
 from desk.performance import PerformanceStore
 from desk.register import OrderStore, WorkshopStore
 from desk.state import DeskState

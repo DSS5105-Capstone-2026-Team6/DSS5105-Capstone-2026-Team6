@@ -12,9 +12,15 @@ option beside the candidate buttons — "Other option (tell me)" — expands a
 per-item conversation. The sidebar carries the provider/model selectors, a
 running chat log and the returned-batch recorder.
 
-Sections live in sibling modules: ui_shared (constants, card, scroll sync),
-ui_inbox (worklist + cards), ui_dashboard (charts), ui_sidebar (chat log +
-batch recorder), ui_records (ledger view).
+Layout: tab 🗂 desk = one full-width worklist, one row per request. A fourth
+option beside the candidate buttons — "Other option (tell me)" — expands a
+per-item conversation. The sidebar carries the provider/model selectors, a
+running chat log and the returned-batch recorder.
+
+Sections live in sub-packages by surface: theme (tokens, icons, styles,
+scroll motion), components (cards, queue bars, parser view), tabs (desk,
+dashboard, records), rail (world/shock, objective, live queues), sidebar
+(chat log, batch recorder).
 
 NOTE: _replace_item, render_item_chat, _budget_ok, _norm_msg,
 _log_exchange, _auth_token and _valid_auth_token must stay top-level defs in
@@ -41,14 +47,18 @@ from desk.desk import DispatchDesk
 from desk.budget import BudgetExceeded
 from desk.chat_dump import ENVELOPE, split_chat_dump  # re-exported for tests
 
-from app.ui_shared import CSS, icon, install_scroll_sync
-from app.ui_inbox import render_inbox
-from app.ui_dashboard import render_dashboard
-from app.ui_sidebar import render_chat_log, render_performance_sidebar
-from app.ui_records import render_recent
-from app.ui_queuedock import render_objective_dock, render_queue_dock
-from app.ui_shockdock import render_shockdock
-from app.ui_sunday_preview import render_sunday_preview
+from app.theme.styles import CSS
+from app.theme.icons import icon
+from app.theme.motion import install_scroll_sync
+from app.tabs.desk import render_inbox
+from app.tabs.desk.scenario import render_sunday_preview
+from app.tabs.dashboard import render_dashboard
+from app.tabs.records import render_recent
+from app.sidebar.chat_log import render_chat_log
+from app.sidebar.batch_recorder import render_performance_sidebar
+from app.rail.objective import render_objective_dock
+from app.rail.queues import render_queue_dock
+from app.rail.world import render_shockdock
 
 
 def get_desk():
@@ -321,7 +331,7 @@ def main():
     # right rail: objective picker + live queues, sticky so it follows the
     # scroll instead of snapping back to the top on every rerun. (The
     # column must NOT stretch to the row's full height — that is what makes
-    # room for the sticky rail to actually move; see ui_shared.CSS.)
+    # room for the sticky rail to actually move; see theme/styles.py.)
     with st.container(key="layout"):
         main_col, rail_col = st.columns([3.2, 1], gap="large")
     with rail_col:
