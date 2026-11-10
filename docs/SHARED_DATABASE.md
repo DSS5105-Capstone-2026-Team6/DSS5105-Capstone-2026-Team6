@@ -63,8 +63,8 @@ Remove-Item Env:DSS5105_RUN_CLOUD_TESTS
 1. 取得最新 GitHub 仓库代码，在独立分支合入本次修改，检查冲突并运行测试。
    本地工作副本来自之前的 ZIP，合入前需要核对此后的小组改动。
 2. 由组员审核并合并修改，确认网页及机器人的实际部署分支都包含本次代码。
-   当前 README 写机器人在 PC 上运行；render.yaml 另提供 bot 分支的部署模板。
-   部署模板不能证明实际机器人当前运行在哪里或使用哪个分支。
+   README 写机器人部署在 Render；render.yaml 是 bot 分支的部署模板。
+   部署模板不能证明实际机器人当前运行在哪里或使用哪个分支，上线前需核对。
 3. 有网页管理权限的人在 Streamlit 的 Settings → Secrets 中追加下面两项，
    保留原有模型密钥、APP_PASSWORD 等设置，然后重新启动应用。
 
@@ -157,6 +157,9 @@ Reset demo 会影响同一数据库上的所有用户，仅在约定的演示环
 - 发现未修复的呈现问题：该重复请求的 AI 文案仍推荐 W2 并邀请回复 yes，
   与卡片的已分配提示冲突。分配被 UI 和数据库保护拦截，但对话文案需要改进；
   此次测试没有将该文案问题记为通过。
+  （后续已修复：desk 在生成回复后检查账本，已分配的订单在回复开头标明
+  "already committed"，推荐仅供参考；Telegram 照常对话并额外提供 skip
+  按钮，网页卡片提供 ⏭ Skip。见 tests/test_skip_and_duplicates.py。）
 - 已停止并重新启动本机 Streamlit 服务和测试机器人进程，非仅刷新页面。
 - 新机器人进程通过正式 _session_factory 创建 DispatchDesk，读回 2 条原有记录；
   W6=5.73076923076923、W8=1.02。重启后的网页 Records 也实际显示 A-0001/A-0002。

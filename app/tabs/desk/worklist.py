@@ -12,7 +12,7 @@ from desk.contracts import Behaviour
 from desk.tools import flag_at_risk
 from app.theme.tokens import BADGE, NEEDS_HUMAN
 from app.theme.motion import _sync_anchor, scroll_to_anchor
-from app.tabs.desk.cards import render_decision
+from app.tabs.desk.cards import is_skipped, render_decision
 from app.components.ledger_cache import ledger_records
 
 
@@ -73,7 +73,7 @@ def render_worklist(desk, items):
     done_orders = {r.order_id for r in records}
 
     def is_done(d):
-        return (f"committed-{id(d)}" in st.session_state
+        return (f"committed-{id(d)}" in st.session_state or is_skipped(d)
                 or (d.parsed.order_id is not None and d.parsed.order_id in done_orders))
 
     # every commit bumps the ledger version, which makes every OTHER open
@@ -142,7 +142,7 @@ def render_worklist(desk, items):
         # batch confirm: every open ALLOCATE card, one audited transaction
         # each — the human spends one click instead of N
         open_alloc = [x["decision"] for x in shown
-                      if picked is Behaviour.ALLOCATE
+                      if picked is Behaviour.ALLOCATE and not is_done(x["decision"])
                       and x["decision"].candidates and x["decision"].chosen]
         if len(open_alloc) > 1:
             if st.button(f"✅ Confirm all open ({len(open_alloc)})",

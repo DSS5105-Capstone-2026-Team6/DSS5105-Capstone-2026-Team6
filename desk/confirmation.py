@@ -12,7 +12,10 @@ YES = {'yes', 'y', 'yep', 'yes please', 'ok', 'okay', 'sure', 'commit', 'confirm
 YES_ALL = {'yes all', 'confirm all', 'commit all', '全部确认', '都确认',
            '全部提交', '都提交', '全部通过'}
 CANCEL = {'no', 'cancel', 'stop', 'wait', 'hold on', 'not yet', '取消', '先等等',
-          '等等', '先别下单', '暂停', '算了'}
+          '等等', '先别下单', '暂停', '算了', 'skip', '跳过'}
+# Close a request without committing anything (the bot's skip button, e.g.
+# for an order that is already in the ledger).
+SKIP = {'skip', 'skip it', 'skip this', 'skip this one', '跳过'}
 # These messages must be interpreted as questions/changes, never a confirmation.
 BLOCKERS = re.compile(
     r"\?|？|\b(?:no|not|never|don\W?t|cannot|can\W?t|but|unless|if|wait|cancel|"
@@ -35,6 +38,10 @@ def normalise(text):
 
 def looks_like_confirmation(text):
     return normalise(text) in YES
+
+
+def looks_like_skip(text):
+    return normalise(text) in SKIP
 
 
 def looks_like_confirm_all(text):
