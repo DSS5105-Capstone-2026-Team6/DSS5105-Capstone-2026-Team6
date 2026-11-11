@@ -282,7 +282,7 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   dialog ([#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36),
   [#55](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/55))
   → ETAs that respect the real calendar.
-- **[RuoxiZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)** —
+- **[RuoxiZhuang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)** —
   designed, built and deployed the shared Supabase PostgreSQL ledger:
   schema with RLS, the storage adapter with advisory-lock writers, and the
   acceptance suite incl. a real Telegram round-trip
@@ -304,7 +304,13 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   allocation, cross-workstream coordination and progress tracking,
   validation and test passes on the shared-ledger rollout and the UI
   changes, acceptance sign-off before each merge, and demo-day
-  presentation coordination.
+  presentation coordination. Earlier, at the Sprint 2 → 3 handover:
+  dispatch-safety hardening — read-only model tools behind one
+  human-confirmation endpoint, consent parsing for follow-ups, a
+  transactional ledger with duplicate protection, server-side API budgets
+  and a required password gate ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12)); follow-up fixes for chat
+  display and order-ID normalisation ([#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14)) and the session
+  request cap ([#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)).
 - **[Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)** —
   UI adjustments (switchable objective panel, live queue bars, dashboard
   views) and the 120-request timeline evaluation with periodic shocks
@@ -321,9 +327,10 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
 - **[Claude](https://claude.com)** —
   used by members across the team: multi-workshop split ranking and the
   held-out review fixes (with SishuoZhou), one-tap cards and the parser
-  tab, duplicate-skip and failure replay with XuantingWang, and
-  implementation support across GuanmingYang's, RuoxiZhou's and Xuehann's
-  tasks.
+  tab, duplicate-skip and failure replay with XuantingWang,
+  dispatch-safety hardening and follow-up fixes with Xuehann
+  ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12), [#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14), [#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)), and implementation support
+  across GuanmingYang's, RuoxiZhuang's and Xuehann's tasks.
 
 ## Safety and deployment
 
