@@ -203,5 +203,30 @@ h1 { font-size: 1.4rem !important; letter-spacing: -0.01em; }
     .block-container { max-width: 100%; padding-left: .8rem; padding-right: .8rem; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
 }
+
+/* ---------- scenario popover: sticky like the right rail, but in-flow ----------
+   Follows the page scroll and stays under the header, yet keeps its own
+   layout slot — it never overlays the intake box / conversation below it. */
+[class*="st-key-scenario_pop"] {
+    position: sticky;
+    top: 56px;
+    z-index: 20;
+    background: #fff;
+    padding: 2px 0;
+}
+
+/* ---------- worklist density: tighter request cards ---------- */
+[class*="st-key-worklist"] .card {
+    padding: 4px 8px; margin: 2px 0;
+    line-height: 1.25; font-size: 0.88em;
+}
+[class*="st-key-worklist"] [data-testid="stExpander"] { margin-bottom: 2px; }
+[class*="st-key-worklist"] [data-testid="stExpander"] summary {
+    padding-top: 4px !important; padding-bottom: 4px !important;
+    min-height: 0 !important;
+}
+[class*="st-key-worklist"] .stMarkdown p { margin-bottom: 0.2em; }
+[class*="st-key-worklist"] .qbar-track { height: 6px; margin: 2px 0; }
+[class*="st-key-worklist"] .section-head { margin: 6px 0 2px; }
 </style>
 """

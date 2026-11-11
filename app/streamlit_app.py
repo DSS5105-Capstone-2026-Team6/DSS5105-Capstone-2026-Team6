@@ -359,9 +359,10 @@ def main():
         tab_main, tab_dash, tab_recent = st.tabs(
             ["Desk", "Dashboard", "Records"])
         with tab_main:
-            with st.popover("Scenario preview · Production and transport",
-                            use_container_width=True):
-                render_sunday_preview(desk)
+            with st.container(key="scenario_pop"):
+                with st.popover("Scenario preview · Production and transport",
+                                use_container_width=True):
+                    render_sunday_preview(desk)
             render_inbox(desk)
         install_scroll_sync()
         with tab_dash:
