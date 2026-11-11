@@ -33,3 +33,25 @@ def queue_chart_png(queues, workshops):
     plt.close(fig)
     buf.seek(0)
     return buf
+
+
+def queue_text(queues, workshops):
+    """The same live queues as plain text: instant, and needs no
+    matplotlib, so /queue can always answer even when drawing fails."""
+    total = sum(queues.values())
+    lines = [f"Live queues · total {total:.1f} days"]
+    for w in sorted(queues):
+        name = workshops[w].name if w in workshops else w
+        lines.append(f"{w} {name}: {queues[w]:.1f} d")
+    return "\n".join(lines)
+
+
+def try_queue_chart(queues, workshops):
+    """The chart as PNG bytes, or None if it cannot be drawn here (for
+    example matplotlib missing on the host). The error goes to the log."""
+    try:
+        return queue_chart_png(queues, workshops)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return None
