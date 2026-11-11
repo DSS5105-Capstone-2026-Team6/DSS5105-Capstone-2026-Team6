@@ -241,6 +241,27 @@ def test_queue_chart_png_handles_empty():
     assert png.read(8) == b"\x89PNG\r\n\x1a\n"
 
 
+def test_queue_text_lists_every_workshop_without_matplotlib():
+    from types import SimpleNamespace
+    from adapter.charts import queue_text
+    queues = {"W2": 2.5, "W1": 4.0}
+    shops = {"W1": SimpleNamespace(name="QuickStitch"),
+             "W2": SimpleNamespace(name="SteadyHands")}
+    text = queue_text(queues, shops)
+    assert text.splitlines() == ["Live queues · total 6.5 days",
+                                 "W1 QuickStitch: 4.0 d",
+                                 "W2 SteadyHands: 2.5 d"]
+
+
+def test_try_queue_chart_returns_none_when_drawing_fails(monkeypatch):
+    import adapter.charts as charts
+
+    def boom(*a, **k):
+        raise ModuleNotFoundError("No module named 'matplotlib'")
+    monkeypatch.setattr(charts, "queue_chart_png", boom)
+    assert charts.try_queue_chart({"W1": 1.0}, {}) is None
+
+
 # ---------------- batch confirm ("yes all") ----------------
 
 def _second_decision():

@@ -82,14 +82,25 @@ def build_application(token, make_session=None, proxy=None):
             "group. I never commit an allocation until someone says yes.")
 
     async def on_queue(update, context):
-        """/queue — the live workshop queues as a bar chart photo, the
-        Telegram-side answer to the web dashboard's queue view."""
-        from adapter.charts import queue_chart_png
-        session = session_for(update.effective_chat.id)
-        queues = dict(session.desk.state.queues)
-        photo = queue_chart_png(queues, session.desk.workshops.workshops)
-        await update.effective_message.reply_photo(
-            photo, caption=f"Live queues · total {sum(queues.values()):.1f} days")
+        """/queue — the live workshop queues, the Telegram-side answer to the
+        web dashboard's queue view. Text first, so it answers at once and
+        never depends on matplotlib; the bar chart follows when it can be
+        drawn. Any failure gets a reply instead of silence."""
+        from adapter.charts import queue_text, try_queue_chart
+        message = update.effective_message
+        try:
+            session = session_for(update.effective_chat.id)
+            queues = dict(session.desk.state.queues)
+            shops = session.desk.workshops.workshops
+        except Exception:
+            traceback.print_exc()
+            await message.reply_text("Couldn't read the live queues right now "
+                                     "— please try again in a minute.")
+            return
+        await message.reply_text(queue_text(queues, shops))
+        photo = try_queue_chart(queues, shops)
+        if photo is not None:
+            await message.reply_photo(photo)
 
     async def on_message(update, context):
         msg, chat = update.effective_message, update.effective_chat
@@ -102,7 +113,13 @@ def build_application(token, make_session=None, proxy=None):
         text = msg.text if private else strip_mention(msg.text, username)
         who = (update.effective_user.full_name
                or update.effective_user.username or "member")
-        session = session_for(chat.id)
+        try:
+            session = session_for(chat.id)
+        except Exception:
+            traceback.print_exc()
+            await msg.reply_text("I can't reach the dispatch desk right now "
+                                 "— please try again in a minute.")
+            return
         # a pasted dump (numbered or bare chat lines) dispatches line by
         # line, same as the Streamlit inbox; a single message stays one call
         for line in split_chat_dump(text):
