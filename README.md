@@ -152,6 +152,7 @@ Column definitions for the order and workshop data are in
 | *Backend failed to start* | The provider key is missing or wrong: check `DEEPSEEK_API_KEY` (or the key for the provider picked in the sidebar). |
 | *Session request cap reached* / *Request limit reached* | Per-session and hourly/daily API caps protect the shared key. Reopen the page, wait, or raise `API_CALLS_PER_HOUR` / `API_CALLS_PER_DAY`. |
 | *Shared database tables are missing* | Run `database/supabase_schema.sql` once on the database, or unset `DISPATCH_DATABASE_URL` to use local SQLite. |
+| The desk seems stuck after *Reset & connect to shared DB* | Expected, not a crash: the shared Supabase database is in another region, so connecting takes about 40 s and each dispatch is noticeably slower, because every read and commit is a cross-border round trip. Wait for the spinner to finish. For quick testing, stay on the session sandbox (the default) and connect only to check Records. |
 | Telegram `/queue` test fails with `No module named matplotlib` | Run the tests as `uv run --with matplotlib pytest`, or `pip install matplotlib`. |
 | Telegram bot does not reply | The Render free instance was asleep, and messages sent while it slept are dropped. Open [dispatcher-doubot.onrender.com](https://dispatcher-doubot.onrender.com) until it shows *dispatch bot alive* (30–60 s), then resend. See [Deployment](docs/DEPLOYMENT.md#telegram-bot-on-render). |
 | `harness/simulate.py` cannot find its data | Run it from the repository root, with `harness/` and `data/` side by side. |
