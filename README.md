@@ -342,11 +342,11 @@ Group 06 · DSS5105 Capstone 2026 · Track 2
 | Member | GitHub |
 |---|---|
 | Dang Xuehan | [Xuehann](https://github.com/Xuehann) |
-| Wang Xuan Ting | [ADEdreambridge](https://github.com/ADEdreambridge) |
-| Yang Guan Ming | [beibei323](https://github.com/beibei323) |
-| Zhang Rui Kai | [Zhangruikai-rzha0162](https://github.com/Zhangruikai-rzha0162) |
-| Zhou Si Shuo | [SishuoZhou](https://github.com/SishuoZhou) |
-| Zhuang Ruo Xi | [chikD666](https://github.com/chikD666) |
+| Wang Xuanting | [ADEdreambridge](https://github.com/ADEdreambridge) |
+| Yang Guanming | [beibei323](https://github.com/beibei323) |
+| Zhang Ruikai | [Zhangruikai-rzha0162](https://github.com/Zhangruikai-rzha0162) |
+| Zhou Sishuo | [SishuoZhou](https://github.com/SishuoZhou) |
+| Zhuang Ruoxi | [chikD666](https://github.com/chikD666) |
 
 ### Sprint 3 contributions
 
