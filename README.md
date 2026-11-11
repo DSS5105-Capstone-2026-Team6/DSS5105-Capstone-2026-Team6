@@ -110,6 +110,11 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   cards as confirm buttons, auto-scroll to the next order, LLM parser tab
   ([#21](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/21)–[#35](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/35))
   → far fewer clicks per order.
+- **[Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann)** —
+  sprint planning and project leadership: task coordination, PR review and
+  merge management, acceptance sign-off across the shared-ledger rollout
+  and the UI changes, and the demo-day operations that kept web, bot and
+  database aligned.
 - **[Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)** —
   UI adjustments (hybrid default, live queue bars, dashboard views) and the
   120-request timeline evaluation with periodic shocks
@@ -137,8 +142,10 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   → workshop accuracy after the fixes: 0.842 → 0.895 dev, 0.692 → 0.846
   held-out.
 - **[Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann)** —
-  sprint planning, task coordination and acceptance sign-off across the
-  rollout.
+  sprint planning and project leadership: task coordination, PR review and
+  merge management, acceptance sign-off across the shared-ledger rollout
+  and the UI changes, and the demo-day operations that kept web, bot and
+  database aligned.
 - **[kimi](kimi.moonshot.cn/)** —
   [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37),
   [#39](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/39)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46),
