@@ -91,6 +91,29 @@ reservation. Resetting/deleting the database also resets these counters.
 - Evaluation runs use an isolated temporary allocation ledger, so operational
   commits do not change the fixture snapshot used for scoring.
 
+## Telegram bot on Render
+
+The bot runs as a free Render web service (`render.yaml`: `python -m adapter.telegram_bot`,
+secrets set in the Render dashboard). It uses long polling: the process asks Telegram for
+new messages, so Telegram traffic never reaches the service's URL. The service binds
+`$PORT` and answers any GET with `dispatch bot alive`, only so Render accepts the deploy
+and a monitor has something to ping.
+
+- **Sleep.** Render's free tier stops a service after about 15 minutes without HTTP
+  traffic. An UptimeRobot HTTP monitor pings `https://dispatcher-doubot.onrender.com`
+  every 5 minutes to keep it awake.
+- **What happens when the ping stops.** The bot sleeps and does not answer. It starts
+  with `drop_pending_updates=True`, so messages sent while it slept are discarded on
+  wake-up, not answered late. Seen on 11 Nov 2026: the service was asleep and showed
+  Render's "service waking up" page.
+- **Wake it by hand.** Open the URL above and wait for `dispatch bot alive`
+  (30–60 seconds), then resend. Do this before a demo or a recording.
+- **Check the monitor** in UptimeRobot if the bot keeps falling asleep: the monitor must
+  be active, point at the URL above, and run at an interval under 15 minutes.
+- **Always-on options** if this is not reliable enough: a paid Render instance, an
+  always-on VM, or switching the bot to a Telegram webhook, where the incoming request
+  wakes the service and Telegram retries deliveries that fail.
+
 ## Confirmation behavior
 
 Buttons and familiar replies such as "yes", "好的", and "这单就给 W2 吧" take the

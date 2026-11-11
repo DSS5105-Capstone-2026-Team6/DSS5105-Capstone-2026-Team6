@@ -16,7 +16,7 @@
 | | |
 |---|---|
 | **Web app** | [dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app](https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app) — the password is provided with our submission (it is not stored in this repository) |
-| **Telegram bot** | [@Ddispatcherr_bot](https://t.me/Ddispatcherr_bot) — runs on Render, writes to the same shared ledger as the web app |
+| **Telegram bot** | [@Ddispatcherr_bot](https://t.me/Ddispatcherr_bot) — runs on Render, writes to the same shared ledger as the web app. If it does not answer within a minute, open [dispatcher-doubot.onrender.com](https://dispatcher-doubot.onrender.com) once to wake it, then send the message again |
 | **Try it in 1 minute** | Desk tab → **Sample inbox** → **Dispatch** → click a candidate card to confirm → see it on the **Records** tab |
 | **Documentation** | [Allocator](docs/ALLOCATOR.md) · [Tolerance scan](docs/Tolerance_Scan.md) · [Evaluation](docs/EVALUATION.md) · [Failure analysis](docs/FAILURE_ANALYSIS.md) · [Full-120 rerun](docs/FULL120.md) · [Splits](docs/SPLITS.md) · [Shared DB](docs/SHARED_DATABASE.md) · [Deployment](docs/DEPLOYMENT.md) |
 
@@ -153,6 +153,7 @@ Column definitions for the order and workshop data are in
 | *Session request cap reached* / *Request limit reached* | Per-session and hourly/daily API caps protect the shared key. Reopen the page, wait, or raise `API_CALLS_PER_HOUR` / `API_CALLS_PER_DAY`. |
 | *Shared database tables are missing* | Run `database/supabase_schema.sql` once on the database, or unset `DISPATCH_DATABASE_URL` to use local SQLite. |
 | Telegram `/queue` test fails with `No module named matplotlib` | Run the tests as `uv run --with matplotlib pytest`, or `pip install matplotlib`. |
+| Telegram bot does not reply | The Render free instance was asleep, and messages sent while it slept are dropped. Open [dispatcher-doubot.onrender.com](https://dispatcher-doubot.onrender.com) until it shows *dispatch bot alive* (30–60 s), then resend. See [Deployment](docs/DEPLOYMENT.md#telegram-bot-on-render). |
 | `harness/simulate.py` cannot find its data | Run it from the repository root, with `harness/` and `data/` side by side. |
 
 ## How it works
