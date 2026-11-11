@@ -142,8 +142,59 @@ class DispatchDesk:
         decision.created_at = datetime.now(timezone.utc).isoformat()
         self._attach_ranking(decision, requester or "dispatcher")
         self._fill_impossible(decision)
+        self._fill_refusal_alternative(decision)
         self._attach_split(decision)
+        self._flag_already_committed(decision)
         return decision
+
+    def _flag_already_committed(self, decision):
+        """An order already in the ledger cannot be committed again (the
+        ledger refuses it), but the model does not read the ledger and may
+        still recommend a shop. Keep that ranking for reference, say up
+        front that the order is done, and mark the decision so the UI and the
+        bot offer a one-tap skip instead of commit buttons."""
+        oid = decision.parsed.order_id
+        if not oid:
+            return
+        records = [r for r in self.audit.load_all() if r.order_id == oid]
+        if not records:
+            return
+        shops = " + ".join(r.workshop_id for r in records)
+        ids = ", ".join(r.record_id for r in records)
+        line = f"{ids} — {oid} → {shops}"
+        decision.already_committed = line
+        decision.warnings = [f"Already committed: {line}. Committing again is "
+                             "refused — skip this request."] + list(decision.warnings)
+        decision.explanation = (f"⚠️ {oid} is already committed ({line}); nothing "
+                                "more to allocate. The ranking below is for "
+                                "reference only — skip this request.\n\n"
+                                + (decision.explanation or ""))
+
+    def _fill_refusal_alternative(self, decision):
+        """A REFUSE (the named workshop cannot take the order) whose flow
+        stopped at check_eligibility has no alternative to offer. Rank the
+        eligible workshops in code so the refusal always comes with the best
+        alternative ready to commit (the refused shop is ineligible, so the
+        ranking never contains it)."""
+        oid = decision.parsed.order_id
+        if (decision.behaviour is not Behaviour.REFUSE or decision.candidates
+                or self.orders.by_id(oid) is None):
+            return
+        args = {"order_id": oid, "objective": decision.objective,
+                "excluded": list(decision.excluded)}
+        result = rank_candidates(**args, orders=self.orders, store=self.workshops,
+                                 queues=self.state.queues, perf=self.performance)
+        if "error" in result or not result.get("candidates"):
+            return
+        decision.tool_log.append({"tool": "rank_candidates", "arguments": args,
+                                  "result": result, "called_by": "desk"})
+        decision.candidates, decision.chosen = candidates_from_rank(result)
+        best = decision.chosen or decision.candidates[0]
+        decision.chosen = best
+        decision.explanation = ((decision.explanation or "").rstrip() + "\n\n"
+            f"Best eligible alternative ({decision.objective}): {best.name} "
+            f"({best.workshop_id}), estimated finish {best.estimated_finish}. "
+            f"Reply yes to commit {oid} to {best.workshop_id}.")
 
     def _fill_impossible(self, decision):
         """An IMPOSSIBLE reached through earliest_feasible alone has no
@@ -216,6 +267,10 @@ class DispatchDesk:
         fresh.objective, fresh.excluded = decision.objective, list(decision.excluded)
         fresh.state_version = version
         fresh.created_at = datetime.now(timezone.utc).isoformat()
+        if decision.behaviour is Behaviour.REFUSE and fresh.candidates:
+            # a refusal's alternatives re-ranked on live queues: still a
+            # refusal of the named shop, not a fresh ALLOCATE request
+            fresh.behaviour = Behaviour.REFUSE
         self._attach_split(fresh, force=bool(decision.splits))
         return fresh
 
@@ -244,6 +299,10 @@ class DispatchDesk:
                     record = self.confirm(replace(decision, chosen=target), committed_by=requester)
                 except ProposalChanged as exc:
                     return exc.decision, None, str(exc)
+                except ValueError as exc:
+                    # refused by the checks/ledger (e.g. the order is already
+                    # committed): say why, keep the proposal open
+                    return decision, None, f"Not committed: {exc}"
                 return None, record, f"Committed {record.record_id} — {record.order_id} → {record.workshop_id}."
         if any(x in intent.changes for x in ("pieces", "due_date", "other")):
             return None, None, ("This changes the source order. Update the order register and reload the desk first, "

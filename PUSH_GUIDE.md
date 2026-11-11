@@ -1,79 +1,72 @@
 # 推送须知（Push Guide）
 
-给任何新会话/新协作者：本仓库是**精简的 Track 2 项目**，本地工作目录比仓库大得多（含课程其他作业、数据备份、个人笔记）。推送前务必按本文件操作，防止本地目录和 repo 打架。
+给新会话或新协作者的提交规则。仓库是 Track 2 Dispatch Desk 的完整可运行版本，
+默认分支 `main`，所有改动通过分支 + Pull Request 合并。
 
-## 核心原则
+## 仓库结构
 
-1. **仓库 = Track 2 最小可运行集**：`data/ harness/ agent/ tests/ README.md pyproject.toml pytest 配置`。
-2. **本地目录 = 超集**：课程其他作业（KAGGLE/ Week3ML/ W2&5Langc/ 等）、`Track 1 and Track 2 Data/`、个人笔记，全部**不入库**。
-3. **提交前必须 `git status` 过一遍**，只 `git add` 点名的文件，禁止 `git add -A` / `git add .`。
+| 目录 | 内容 |
+|---|---|
+| `desk/` | 应用核心：工具、分配器、路由、账本、学习产能 |
+| `app/` | Streamlit 网页（按界面拆分：theme / components / tabs / rail / sidebar） |
+| `adapter/` | Telegram bot（`adapter/requirements.txt` 是 bot 部署用的依赖） |
+| `eval/` | 评估：`run_eval.py`（调用模型）、`score_run.py`（评分）、`replay_offline.py`（离线回放）、`shock.py` |
+| `harness/` | 课程共享模拟器 `simulate.py`（**永不修改**）+ 基准与算法实验 |
+| `data/` | 订单、工坊、50 条聊天请求 + 标签、120 条时间线请求 + 标签 |
+| `tests/` | pytest 测试，全部离线运行 |
+| `docs/` | 算法、评估、部署、共享数据库、拆单、失败案例分析 |
+| `database/` | Supabase 建表脚本 |
+| `notebooks/` | 120 条时间线 + shock 评估 |
+| `results/` | 只提交 `inbox_*` / `heldout_*` 的运行结果和分数，其余被 `.gitignore` 忽略 |
 
-## 双 pyproject 机制（最重要）
+依赖只有一份：根目录 `pyproject.toml`（`uv sync` 安装，含 dev 组的 pytest 和
+matplotlib）。`uv.lock` 不入库。
 
-- **本地根目录 `pyproject.toml`**：完整版依赖（pandas/langchain/…），**永远不提交**，`git status` 里常年显示 `M`，属正常。
-- **`release/pyproject.toml`**：推送版的唯一真源（精简依赖）。改推送版依赖只改这个文件。
-- 同步到仓库（不碰本地文件）：
+## 禁止提交
 
-```bash
-BLOB=$(git hash-object -w release/pyproject.toml)
-git update-index --cacheinfo 100644,$BLOB,pyproject.toml
-```
+- `.env`、`.streamlit/secrets.toml`、任何 API key 或数据库密码
+- `*.sqlite3` 本地账本、`results/` 下除上述以外的运行输出
+- 个人笔记、课程其他作业、数据备份
 
-之后 `git status` 显示 `MM pyproject.toml`（已暂存推送版 + 工作区本地版），属预期状态。
+`.gitignore` 会忽略 `*.json`。`data/` 下新增的标签文件要用 `git add -f` 明确加入。
 
-## 推送清单
+## 代码约定
 
-**入库**：`agent/`、`tests/`、`harness/`（纯代码改动）、`README.md`、`data/` 的官方文件、`release/pyproject.toml`（按上面机制注入索引）
-
-**留在本地（禁止提交）**：
-- `.env`（API key，已被 gitignore，提交前仍须确认）
-- `results/`（跑批输出）、`uv.lock`、`release/` 目录本身
-- `harness/` 里的**中文学习注释**（本地标注，不入库——`git diff harness/` 检查，只暂存纯逻辑改动）
-- `system.png`、`KAGGLE/`、`Track 1 and Track 2 Data/`、`docs/`、`src/`、`notebooks/` 等课程遗留
-
-## 代码范式（新文件必须遵守）
-
-- **库文件**（agent/ 等）：末尾带冒烟入口；包内相对导入 + 直跑回退：
-
-```python
-try:
-    from .xxx import ...
-except ImportError:  # run directly as a script
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from agent.xxx import ...
-
-if __name__ == "__main__":
-    ...  # 演示核心功能，不放系统逻辑
-```
-
-- **测试文件**（tests/）：顶部 sys.path 引导（在 `from agent...` 之前）+ pytest 入口：
+- 模型不做算术：所有数字来自工具输出，回复里的数字要能在 tool log 里找到（faithfulness）。
+- 模型工具只读；提交分配只能经过人工确认（网页卡片 / bot 按钮 / yes）。
+- 聊天侧（4 月 1 日快照）和模拟器（1 月 1 日起）是两个独立状态，工具层不得混用。
+- 新功能至少带一个失败用例测试。
+- 测试文件顶部加 sys.path 引导，方便直接运行：
 
 ```python
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-if __name__ == "__main__":
-    import pytest
-    raise SystemExit(pytest.main([__file__, "-v"]))
 ```
-
-- 测试必须含**每个工具至少一个失败用例**（Sprint 2 评分项）。
 
 ## 提交流程
 
 ```bash
-./.venv/Scripts/python.exe -m pytest tests/ -q   # 必须全绿才提交
-git add <点名的文件>                               # 禁止 -A
-git commit -m "英文标题 + 要点列表"
-git push origin main
+git switch -c <type>/<short-name>
 ```
 
-## 其他约定
+```bash
+uv run pytest -q
+```
 
-- `harness/simulate.py` **永不修改**（共享评估装置）。
-- 聊天态队列（4 月 1 日快照）与模拟器态队列（1 月 1 日）是两个独立状态，工具层不得混用。
-- LLM 不做算术；所有数字必须来自工具输出；tool log 需保留供 faithfulness checker 使用。
-- 推送目标是 `origin`（DSS5105-Capstone-2026-Team6），私有库。
+测试必须全绿。只 `git add` 点名的文件，不用 `git add -A` 或 `git add .`。
+
+```bash
+git add <files>
+```
+
+```bash
+git commit -m "English title" -m "bullet points of what changed"
+```
+
+```bash
+git push -u origin <type>/<short-name>
+```
+
+然后在 GitHub 上开 Pull Request 合并到 `main`。CI（`.github/workflows/tests.yml`）
+会在 Python 3.11 和 3.12 上跑同一套测试。

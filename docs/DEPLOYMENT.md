@@ -1,4 +1,4 @@
-# Dispatch safety update
+# Deployment, state and safety notes
 
 ## Optional shared PostgreSQL ledger
 
@@ -7,18 +7,16 @@ With `DISPATCH_DATABASE_URL` configured, allocations, learned performance and
 API usage use PostgreSQL instead of the host-local SQLite file described below.
 Both Streamlit and Telegram must run the updated code and use the same database
 settings. Existing SQLite records are not automatically imported into PostgreSQL.
-The two live deployments have not yet been verified together.
+Two local processes (web + bot) sharing the Supabase ledger passed on 10 Nov
+2026; the end-to-end check of the two live deployments together is still open
+(see the acceptance record in SHARED_DATABASE.md).
 
-## Apply and validate
+## Validate a checkout
 
-This change is based on main commit `ac3b96d78c26cb7c07a2f9346dd2bc9c393ae58a`.
-If applying the supplied patch manually, run from a clean checkout of the repository:
+From a clean checkout:
 
 ```bash
-git switch -c fix/dispatch-confirmation-and-shared-state
-git apply --check dispatch-safety.patch
-git apply dispatch-safety.patch
-uv sync --group dev
+uv sync
 uv run pytest -q
 ```
 
@@ -28,9 +26,11 @@ There is also a network-free regression suite that uses only Python's standard l
 python -m unittest discover -s tests -p test_dispatch_safety.py -v
 ```
 
-No regression test needs a real API key. GitHub Actions runs pytest on Python
-3.11 and 3.12 after the change is pushed; those jobs have not run as part of
-local validation.
+No regression test needs a real API key; the cloud ledger tests in
+`tests/test_shared_postgres.py` are skipped unless `DSS5105_RUN_CLOUD_TESTS=1`
+and database credentials are set. GitHub Actions (`.github/workflows/tests.yml`)
+runs the same pytest suite on Python 3.11 and 3.12 on every push and pull
+request.
 
 ## Streamlit configuration
 
@@ -73,14 +73,18 @@ reservation. Resetting/deleting the database also resets these counters.
   rather than silently discarding allocations.
 - Back up an existing ledger before applying the update. SQLite is authoritative
   afterwards; new allocations are no longer appended to the old JSONL file.
-- All browser sessions in one deployment share queues and allocations. A model
-  change or Desk rebuild no longer resets queue state.
+- The Streamlit app starts every browser session in a **local sandbox**
+  (session-local SQLite: its own ledger, learned performance and API budget).
+  The Records tab's **Reset & connect to shared DB** switches that session to
+  the shared ledger; **Disconnect** returns it to the sandbox. A model change or
+  Desk rebuild does not reset queue state.
 - Set `DISPATCH_DB_PATH` to an absolute path on a durable disk when one is
   available. Streamlit Community Cloud local files can disappear on redeploy or
   host replacement. This SQLite update does not provide durable cloud storage.
-- The hosted Streamlit app and a Telegram bot running on a separate PC still
-  have separate databases. Sharing state across those hosts requires an
-  external database/service, not pointing two hosts at similar local paths.
+- Without `DISPATCH_DATABASE_URL`, the hosted Streamlit app and the Telegram
+  bot (Render) keep separate local databases. Sharing state across hosts needs
+  the shared PostgreSQL ledger (SHARED_DATABASE.md), not two hosts pointed at
+  similar local paths.
 - Reset demo affects all sessions on that database. It archives allocations
   transactionally and invalidates outstanding proposals; it leaves API usage
   and sign-in state intact.
@@ -107,8 +111,9 @@ old message cannot confirm or modify a newer pending order.
 
 ## Validation boundary
 
-The local standard-library regression suite and syntax/patch checks run without
-network calls. Existing pytest and real Streamlit/browser/provider integration
-checks require dependencies not available in the execution environment. Verify
-the deployed app and supported provider models in a staging session before
-merging. This change has not been deployed and no real API key was used.
+The pytest suite runs offline: model calls are faked or replayed, so it checks
+the desk, tools, ledger and UI logic, not live model behaviour. Live checks are
+separate: the evaluation runs in `results/` (real DeepSeek calls, 28–29 Oct),
+the local shared-ledger acceptance in SHARED_DATABASE.md, and manual checks of
+the deployed app and bot. Before relying on a new provider or model, run
+`eval/run_eval.py` against it.

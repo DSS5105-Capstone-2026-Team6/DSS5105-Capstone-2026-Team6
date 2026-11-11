@@ -25,7 +25,8 @@ def test_card_of_committed_order_shows_notice_and_no_buttons():
     assert not at.exception
     assert any("Already committed" in i.value and "W2 (514 pcs)" in i.value
                for i in at.info)
-    assert not at.button
+    # no commit buttons — only the one-tap skip for the duplicate request
+    assert [b.label for b in at.button] == ["⏭ Skip"]
 
 
 def test_card_of_open_order_has_no_notice():
