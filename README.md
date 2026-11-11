@@ -87,7 +87,7 @@ flowchart LR
 
 | Metric | Value | Where verified |
 |---|---|---|
-| Lateness (10 seeds, default / --stages) | normal **1.7% / 1.8%** late, **0.18 / 0.23** late days · shock **1.9% / 2.5%**, **0.18 / 0.30** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
+| Lateness (hybrid, `late_tol = 0.5`, 10 seeds, default / --stages) | normal **1.8% / 1.8%** late, **0.19 / 0.23** late days · shock **2.0% / 2.7%**, **0.18 / 0.27** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
 | Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Tool calls | 10 deterministic tools, LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
