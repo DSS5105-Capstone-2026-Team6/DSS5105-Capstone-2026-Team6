@@ -204,15 +204,11 @@ h1 { font-size: 1.4rem !important; letter-spacing: -0.01em; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
 }
 
-/* ---------- scenario popover: sticky like the right rail, but in-flow ----------
-   Follows the page scroll and stays under the header, yet keeps its own
-   layout slot — it never overlays the intake box / conversation below it. */
-[class*="st-key-scenario_pop"] {
-    position: sticky;
-    top: 56px;
-    z-index: 20;
-    background: #fff;
-    padding: 2px 0;
+/* ---------- scenario popover dock: sticky like the other rail panels ---------- */
+[class*="st-key-scenario_dock"] {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 8px 12px; margin-bottom: 10px;
+    box-shadow: var(--shadow-sm);
 }
 
 /* ---------- worklist density: tighter request cards ---------- */
