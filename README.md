@@ -87,14 +87,18 @@ flowchart LR
 
 | Metric | Value | Where verified |
 |---|---|---|
-| Lateness (10 seeds, normal / shock) | **2% late, 0.2 late days** | [docs/ALLOCATOR.md](docs/ALLOCATOR.md) |
+| Lateness (10 seeds, default / --stages) | normal **1.7% / 1.8%** late, **0.18 / 0.23** late days · shock **1.9% / 2.5%**, **0.18 / 0.30** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
 | Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Tool calls | 10 deterministic tools, LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
 
-The allocator is a **lateness-first hybrid**: expected finish with defect
-rework priced in, a tolerance plateau among on-time workshops, lowest defect
-rate inside the plateau. Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
+The allocator ranks candidates under **four switchable objectives**:
+**lateness** (expected days late, then earliest finish) · **defects**
+(lowest defect risk first) · **cost** (cheapest among on-time shops,
+lateness fallback) · **hybrid** (default — a tolerance plateau:
+within `late_tol` of the best lateness, then lowest defect rate inside the
+plateau). `late_tol = 0.5` was selected by the 2×2 scan across normal/shock
+× default/stages. Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
 The desk itself: 10 deterministic tools · LLM intake (DeepSeek/GPT/Claude)
 · code-assigned behaviour routing · a transactional allocation ledger (local
