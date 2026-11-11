@@ -21,34 +21,34 @@ emits JSON tool-call lists — every number comes from a tool.
 
 ```mermaid
 flowchart LR
-    TG["Dispatcher · Telegram"] --> BOT
-    WEB["Dispatcher · Web browser"] --> UI
+    TG["Dispatcher<br/>Telegram"]:::front
+    WEB["Dispatcher<br/>Web browser"]:::front
 
     subgraph CLOUD["Hosting"]
-        BOT["Telegram Bot<br/>adapter/ · long polling<br/>Render · UptimeRobot keep-alive"]
-        UI["Streamlit App<br/>app/ · sandbox by default<br/>Reset &amp; connect to shared DB"]
+        BOT["Telegram Bot<br/>adapter/<br/>long polling<br/>UptimeRobot keep-alive"]:::front
+        UI["Streamlit App<br/>app/<br/>sandbox by default<br/>Reset and connect"]:::front
     end
 
-    subgraph CORE["core package · desk/ — single source of truth"]
-        DESK["DispatchDesk · desk.py<br/>handle_message → Decision"]
-        PARSER["llm_parser.py<br/>semantic JSON parse"]
-        AGENT["agent.py<br/>tool-calling loop · temp 0"]
-        TOOLS["tools.py<br/>10 deterministic tools"]
-        ALLOC["allocator.py<br/>lateness-first hybrid"]
-        ROUTER["router.py<br/>code-assigned behaviour"]
-        CONF["confirmation.py<br/>human gate"]
-        AUDIT["audit.py<br/>transactional ledger"]
-        PERF["performance.py<br/>learned capacity"]
-        BUDGET["budget.py<br/>API budgets"]
-        STORE["storage.py<br/>SQLite ⇄ pooled PostgreSQL"]
+    subgraph CORE["core package · desk — single source of truth"]
+        DESK["DispatchDesk<br/>handle_message → Decision<br/>confirm → record"]:::core
+        PARSER["llm_parser<br/>message → JSON<br/>orders · intent · constraints"]:::core
+        AGENT["agent.py<br/>tool-calling loop · temp 0"]:::core
+        TOOLS["tools.py · 10 tools<br/>lookup_order · check_eligibility<br/>get_queue · estimate_delivery<br/>rank_candidates · probe_overload<br/>earliest_feasible · split_options<br/>flag_at_risk · update_performance"]:::core
+        ALLOC["allocator<br/>4 objectives<br/>lateness · defects · cost · hybrid"]:::core
+        ROUTER["router<br/>tool log → behaviour<br/>allocate · refuse · impossible<br/>ask · answer · no_data"]:::core
+        CONF["confirmation<br/>fast path yes or cancel<br/>API classifier · fail closed"]:::core
+        AUDIT["audit<br/>transactional ledger<br/>UNIQUE order_id"]:::core
+        PERF["performance<br/>returned batches →<br/>learned capacity"]:::core
+        BUDGET["budget<br/>hourly · daily caps"]:::core
+        STORE["storage<br/>SQLite or pooled PG<br/>pipeline · advisory lock"]:::core
     end
 
-    LLM[("LLM APIs<br/>DeepSeek · GPT · Claude<br/>JSON tool calls only<br/>no SQL · no data")]
-    LITE[("Local SQLite<br/>sandbox · default")]
-    SUPA[("Supabase PostgreSQL<br/>shared ledger · RLS")]
+    LLM[("LLM APIs<br/>DeepSeek · GPT · Claude<br/>JSON tool calls only")]:::llm
+    LITE[("Local SQLite<br/>sandbox · default")]:::store
+    SUPA[("Supabase PostgreSQL<br/>shared ledger · RLS")]:::store
 
-    BOT --> DESK
-    UI --> DESK
+    TG --> BOT --> DESK
+    WEB --> UI --> DESK
     DESK --> AGENT
     PARSER --> AGENT
     AGENT <--> LLM
@@ -61,6 +61,26 @@ flowchart LR
     STORE --> SUPA
     BOT <--> SUPA
     UI <--> SUPA
+
+    click DESK "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/desk.py"
+    click PARSER "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/llm_parser.py"
+    click AGENT "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/agent.py"
+    click TOOLS "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/tools.py"
+    click ALLOC "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/docs/ALLOCATOR.md"
+    click ROUTER "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/router.py"
+    click CONF "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/confirmation.py"
+    click AUDIT "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/audit.py"
+    click PERF "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/performance.py"
+    click BUDGET "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/budget.py"
+    click STORE "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/storage.py"
+    click BOT "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/adapter/telegram_bot.py"
+    click UI "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/app/streamlit_app.py"
+    click SUPA "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/docs/SHARED_DATABASE.md"
+
+    classDef front fill:#d0ebff,stroke:#1971c2,stroke-width:1.5px,color:#1c2b3a
+    classDef core fill:#f1f8fe,stroke:#339af0,stroke-width:1.5px,color:#1c2b3a
+    classDef llm fill:#74c0fc,stroke:#1971c2,stroke-width:1.5px,color:#08263f
+    classDef store fill:#339af0,stroke:#1971c2,stroke-width:1.5px,color:#ffffff
 ```
 
 ## Headline results
