@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml/badge.svg)](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-1971c2)
-![tests](https://img.shields.io/badge/pytest-289%20passed-2b8a3e)
+![tests](https://img.shields.io/badge/pytest-283%20passed%20%C2%B7%206%20cloud%20checks%20on%20demand-2b8a3e)
 
 > The factory (SweaterCo) farms out batches to 8 outside workshops when it is full.
 > This system answers the dispatcher's three questions for every incoming order —
@@ -87,10 +87,10 @@ flowchart LR
 
 | Metric | Value | Where verified |
 |---|---|---|
-| Lateness (10 seeds, default / --stages) | normal **1.7% / 1.8%** late, **0.18 / 0.23** late days · shock **1.9% / 2.5%**, **0.18 / 0.30** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
+| Lateness (hybrid, `late_tol = 0.5`, 10 seeds, default / --stages) | normal **1.8% / 1.8%** late, **0.19 / 0.23** late days · shock **2.0% / 2.7%**, **0.18 / 0.27** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
 | Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
-| Tool calls | 10 deterministic tools, LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Tool calls | 10 deterministic tools (9 callable by the LLM, plus `split_options` called by the desk), LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
 
 The allocator ranks candidates under **four switchable objectives**:
 **lateness** (expected days late, then earliest finish) · **defects**
@@ -104,7 +104,7 @@ the defect:cost split at 3:1 by a two-stage sweep — is reproduced in
 [harness/eft_benchmark.py](harness/eft_benchmark.py).
 Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
-The desk itself: 10 deterministic tools · LLM intake (DeepSeek/GPT/Claude)
+The desk itself: 10 deterministic tools (9 callable by the LLM) · LLM intake (DeepSeek/GPT/Claude)
 · code-assigned behaviour routing · a transactional allocation ledger (local
 SQLite per session, or a shared Supabase PostgreSQL for web + bot) · learned
 workshop performance · a Streamlit dispatcher UI (live queues, allocator
@@ -221,7 +221,7 @@ and keeps OldMill suspended instead of re-opening it every day.
 │   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
 │   ├── config.py                # central constants + the switchable world clock (Apr-1 / Jan-1)
 │   ├── register.py              # OrderStore + WorkshopStore (shared data stores)
-│   ├── tools.py                 # the 10 deterministic tools (no LLM) + tool registry
+│   ├── tools.py                 # the 10 deterministic tools (no LLM; 9 in the tool registry + split_options)
 │   ├── performance.py           # learned workshop performance (roadmap §1.6, SQLite-backed)
 │   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
 │   ├── agent.py                 # intake agent (tool-calling loop, temp 0; DeepSeek/GPT/Claude)
@@ -282,7 +282,7 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   dialog ([#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36),
   [#55](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/55))
   → ETAs that respect the real calendar.
-- **[RuoxiZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)** —
+- **[RuoxiZhuang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)** —
   designed, built and deployed the shared Supabase PostgreSQL ledger:
   schema with RLS, the storage adapter with advisory-lock writers, and the
   acceptance suite incl. a real Telegram round-trip
@@ -304,7 +304,13 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   allocation, cross-workstream coordination and progress tracking,
   validation and test passes on the shared-ledger rollout and the UI
   changes, acceptance sign-off before each merge, and demo-day
-  presentation coordination.
+  presentation coordination. Earlier, at the Sprint 2 → 3 handover:
+  dispatch-safety hardening — read-only model tools behind one
+  human-confirmation endpoint, consent parsing for follow-ups, a
+  transactional ledger with duplicate protection, server-side API budgets
+  and a required password gate ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12)); follow-up fixes for chat
+  display and order-ID normalisation ([#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14)) and the session
+  request cap ([#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)).
 - **[Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)** —
   UI adjustments (switchable objective panel, live queue bars, dashboard
   views) and the 120-request timeline evaluation with periodic shocks
@@ -321,9 +327,10 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
 - **[Claude](https://claude.com)** —
   used by members across the team: multi-workshop split ranking and the
   held-out review fixes (with SishuoZhou), one-tap cards and the parser
-  tab, duplicate-skip and failure replay with XuantingWang, and
-  implementation support across GuanmingYang's, RuoxiZhou's and Xuehann's
-  tasks.
+  tab, duplicate-skip and failure replay with XuantingWang,
+  dispatch-safety hardening and follow-up fixes with Xuehann
+  ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12), [#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14), [#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)), and implementation support
+  across GuanmingYang's, RuoxiZhuang's and Xuehann's tasks.
 
 ## Safety and deployment
 
