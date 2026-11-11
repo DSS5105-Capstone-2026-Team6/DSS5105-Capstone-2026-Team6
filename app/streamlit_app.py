@@ -50,6 +50,7 @@ from desk.chat_dump import ENVELOPE, split_chat_dump  # re-exported for tests
 from app.theme.styles import CSS
 from app.theme.icons import icon
 from app.theme.motion import install_scroll_sync
+from app.components.draggable_dialog import make_dialog_movable
 from app.tabs.desk import render_inbox
 from app.tabs.desk.scenario import render_sunday_preview
 from app.tabs.dashboard import render_dashboard
@@ -365,6 +366,7 @@ def main():
                 open_scenario_preview(desk)
             render_inbox(desk)
         install_scroll_sync()
+        make_dialog_movable()
         with tab_dash:
             render_dashboard(desk)
         with tab_recent:
