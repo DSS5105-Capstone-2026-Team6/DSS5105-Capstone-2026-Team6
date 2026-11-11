@@ -30,8 +30,8 @@ Records tab.
 
 ## Quick Start (run it locally)
 
-**You need:** Python 3.11 or newer, git, and a [DeepSeek API key](https://platform.deepseek.com/)
-for the chat features. The simulator, benchmarks and tests need no key.
+**You need:** Python 3.11 or newer, git, and an API key from one of
+**DeepSeek** (default), **OpenAI** or **Anthropic** for the chat features. The simulator, benchmarks and tests need no key.
 No database setup is needed: the desk creates a local SQLite file on first run.
 
 **1. Get the code**
@@ -41,9 +41,12 @@ git clone https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-T
 cd DSS5105-Capstone-2026-Team6
 ```
 
-**2. Add your keys.** Copy the template, then open `.env` and set
-`DEEPSEEK_API_KEY` and an `APP_PASSWORD` of your choice (the web app asks for
-it). Never commit `.env`.
+**2. Add your keys.** Copy the template, then open `.env` and set your
+provider key — `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` —
+and an `APP_PASSWORD` of your choice (the web app asks for it). With a
+non-DeepSeek key, pick that provider in the sidebar's **Provider** menu (or
+add it after the message on the command line, e.g. `desk/agent.py R20 openai`).
+Never commit `.env`.
 
 ```bash
 cp .env.example .env
