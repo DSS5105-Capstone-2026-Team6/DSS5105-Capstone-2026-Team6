@@ -352,10 +352,6 @@ def main():
         main_col, rail_col = st.columns([3.2, 1], gap="large")
     with rail_col:
         with st.container(key="rail"):
-            with st.container(key="scenario_dock"):
-                with st.popover("Scenario preview · Production and transport",
-                                use_container_width=True):
-                    render_sunday_preview(desk)
             render_shockdock(desk)
             render_objective_dock(desk)
             render_queue_dock(desk)
@@ -363,6 +359,10 @@ def main():
         tab_main, tab_dash, tab_recent = st.tabs(
             ["Desk", "Dashboard", "Records"])
         with tab_main:
+            st.container(key="scenario_pop_spacer").empty()
+            with st.container(key="scenario_pop"):
+                with st.popover("Scenario preview"):
+                    render_sunday_preview(desk)
             render_inbox(desk)
         install_scroll_sync()
         with tab_dash:

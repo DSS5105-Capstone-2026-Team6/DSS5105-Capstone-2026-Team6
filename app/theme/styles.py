@@ -204,11 +204,35 @@ h1 { font-size: 1.4rem !important; letter-spacing: -0.01em; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
 }
 
-/* ---------- scenario popover dock: sticky like the other rail panels ---------- */
-[class*="st-key-scenario_dock"] {
-    background: #fff; border: 1px solid var(--line); border-radius: 14px;
-    padding: 8px 12px; margin-bottom: 10px;
-    box-shadow: var(--shadow-sm);
+/* ---------- scenario popover dock: fixed to the viewport ----------
+   position: sticky failed twice inside Streamlit's wrapper DOM (ancestor
+   overflow + stretched-column geometry). position: fixed ignores the whole
+   ancestor chain. The spacer keeps the button's original layout slot, so
+   the intake area below is never covered before the popover opens. */
+[class*="st-key-scenario_pop_spacer"] { height: 46px; }
+[class*="st-key-scenario_pop"] {
+    position: fixed;
+    top: 60px;
+    z-index: 300;
+    /* hug the right edge of the main content block (max-width 1200) */
+    right: max(16px, calc((100vw - 1200px) / 2 + 16px));
+    width: auto;
+    white-space: nowrap;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 2px 8px;
+    box-shadow: var(--shadow-md);
+}
+/* sidebar expanded: the content block shifts right by 336px (21rem),
+   so the right offset shrinks accordingly */
+body:has([data-testid="stSidebar"][aria-expanded="true"]) [class*="st-key-scenario_pop"],
+body:has([data-testid="stSidebarContent"][aria-expanded="true"]) [class*="st-key-scenario_pop"] {
+    right: max(16px, calc((100vw - 1536px) / 2 + 16px));
+}
+@media (max-width: 900px) {
+    [class*="st-key-scenario_pop"] { position: static; width: auto; }
+    [class*="st-key-scenario_pop_spacer"] { display: none; }
 }
 
 /* ---------- worklist density: tighter request cards ---------- */
