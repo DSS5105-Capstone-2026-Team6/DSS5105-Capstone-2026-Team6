@@ -203,5 +203,50 @@ h1 { font-size: 1.4rem !important; letter-spacing: -0.01em; }
     .block-container { max-width: 100%; padding-left: .8rem; padding-right: .8rem; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
 }
+
+/* ---------- scenario popover dock: fixed to the viewport ----------
+   position: sticky failed twice inside Streamlit's wrapper DOM (ancestor
+   overflow + stretched-column geometry). position: fixed ignores the whole
+   ancestor chain. The spacer keeps the button's original layout slot, so
+   the intake area below is never covered before the popover opens. */
+[class*="st-key-scenario_pop_spacer"] { height: 46px; }
+[class*="st-key-scenario_pop"] {
+    position: fixed;
+    top: 60px;
+    z-index: 300;
+    /* hug the right edge of the main content block (max-width 1200) */
+    right: max(16px, calc((100vw - 1200px) / 2 + 16px));
+    width: auto;
+    white-space: nowrap;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 2px 8px;
+    box-shadow: var(--shadow-md);
+}
+/* sidebar expanded: the content block shifts right by 336px (21rem),
+   so the right offset shrinks accordingly */
+body:has([data-testid="stSidebar"][aria-expanded="true"]) [class*="st-key-scenario_pop"],
+body:has([data-testid="stSidebarContent"][aria-expanded="true"]) [class*="st-key-scenario_pop"] {
+    right: max(16px, calc((100vw - 1536px) / 2 + 16px));
+}
+@media (max-width: 900px) {
+    [class*="st-key-scenario_pop"] { position: static; width: auto; }
+    [class*="st-key-scenario_pop_spacer"] { display: none; }
+}
+
+/* ---------- worklist density: tighter request cards ---------- */
+[class*="st-key-worklist"] .card {
+    padding: 4px 8px; margin: 2px 0;
+    line-height: 1.25; font-size: 0.88em;
+}
+[class*="st-key-worklist"] [data-testid="stExpander"] { margin-bottom: 2px; }
+[class*="st-key-worklist"] [data-testid="stExpander"] summary {
+    padding-top: 4px !important; padding-bottom: 4px !important;
+    min-height: 0 !important;
+}
+[class*="st-key-worklist"] .stMarkdown p { margin-bottom: 0.2em; }
+[class*="st-key-worklist"] .qbar-track { height: 6px; margin: 2px 0; }
+[class*="st-key-worklist"] .section-head { margin: 6px 0 2px; }
 </style>
 """
