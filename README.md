@@ -123,10 +123,12 @@ Key milestones since Oct 30, in the order they landed:
   cards became the confirm buttons, the page scrolls to the next open order
   after each commit, already-committed orders mark themselves, and the LLM
   parser became an inbox tab with field-level register checks.
-- **A more honest world** ([GuanmingYang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/beibei323)),
-  [#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36)):
+- **A more honest world** ([GuanmingYang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/beibei323),
+  [#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36),
+  [#55](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/55)):
   the scenario preview prices Sunday closures, extra transport days and
-  seeded capacity noise against the baseline ranking
+  seeded capacity noise against the baseline ranking, now in a dialog with
+  selectable start dates
   ([app/tabs/desk/scenario.py](app/tabs/desk/scenario.py)).
 - **One shared ledger** ([RuoxiZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)),
   [#38](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/38)):
@@ -134,10 +136,19 @@ Key milestones since Oct 30, in the order they landed:
   serialised writers, duplicates refused by the database itself
   ([docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md),
   [scripts/check_database.py](scripts/check_database.py)).
-- **Planning, validation and testing** ([Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann) · [XuantingWang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/ADEdreambridge)): sprint
-  planning and task coordination, acceptance checks on the shared-ledger
-  rollout and the UI changes, and the demo test passes that caught the
-  rough edges before they shipped.
+- **Robustness and re-evaluation** ([XuantingWang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/ADEdreambridge),
+  [#56](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/56),
+  [#57](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/57)):
+  duplicate orders answer "already committed" with a one-tap Skip on both
+  front-ends; a refusal with no candidates gets a code-ranked alternative
+  (failure case R24); and
+  [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md); re-scoring the
+  recorded runs on the fixed code lifts workshop accuracy from 0.842 to
+  0.895 on dev and from 0.692 to 0.846 on held-out
+  ([eval/replay_offline.py](eval/replay_offline.py)).
+- **Planning and project leadership** ([Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann)): sprint planning, task
+  coordination, and acceptance sign-off across the shared-ledger rollout
+  and the UI changes.
 - **Latency hunt and operations** ([kimi](kimi.moonshot.cn/),
   [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46)):
   the flat 2,100-line app/ layer reorganised by surface; bot proposals
