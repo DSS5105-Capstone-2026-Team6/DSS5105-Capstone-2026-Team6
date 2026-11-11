@@ -1,14 +1,67 @@
-# DSS5105 Capstone 2026 — Team 6
+# DSS5105 Capstone 2026 · Team 6
 
 **Track 2: The Quick-Response Subcontracting Desk** — primary objective: **minimise lateness**.
 
-The factory (SweaterCo) farms out batches to 8 outside workshops when it is full. This system answers the dispatcher's three questions for every incoming order — *can they make it, can they take it now, are they allowed to* — makes the allocation, and leaves an auditable record with the reasoning attached.
+[![tests](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml/badge.svg)](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-1971c2)
+![tests](https://img.shields.io/badge/pytest-289%20passed-2b8a3e)
 
-## Deployed Apps
+> The factory (SweaterCo) farms out batches to 8 outside workshops when it is full.
+> This system answers the dispatcher's three questions for every incoming order —
+> *can they make it, can they take it now, are they allowed to* — makes the
+> allocation, and leaves an auditable record with the reasoning attached.
 
-Streamlit App: https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app
+**Live** · [Streamlit App](https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app) · [Telegram Bot](https://t.me/Ddispatcherr_bot)
+**Docs** · [Allocator](docs/ALLOCATOR.md) · [Evaluation](docs/EVALUATION.md) · [Deployment](docs/DEPLOYMENT.md) · [Shared DB](docs/SHARED_DATABASE.md) · [Splits](docs/SPLITS.md)
 
-Dispatcher Bot (Render): https://t.me/Ddispatcherr_bot
+## Architecture
+
+Two thin front-ends, one deterministic core, one ledger. The LLM only ever
+emits JSON tool-call lists — every number comes from a tool.
+
+```mermaid
+flowchart LR
+    TG["Dispatcher · Telegram"] --> BOT
+    WEB["Dispatcher · Web browser"] --> UI
+
+    subgraph CLOUD["Hosting"]
+        BOT["Telegram Bot<br/>adapter/ · long polling<br/>Render · UptimeRobot keep-alive"]
+        UI["Streamlit App<br/>app/ · sandbox by default<br/>Reset &amp; connect to shared DB"]
+    end
+
+    subgraph CORE["core package · desk/ — single source of truth"]
+        DESK["DispatchDesk · desk.py<br/>handle_message → Decision"]
+        PARSER["llm_parser.py<br/>semantic JSON parse"]
+        AGENT["agent.py<br/>tool-calling loop · temp 0"]
+        TOOLS["tools.py<br/>10 deterministic tools"]
+        ALLOC["allocator.py<br/>lateness-first hybrid"]
+        ROUTER["router.py<br/>code-assigned behaviour"]
+        CONF["confirmation.py<br/>human gate"]
+        AUDIT["audit.py<br/>transactional ledger"]
+        PERF["performance.py<br/>learned capacity"]
+        BUDGET["budget.py<br/>API budgets"]
+        STORE["storage.py<br/>SQLite ⇄ pooled PostgreSQL"]
+    end
+
+    LLM[("LLM APIs<br/>DeepSeek · GPT · Claude<br/>JSON tool calls only<br/>no SQL · no data")]
+    LITE[("Local SQLite<br/>sandbox · default")]
+    SUPA[("Supabase PostgreSQL<br/>shared ledger · RLS")]
+
+    BOT --> DESK
+    UI --> DESK
+    DESK --> AGENT
+    PARSER --> AGENT
+    AGENT <--> LLM
+    AGENT --> TOOLS --> ALLOC --> ROUTER --> CONF --> AUDIT
+    TOOLS --> PERF
+    AUDIT --> STORE
+    PERF --> STORE
+    BUDGET --> STORE
+    STORE --> LITE
+    STORE --> SUPA
+    BOT <--> SUPA
+    UI <--> SUPA
+```
 
 ## Headline results
 
@@ -30,9 +83,6 @@ workshop performance · a Streamlit dispatcher UI (live queues, allocator
 lens, world switch Apr-1/Jan-1, stages mode, shock trigger, LLM parser,
 batch confirm) and a Telegram bot shell (one-tap commit buttons, /queue
 charts, yes all).
-
-Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
-[shared database setup & acceptance](docs/SHARED_DATABASE.md).
 
 ## Project Structure
 
@@ -153,8 +203,8 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   transactions + longer LLM timeout; batch confirm; sandbox mode; scenario
   button pinned; deployed and operates the bot on Render.
 - **[Claude](https://claude.com)** —
-  used by members across the team: split
-  ranking and review fixes with SishuoZhou, one-tap cards and the parser
+  used by members across the team: multi-workshop split ranking and the
+  held-out review fixes (with SishuoZhou), one-tap cards and the parser
   tab, duplicate-skip and failure replay with XuantingWang, and
   implementation support across GuanmingYang's, RuoxiZhou's and Xuehann's
   tasks.
