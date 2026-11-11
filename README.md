@@ -154,7 +154,7 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   button pinned; deployed and operates the bot on Render
   → clicks that took seconds now land in well under one.
 - **[Claude](https://claude.com)** —
-  used by every member except Zhangruikai (who works with kimi): split
+  used by members across the team: split
   ranking and review fixes with SishuoZhou, one-tap cards and the parser
   tab, duplicate-skip and failure replay with XuantingWang, and
   implementation support across GuanmingYang's, RuoxiZhou's and Xuehann's
