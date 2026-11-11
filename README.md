@@ -101,62 +101,54 @@ Further reading: [deployment & migration notes](docs/DEPLOYMENT.md) ·
 
 ## Sprint 3 — realism, polish, and one shared ledger
 
-Key milestones since Oct 30, in the order they landed:
+Key milestones since Oct 30 — who changed what, and what it bought us:
 
-- **Splits and review fixes** ([Claude](https://claude.com) · [SishuoZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/SishuoZhou)),
-  [#20](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/20)):
-  orders no single workshop can finish get ranked multi-workshop split
-  options ([docs/SPLITS.md](docs/SPLITS.md)); the held-out review's three
-  desk problems (lookup filters, recommendation consistency) fixed.
-- **The UI grew up** ([Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)): hybrid became the default objective,
-  candidate cards got live queue bars and entrance animations, the dashboard
-  gained queue timeline / allocator lens / capacity drift views, and the
-  world clock made the Apr-1 demo ↔ Jan-1 replay switchable with a seeded
-  shock trigger ([desk/config.py](desk/config.py)).
-- **Full-scale timeline evaluation** ([Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)): all 120 F-series
-  requests replayed on the world clock with periodic shock windows and
-  shock-aware labels
+- **[Claude](https://claude.com) · [SishuoZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/SishuoZhou)** —
+  ranked multi-workshop splits for impossible orders and the held-out
+  review fixes ([#20](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/20),
+  [docs/SPLITS.md](docs/SPLITS.md)); later the one-tap dispatching batch:
+  cards as confirm buttons, auto-scroll to the next order, LLM parser tab
+  ([#21](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/21)–[#35](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/35))
+  → far fewer clicks per order.
+- **[Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)** —
+  UI adjustments (hybrid default, live queue bars, dashboard views) and the
+  120-request timeline evaluation with periodic shocks
   ([notebooks/full120_timeline_shock.ipynb](notebooks/full120_timeline_shock.ipynb),
   [eval/shock.py](eval/shock.py)).
-- **One-tap dispatching** ([Claude](https://claude.com) · [SishuoZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/SishuoZhou),
-  [#21](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/21)–[#35](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/35)):
-  cards became the confirm buttons, the page scrolls to the next open order
-  after each commit, already-committed orders mark themselves, and the LLM
-  parser became an inbox tab with field-level register checks.
-- **A more honest world** ([GuanmingYang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/beibei323),
-  [#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36),
-  [#55](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/55)):
-  the scenario preview prices Sunday closures, extra transport days and
-  seeded capacity noise against the baseline ranking, now in a dialog with
-  selectable start dates
-  ([app/tabs/desk/scenario.py](app/tabs/desk/scenario.py)).
-- **One shared ledger** ([RuoxiZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)),
-  [#38](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/38)):
-  web and bot can share one Supabase PostgreSQL ledger — advisory-lock
-  serialised writers, duplicates refused by the database itself
-  ([docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md),
-  [scripts/check_database.py](scripts/check_database.py)).
-- **Robustness and re-evaluation** ([XuantingWang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/ADEdreambridge),
-  [#56](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/56),
-  [#57](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/57)):
-  duplicate orders answer "already committed" with a one-tap Skip on both
-  front-ends; a refusal with no candidates gets a code-ranked alternative
-  (failure case R24); and
-  [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md); re-scoring the
-  recorded runs on the fixed code lifts workshop accuracy from 0.842 to
-  0.895 on dev and from 0.692 to 0.846 on held-out
-  ([eval/replay_offline.py](eval/replay_offline.py)).
-- **Planning and project leadership** ([Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann)): sprint planning, task
-  coordination, and acceptance sign-off across the shared-ledger rollout
-  and the UI changes.
-- **Latency hunt and operations** ([kimi](kimi.moonshot.cn/),
-  [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46)):
-  the flat 2,100-line app/ layer reorganised by surface; bot proposals
-  survive restarts and confirm via one-tap buttons or "yes all", with
-  `/queue` chart photos; pooled connections, a version-gated ledger cache,
-  pipelined transactions and a longer LLM timeout fixed the cross-border
-  lag; batch confirm for the web worklist; and a local sandbox by default
-  with Reset & connect to shared DB on the Records tab.
+- **[GuanmingYang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/beibei323)** —
+  scenario preview pricing Sunday closures, transport delay and seeded
+  capacity noise, now a dialog with selectable start dates
+  ([#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36),
+  [#55](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/55),
+  [app/tabs/desk/scenario.py](app/tabs/desk/scenario.py))
+  → ETAs that respect the real calendar.
+- **[RuoxiZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)** —
+  one Supabase PostgreSQL ledger shared by web and bot
+  ([#38](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/38),
+  [docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md))
+  → both front-ends read and write the same truth; duplicates refused by
+  the database itself.
+- **[XuantingWang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/ADEdreambridge)** —
+  duplicate-order Skip, code-ranked alternatives for refusals (R24), and
+  offline re-scoring of the failure cases
+  ([#56](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/56),
+  [#57](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/57),
+  [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md))
+  → workshop accuracy after the fixes: 0.842 → 0.895 dev, 0.692 → 0.846
+  held-out.
+- **[Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann)** —
+  sprint planning, task coordination and acceptance sign-off across the
+  rollout.
+- **[kimi](kimi.moonshot.cn/)** —
+  [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37),
+  [#39](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/39)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46),
+  [#60](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/60):
+  app/ reorganised by surface; bot proposals survive restarts, one-tap
+  buttons, `/queue` charts, yes all; pooled connections + version-gated
+  cache + pipelined transactions + longer LLM timeout; batch confirm;
+  sandbox-by-default with Reset & connect; the scenario button pinned to
+  the main area
+  → clicks that took seconds now land in well under one.
 
 ## Safety and deployment
 
