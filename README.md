@@ -151,8 +151,7 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   app/ reorganised by surface; bot proposal fix, one-tap buttons, `/queue`
   charts, yes all; DB pooling + version-gated cache + pipelined
   transactions + longer LLM timeout; batch confirm; sandbox mode; scenario
-  button pinned; deployed and operates the bot on Render
-  → clicks that took seconds now land in well under one.
+  button pinned; deployed and operates the bot on Render.
 - **[Claude](https://claude.com)** —
   used by members across the team: split
   ranking and review fixes with SishuoZhou, one-tap cards and the parser
