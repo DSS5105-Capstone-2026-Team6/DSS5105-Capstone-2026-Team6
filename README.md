@@ -98,7 +98,11 @@ The allocator ranks candidates under **four switchable objectives**:
 lateness fallback) · **hybrid** (default — a tolerance plateau:
 within `late_tol` of the best lateness, then lowest defect rate inside the
 plateau). `late_tol = 0.5` was selected by the 2×2 scan across normal/shock
-× default/stages. Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
+× default/stages. The weighted Sprint-1 variant — `score = w·est.finish +
+(1−w)·[0.75·defect + 0.25·cost]`, min-max scaled, with w locked at 0.7 and
+the defect:cost split at 3:1 by a two-stage sweep — is reproduced in
+[harness/eft_benchmark.py](harness/eft_benchmark.py).
+Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
 The desk itself: 10 deterministic tools · LLM intake (DeepSeek/GPT/Claude)
 · code-assigned behaviour routing · a transactional allocation ledger (local
