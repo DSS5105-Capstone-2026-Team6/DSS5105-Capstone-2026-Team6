@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml/badge.svg)](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-1971c2)
-![tests](https://img.shields.io/badge/pytest-289%20passed-2b8a3e)
+![tests](https://img.shields.io/badge/pytest-283%20passed%20%C2%B7%206%20cloud%20checks%20on%20demand-2b8a3e)
 
 > The factory (SweaterCo) farms out batches to 8 outside workshops when it is full.
 > This system answers the dispatcher's three questions for every incoming order —
@@ -90,7 +90,7 @@ flowchart LR
 | Lateness (hybrid, `late_tol = 0.5`, 10 seeds, default / --stages) | normal **1.8% / 1.8%** late, **0.19 / 0.23** late days · shock **2.0% / 2.7%**, **0.18 / 0.27** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
 | Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
-| Tool calls | 10 deterministic tools, LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Tool calls | 10 deterministic tools (9 callable by the LLM, plus `split_options` called by the desk), LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
 
 The allocator ranks candidates under **four switchable objectives**:
 **lateness** (expected days late, then earliest finish) · **defects**
@@ -104,7 +104,7 @@ the defect:cost split at 3:1 by a two-stage sweep — is reproduced in
 [harness/eft_benchmark.py](harness/eft_benchmark.py).
 Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
-The desk itself: 10 deterministic tools · LLM intake (DeepSeek/GPT/Claude)
+The desk itself: 10 deterministic tools (9 callable by the LLM) · LLM intake (DeepSeek/GPT/Claude)
 · code-assigned behaviour routing · a transactional allocation ledger (local
 SQLite per session, or a shared Supabase PostgreSQL for web + bot) · learned
 workshop performance · a Streamlit dispatcher UI (live queues, allocator
@@ -221,7 +221,7 @@ and keeps OldMill suspended instead of re-opening it every day.
 │   ├── contracts.py             # structured records (Decision, AllocationRecord, ...)
 │   ├── config.py                # central constants + the switchable world clock (Apr-1 / Jan-1)
 │   ├── register.py              # OrderStore + WorkshopStore (shared data stores)
-│   ├── tools.py                 # the 10 deterministic tools (no LLM) + tool registry
+│   ├── tools.py                 # the 10 deterministic tools (no LLM; 9 in the tool registry + split_options)
 │   ├── performance.py           # learned workshop performance (roadmap §1.6, SQLite-backed)
 │   ├── allocator.py             # Tool 5: the allocator — ranked candidates, objective as config
 │   ├── agent.py                 # intake agent (tool-calling loop, temp 0; DeepSeek/GPT/Claude)
