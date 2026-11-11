@@ -11,10 +11,6 @@
 > *can they make it, can they take it now, are they allowed to* — makes the
 > allocation, and leaves an auditable record with the reasoning attached.
 
-**Live** · [Streamlit App](https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app) · [Telegram Bot](https://t.me/Ddispatcherr_bot)
-
-**Docs** · [Allocator](docs/ALLOCATOR.md) · [Evaluation](docs/EVALUATION.md) · [Failure analysis](docs/FAILURE_ANALYSIS.md) · [Deployment](docs/DEPLOYMENT.md) · [Shared DB](docs/SHARED_DATABASE.md) · [Splits](docs/SPLITS.md)
-
 ## For assessors
 
 | | |
@@ -22,11 +18,31 @@
 | **Web app** | [dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app](https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app) — the password is provided with our submission (it is not stored in this repository) |
 | **Telegram bot** | [@Ddispatcherr_bot](https://t.me/Ddispatcherr_bot) — runs on Render, writes to the same shared ledger as the web app |
 | **Try it in 1 minute** | Desk tab → **Sample inbox** → **Dispatch** → click a candidate card to confirm → see it on the **Records** tab |
-| **Evaluation** | [docs/EVALUATION.md](docs/EVALUATION.md) · [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md) · [full-120 rerun](#full-120-timeline-evaluation-rerun-11-nov-2026) |
+| **Documentation** | [Allocator](docs/ALLOCATOR.md) · [Tolerance scan](docs/Tolerance_Scan.md) · [Evaluation](docs/EVALUATION.md) · [Failure analysis](docs/FAILURE_ANALYSIS.md) · [Full-120 rerun](docs/FULL120.md) · [Splits](docs/SPLITS.md) · [Shared DB](docs/SHARED_DATABASE.md) · [Deployment](docs/DEPLOYMENT.md) |
 
-The hosted app starts in a **local sandbox**: nothing you do there touches
-the shared data until you press **Reset & connect to shared DB** on the
-Records tab.
+The hosted app starts in a local sandbox; see [How it works](#how-it-works).
+
+## Headline results
+
+| Metric | Value | Where verified |
+|---|---|---|
+| Lateness (hybrid, `late_tol = 0.5`, 10 seeds, default / --stages) | normal **1.8% / 1.8%** late, **0.19 / 0.23** late days · shock **2.0% / 2.7%**, **0.18 / 0.27** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
+| Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Workshop accuracy (dev / held-out, Sprint 3 code) | **0.895 / 0.846** | [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md) |
+| Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Full-120 timeline with periodic shocks (GPT, 11 Nov) | behaviour **0.775** (93/120) | [below](#full-120-timeline-evaluation) · [docs/FULL120.md](docs/FULL120.md) |
+
+The allocator ranks candidates under **four switchable objectives**:
+**lateness** (expected days late, then earliest finish) · **defects**
+(lowest defect risk first) · **cost** (cheapest among on-time shops,
+lateness fallback) · **hybrid** (default — a tolerance plateau:
+within `late_tol` of the best lateness, then lowest defect rate inside the
+plateau). `late_tol = 0.5` was selected by the 2×2 scan across normal/shock
+× default/stages. The weighted Sprint-1 variant — `score = w·est.finish +
+(1−w)·[0.75·defect + 0.25·cost]`, min-max scaled, with w locked at 0.7 and
+the defect:cost split at 3:1 by a two-stage sweep — is reproduced in
+[harness/eft_benchmark.py](harness/eft_benchmark.py).
+Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
 
 ## Quick Start (run it locally)
 
@@ -139,7 +155,7 @@ Column definitions for the order and workshop data are in
 | Telegram `/queue` test fails with `No module named matplotlib` | Run the tests as `uv run --with matplotlib pytest`, or `pip install matplotlib`. |
 | `harness/simulate.py` cannot find its data | Run it from the repository root, with `harness/` and `data/` side by side. |
 
-## Architecture
+## How it works
 
 Two thin front-ends, one deterministic core, one ledger. The LLM only ever
 emits JSON tool-call lists — every number comes from a tool.
@@ -208,36 +224,34 @@ flowchart LR
     classDef store fill:#339af0,stroke:#1971c2,stroke-width:1.5px,color:#ffffff
 ```
 
-## Headline results
+### Design and safety
 
-| Metric | Value | Where verified |
-|---|---|---|
-| Lateness (hybrid, `late_tol = 0.5`, 10 seeds, default / --stages) | normal **1.8% / 1.8%** late, **0.19 / 0.23** late days · shock **2.0% / 2.7%**, **0.18 / 0.27** | [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md) |
-| Chat behaviour accuracy (dev 30 / held-out 20) | **0.933 / 0.800** | [docs/EVALUATION.md](docs/EVALUATION.md) |
-| Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
-| Tool calls | 10 deterministic tools (9 callable by the LLM, plus `split_options` called by the desk), LLM never does arithmetic | [docs/EVALUATION.md](docs/EVALUATION.md) |
+The LLM reads the request and calls tools; **code decides, computes and
+records**. The desk has 10 deterministic tools (9 callable by the LLM, plus
+`split_options` called by the desk), code-assigned behaviour routing, a
+transactional allocation ledger with a `UNIQUE order_id`, learned workshop
+performance, a Streamlit dispatcher UI (live queues, allocator lens, world
+switch Apr-1/Jan-1, stages mode, shock trigger, LLM parser, batch confirm) and
+a Telegram bot shell (one-tap commit buttons, `/queue` charts, yes all).
 
-The allocator ranks candidates under **four switchable objectives**:
-**lateness** (expected days late, then earliest finish) · **defects**
-(lowest defect risk first) · **cost** (cheapest among on-time shops,
-lateness fallback) · **hybrid** (default — a tolerance plateau:
-within `late_tol` of the best lateness, then lowest defect rate inside the
-plateau). `late_tol = 0.5` was selected by the 2×2 scan across normal/shock
-× default/stages. The weighted Sprint-1 variant — `score = w·est.finish +
-(1−w)·[0.75·defect + 0.25·cost]`, min-max scaled, with w locked at 0.7 and
-the defect:cost split at 3:1 by a two-stage sweep — is reproduced in
-[harness/eft_benchmark.py](harness/eft_benchmark.py).
-Detail: [docs/ALLOCATOR.md](docs/ALLOCATOR.md) & [docs/Tolerance_Scan.md](docs/Tolerance_Scan.md)
+- **Only a human commits.** The model's tools are read-only; the
+  confirmation endpoint re-checks eligibility and staleness and writes in one
+  transaction. Follow-up messages update the pending proposal.
+- **Cost and access controls.** Public Streamlit deployments require
+  `APP_PASSWORD`; every provider needs its own key; server-side API budgets
+  (per hour and per day) survive new sessions and Reset demo.
+- **Storage.** The Streamlit app starts in a **local sandbox** (session-local
+  SQLite; nothing touches shared data — safe for debugging and tests), and the
+  Records tab's **Reset & connect to shared DB** rebuilds the desk on the shared
+  Supabase ledger, the same one the Telegram bot always uses. With no cloud
+  database configured, everything falls back to local SQLite; a configured-but-
+  unreachable cloud database fails loudly instead of silently writing locally.
+  Existing JSONL audit records are imported once (duplicates skipped, first
+  record wins).
 
-The desk itself: 10 deterministic tools (9 callable by the LLM) · LLM intake (DeepSeek/GPT/Claude)
-· code-assigned behaviour routing · a transactional allocation ledger (local
-SQLite per session, or a shared Supabase PostgreSQL for web + bot) · learned
-workshop performance · a Streamlit dispatcher UI (live queues, allocator
-lens, world switch Apr-1/Jan-1, stages mode, shock trigger, LLM parser,
-batch confirm) and a Telegram bot shell (one-tap commit buttons, /queue
-charts, yes all).
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) before upgrading a deployment.
 
-## Full-120 timeline evaluation (rerun 11 Nov 2026)
+## Full-120 timeline evaluation
 
 All 120 requests in `data/dispatch_requests_full120.txt`, replayed in
 `[Sent: ...]` order from 1 Jan as one timeline: stages on, periodic shocks
@@ -258,90 +272,18 @@ model: OpenAI GPT 6 Luna; labels: `data/f_heldout.json` (unchanged).
 | complete | 27/28 | | unanswerable | **0/12** |
 | constraint | 22/24 | | **total** | **93/120** |
 
-23 of the 27 errors come from two kinds of request.
+23 of the 27 errors come from two mechanisms:
 
-**1. Requests that change the order's completion date (impossible, 11 of 12 wrong).**
-Each says the customer has moved delivery to the dispatch day itself, for
-example F061: *"New delivery deadline is Feb 13, exactly the day we send it
-out. We used to have until Mar 14."* No workshop can deliver the same day,
-so the label is `impossible`. But the desk always takes the due date from
-the order register. The model notices the conflict and says so ("the
-register still has ORD-032 due Mar 14"), then checks feasibility against the
-**old** date, which is easy to meet. Result: `allocate` 8 times, `ask` 3
-times. Fix: add `due_date` to the parsed request and pass a deadline stated
-in the message to `rank_candidates` / `earliest_feasible`, recording "deadline
-from message, register says X".
+1. **Deadline changes stated in the message are ignored** (impossible, 11 of
+   12 wrong): the desk checks feasibility against the register's old, easy
+   due date, so it allocates or asks instead of answering *impossible*.
+2. **Unanswerable questions are routed as dispatch** (unanswerable, 12 of 12
+   wrong): the model's reply is right, but the `[Sent: …]` tag on every
+   message is read as a dispatch marker and the questions match none of the
+   query markers, so the router returns *ask*.
 
-**2. Questions the data cannot answer (unanswerable, 12 of 12 wrong).**
-Invoice status, deposit, buyer phone number, QC report and so on. The model's
-reply is right every time (e.g. "the order lookup doesn't include deposit
-details"), but the behaviour is assigned by `desk/router.py`, not by the
-reply. Two things go wrong there. Every full-120 message ends with a
-`[Sent: YYYY-MM-DD]` tag, and `"sent"` is in `_ALLOC_MARKERS`, so every
-message looks like a dispatch request; and most of these questions ("how much
-deposit", "what street address") match none of the short `_QUERY_MARKERS`
-anyway. The result is `ask` (10), `allocate` (1, F032, after the model called
-`rank_candidates`) or `answer` (1), never `no_data`. Fix: strip the envelope
-tag before routing, and detect data questions by pattern (or a small
-classifier) instead of a keyword list.
-
-**The other 4 errors:** F039 and F084 tell the desk to exclude a workshop;
-the router treats a named, ruled-out workshop as a refusal, while the label
-expects an allocation to the remaining shops. F015 has no new date but was
-ranked anyway (`ask` → `allocate`), and F095 read *"Factory is full"* as a
-workshop name and asked which one was meant.
-
-### Requests for orders that are already completed
-
-86 of the 120 requests name an order that the register marks **COMPLETE**,
-and every one of those orders was completed *after* the request's sent date:
-the factory finished them in-house. The replay asks "what if they had been
-sent outside on that day", so the runner first resets them to
-`IN_PROGRESS`; otherwise the desk would correctly refuse to dispatch a
-finished order.
-
-At first sight the completed orders look like the problem:
-
-| Order named in the request | Correct |
-|---|---|
-| COMPLETE in the register | 62/86 (0.72) |
-| still open in the register | 31/34 (0.91) |
-
-But all 12 *impossible* requests and 10 of the 12 *unanswerable* ones name a
-completed order, so the gap is mostly which kinds of request fall in each
-group. Within the other five kinds the two groups score the same: **61/64
-(0.95)** for completed orders vs **31/32 (0.97)** for open ones. The
-completed status itself, after the reset, is not what causes the errors;
-the deadline changes and the routing tag above are. One side effect remains:
-the reset clears the in-house completion but keeps the register's stage, so
-some replies describe a finished order as "in progress at the WASHING
-stage" (e.g. F095).
-
-Reproduce: `python eval/run_full120.py` (add `--limit 10` for a smoke test;
-needs `OPENAI_API_KEY`). Output in `results/full120/`:
-`full120_rerun_20261111_openai.jsonl` (decisions and tool logs),
-`..._scores.json` (all numbers, one row per request) and `..._summary.md`.
-Compared with the notebook, the script raises the API budget so a full run
-does not stop part-way, rebuilds queues when resumed, uses a fresh ledger,
-and keeps OldMill suspended instead of re-opening it every day.
-
-## Safety and deployment
-
-See [deployment and migration notes](docs/DEPLOYMENT.md) before upgrading.
-The model tools are read-only. Human confirmation uses a transactional
-allocation ledger; follow-ups update the pending proposal. Public
-Streamlit deployments require `APP_PASSWORD`, and every provider requires its
-own key (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Server-side
-API call budgets survive new sessions and Reset demo.
-
-Storage modes: the Streamlit app starts in a **local sandbox** (session-local
-SQLite; nothing touches shared data — safe for debugging and tests), and the
-Records tab's **Reset & connect to shared DB** rebuilds the desk on the shared
-Supabase ledger, the same one the Telegram bot always uses. With no cloud
-database configured, everything falls back to local SQLite; a configured-but-
-unreachable cloud database fails loudly instead of silently writing locally.
-Existing JSONL audit records are imported once (duplicates skipped, first
-record wins).
+The fixes, the 4 other errors, the completed-orders analysis and how to
+reproduce the run are in [docs/FULL120.md](docs/FULL120.md).
 
 ## Project Structure
 
@@ -350,7 +292,7 @@ record wins).
 ├── .env.example               # template for local keys (copy to .env)
 ├── pyproject.toml             # uv project, Python 3.11+
 ├── render.yaml · runtime.txt  # Render blueprint for the Telegram bot
-├── docs/                      # ALLOCATOR · Tolerance_Scan · EVALUATION · FAILURE_ANALYSIS · SPLITS · SHARED_DATABASE · DEPLOYMENT
+├── docs/                      # ALLOCATOR · Tolerance_Scan · EVALUATION · FAILURE_ANALYSIS · FULL120 · SPLITS · SHARED_DATABASE · DEPLOYMENT
 ├── data/                      # Track 2 dataset (shared simulator input)
 │   ├── orders.csv             # 120 orders
 │   ├── workshops.csv          # 8 workshop profile cards
@@ -393,7 +335,20 @@ record wins).
 └── tests/                     # pytest suite: one failure case per feature (289 tests)
 ```
 
-## Sprint 3 — realism, polish, and one shared ledger
+## Team
+
+Group 06 · DSS5105 Capstone 2026 · Track 2
+
+| Member | GitHub |
+|---|---|
+| Dang Xuehan | [Xuehann](https://github.com/Xuehann) |
+| Wang Xuan Ting | [ADEdreambridge](https://github.com/ADEdreambridge) |
+| Yang Guan Ming | [beibei323](https://github.com/beibei323) |
+| Zhang Rui Kai | [Zhangruikai-rzha0162](https://github.com/Zhangruikai-rzha0162) |
+| Zhou Si Shuo | [SishuoZhou](https://github.com/SishuoZhou) |
+| Zhuang Ruo Xi | [chikD666](https://github.com/chikD666) |
+
+### Sprint 3 contributions
 
 Key milestones since Oct 30 — who changed what, and what it bought us:
 
@@ -459,18 +414,3 @@ Key milestones since Oct 30 — who changed what, and what it bought us:
   dispatch-safety hardening and follow-up fixes with Xuehann
   ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12), [#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14), [#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)), and implementation support
   across GuanmingYang's, RuoxiZhuang's and Xuehann's tasks.
-
-## Team Members
-
-Group 06 · DSS5105 Capstone 2026 · Track 2
-
-| Member | GitHub |
-|---|---|
-| Dang Xuehan | [Xuehann](https://github.com/Xuehann) |
-| Wang Xuan Ting | [ADEdreambridge](https://github.com/ADEdreambridge) |
-| Yang Guan Ming | [beibei323](https://github.com/beibei323) |
-| Zhang Rui Kai | [Zhangruikai-rzha0162](https://github.com/Zhangruikai-rzha0162) |
-| Zhou Si Shuo | [SishuoZhou](https://github.com/SishuoZhou) |
-| Zhuang Ruo Xi | [chikD666](https://github.com/chikD666) |
-
-Who built what is listed under [Sprint 3](#sprint-3--realism-polish-and-one-shared-ledger) above.
