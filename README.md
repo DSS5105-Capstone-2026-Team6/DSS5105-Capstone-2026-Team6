@@ -31,6 +31,7 @@ The hosted app starts in a local sandbox; see [How it works](#how-it-works).
 | Workshop accuracy (dev / held-out, Sprint 3 code) | **0.895 / 0.846** | [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md) |
 | Faithfulness (numbers traced to tool outputs) | **0.967 dev / 1.000 held-out** | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Full-120 timeline with periodic shocks (GPT, 11 Nov) | behaviour **0.775** (93/120) | [below](#full-120-timeline-evaluation) · [docs/FULL120.md](docs/FULL120.md) |
+| Interactive responsiveness (ledger read, fresh conn. → pooled) | **3.05s → 0.99s** per op (3.1×) | [scripts/bench_db_latency.py](scripts/bench_db_latency.py) |
 
 The allocator ranks candidates under **four switchable objectives**:
 **lateness** (expected days late, then earliest finish) · **defects**
