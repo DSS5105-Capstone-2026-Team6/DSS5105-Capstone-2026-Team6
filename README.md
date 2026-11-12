@@ -350,69 +350,7 @@ Group 06 · DSS5105 Capstone 2026 · Track 2
 | Zhou Sishuo | [SishuoZhou](https://github.com/SishuoZhou) |
 | Zhuang Ruoxi | [chikD666](https://github.com/chikD666) |
 
-### Sprint 3 contributions
+### Project contributions
 
-Key milestones since Oct 30 — who changed what, and what it bought us:
 
-- **[SishuoZhou](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/SishuoZhou)** —
-  owned the split-order engine and the one-tap dispatching UX:
-  multi-workshop split ranking for impossible orders, the held-out review
-  fixes (lookup filters, recommendation consistency), cards as confirm
-  buttons and auto-scroll
-  ([#20](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/20)–[#35](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/35),
-  [docs/SPLITS.md](docs/SPLITS.md)) → far fewer clicks per order.
-- **[GuanmingYang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/beibei323)** —
-  built the scenario preview end to end: Sunday closures, transport delay,
-  seeded capacity noise, selectable start dates, and its own preview
-  dialog ([#36](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/36),
-  [#55](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/55))
-  → ETAs that respect the real calendar.
-- **[RuoxiZhuang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/chikD666)** —
-  designed, built and deployed the shared Supabase PostgreSQL ledger:
-  schema with RLS, the storage adapter with advisory-lock writers, and the
-  acceptance suite incl. a real Telegram round-trip
-  ([#38](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/38),
-  [docs/SHARED_DATABASE.md](docs/SHARED_DATABASE.md))
-  → both front-ends read and write the same truth.
-- **[XuantingWang](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/ADEdreambridge)** —
-  hardened the desk: a one-tap Skip for duplicate orders on both Streamlit
-  and the Telegram bot, code-ranked alternatives for refusals (R24), the
-  failure-analysis doc with offline re-scoring, and the Streamlit deploy
-  hotfix
-  ([#56](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/56),
-  [#57](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/57),
-  [docs/FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md))
-  → workshop accuracy after the fixes: 0.842 → 0.895 dev, 0.692 → 0.846
-  held-out.
-- **[Xuehann](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Xuehann)** —
-  sprint planning and project leadership: milestone planning and task
-  allocation, cross-workstream coordination and progress tracking,
-  validation and test passes on the shared-ledger rollout and the UI
-  changes, acceptance sign-off before each merge, and demo-day
-  presentation coordination. Earlier, at the Sprint 2 → 3 handover:
-  dispatch-safety hardening — read-only model tools behind one
-  human-confirmation endpoint, consent parsing for follow-ups, a
-  transactional ledger with duplicate protection, server-side API budgets
-  and a required password gate ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12)); follow-up fixes for chat
-  display and order-ID normalisation ([#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14)) and the session
-  request cap ([#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)).
-- **[Zhangruikai](https://github.com/orgs/DSS5105-Capstone-2026-Team6/people/Zhangruikai-rzha0162)** —
-  UI adjustments (switchable objective panel, live queue bars, dashboard
-  views) and the 120-request timeline evaluation with periodic shocks
-  ([notebooks/full120_timeline_shock.ipynb](notebooks/full120_timeline_shock.ipynb),
-  [eval/shock.py](eval/shock.py)).
-- **[kimi](https://kimi.moonshot.cn/)** —
-  [#37](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/37),
-  [#39](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/39)–[#46](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/46),
-  [#60](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/60):
-  app/ reorganised by surface; bot proposal fix, one-tap buttons, `/queue`
-  charts, yes all; DB pooling + version-gated cache + pipelined
-  transactions + longer LLM timeout; batch confirm; sandbox mode; scenario
-  button pinned; deployed and operates the bot on Render.
-- **[Claude](https://claude.com)** —
-  used by members across the team: multi-workshop split ranking and the
-  held-out review fixes (with SishuoZhou), one-tap cards and the parser
-  tab, duplicate-skip and failure replay with XuantingWang,
-  dispatch-safety hardening and follow-up fixes with Xuehann
-  ([#12](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/12), [#14](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/14), [#16](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/pull/16)), and implementation support
-  across GuanmingYang's, RuoxiZhuang's and Xuehann's tasks.
+Who changed what, with links to every PR and file: [TEAMS.md](TEAMS.md)
