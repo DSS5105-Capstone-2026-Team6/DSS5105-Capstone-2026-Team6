@@ -143,13 +143,23 @@ def render_sunday_preview(desk):
             "and a snapshot of current queues."
         )
 
-        result = compare_sunday(
-            order_id, desk.orders, desk.workshops, queues, closed, delay,
-            perf=desk.performance,
-            noise_pct=noise_pct,
-            seed=seed,
-            preview_date=preview_date,
-        )
+        # memoize per (inputs, ledger version): a rerun (e.g. pasting into
+        # the inbox) must not re-rank every candidate and re-read the
+        # performance table for every workshop over a cross-border link
+        cache_key = (order_id.strip().upper(), preview_date, closed, delay,
+                     noise_pct, seed, objective, desk.audit.version)
+        cached = st.session_state.get("_scenario_cache")
+        if cached is not None and cached[0] == cache_key:
+            result = cached[1]
+        else:
+            result = compare_sunday(
+                order_id, desk.orders, desk.workshops, queues, closed, delay,
+                perf=desk.performance,
+                noise_pct=noise_pct,
+                seed=seed,
+                preview_date=preview_date,
+            )
+            st.session_state["_scenario_cache"] = (cache_key, result)
         if "error" in result:
             st.warning(result["error"])
             return

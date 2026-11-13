@@ -92,7 +92,15 @@ def render_worklist(desk, items):
     # KPI row + case filter + worklist share one container, so the five KPI
     # cards and the five behaviour buttons line up column for column
     with st.container(key="worklist", width=740):
-        risk = flag_at_risk(desk=desk)
+        # flag_at_risk re-reads the whole ledger; memoize per ledger version
+        # so a rerun without new commits (e.g. pasting into the inbox) is free
+        version = desk.audit.version
+        risk_cache = st.session_state.get("_risk_cache")
+        if risk_cache is not None and risk_cache[0] == version:
+            risk = risk_cache[1]
+        else:
+            risk = flag_at_risk(desk=desk)
+            st.session_state["_risk_cache"] = (version, risk)
         with st.container(key="kpi_row"):
             k1, k2, k3, k4, k5 = st.columns(5)
             with k1, st.container(key="kpi_needs"):
