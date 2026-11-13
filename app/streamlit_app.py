@@ -50,6 +50,7 @@ from desk.chat_dump import ENVELOPE, split_chat_dump  # re-exported for tests
 from app.theme.styles import CSS
 from app.theme.icons import icon
 from app.theme.motion import install_scroll_sync
+from app.components.tool_log import render_tool_log
 from app.tabs.desk import render_inbox
 from app.tabs.desk.scenario import render_sunday_preview
 from app.tabs.dashboard import render_dashboard
@@ -361,8 +362,13 @@ def main():
         with tab_main:
             st.container(key="scenario_pop_spacer").empty()
             with st.container(key="scenario_pop"):
-                with st.popover("Scenario preview"):
-                    render_sunday_preview(desk)
+                col_log, col_preview = st.columns(2)
+                with col_log:
+                    with st.popover("Tool log"):
+                        render_tool_log()
+                with col_preview:
+                    with st.popover("Scenario preview"):
+                        render_sunday_preview(desk)
             render_inbox(desk)
         install_scroll_sync()
         with tab_dash:
