@@ -64,3 +64,40 @@ def test_pool_created_once_and_reused(monkeypatch):
         db._pg_pool()
     assert ctor.call_count == 1
     assert pool.open.call_count == 1
+
+
+def test_env_databases_share_one_pool(monkeypatch):
+    """Audit, performance and budget used to warm one pool each; env-configured
+    Databases now share a single pool per (url, schema)."""
+    psycopg = pytest.importorskip("psycopg")
+    from unittest.mock import MagicMock
+    import desk.storage as storage
+    storage._POOL_REGISTRY.clear()
+    monkeypatch.setattr('desk.storage.database_setting', lambda _: '')
+    pool = MagicMock()
+    pool.open.return_value = None
+    with patch('psycopg_pool.ConnectionPool', return_value=pool) as ctor:
+        d1 = Database(url='postgresql://user@host/db')
+        d1._from_env = True
+        d2 = Database(url='postgresql://user@host/db')
+        d2._from_env = True
+        assert d1._pg_pool() is d2._pg_pool()
+    assert ctor.call_count == 1
+    storage._POOL_REGISTRY.clear()
+
+
+def test_budget_check_and_record_batching(tmp_path):
+    from desk.budget import CallBudget, BudgetExceeded
+    import sqlite3
+    path = tmp_path / 'budget.sqlite3'
+    budget = CallBudget(path)
+    budget.check(n=2, limits=[(3600, 2)])          # 0 + 2 fits
+    budget.record(2)                                # one transaction, two rows
+    rows = sqlite3.connect(path).execute(
+        'SELECT COUNT(*) FROM api_usage').fetchone()[0]
+    assert rows == 2
+    try:
+        budget.check(n=1, limits=[(3600, 2)])     # 2 + 1 exceeds
+        assert False, 'should raise'
+    except BudgetExceeded:
+        pass

@@ -20,6 +20,31 @@ class CallBudget:
                        '(scope TEXT NOT NULL, at REAL NOT NULL)')
             db.execute('CREATE INDEX IF NOT EXISTS usage_scope_at ON api_usage(scope, at)')
 
+    def check(self, n=1, *, scope='llm', limits=None, now=None):
+        """Raise BudgetExceeded if n more calls would exceed a limit.
+        Read-only: chat() checks once per message and records actual usage
+        afterwards, instead of paying a write per tool round."""
+        if limits is None:
+            limits = [(3600, int(os.environ.get('API_CALLS_PER_HOUR', '200'))),
+                      (86400, int(os.environ.get('API_CALLS_PER_DAY', '1000')))]
+        now = time.time() if now is None else now
+        with self.database.connect() as db:
+            for seconds, maximum in limits:
+                count = db.execute('SELECT COUNT(*) FROM api_usage WHERE scope=? AND at>?',
+                                   (scope, now - seconds)).fetchone()[0]
+                if maximum <= 0 or count + n > maximum:
+                    raise BudgetExceeded('Request limit reached. Please try again later.')
+
+    def record(self, n=1, *, scope='llm', now=None):
+        """Write n usage rows in ONE transaction (one round-trip total)."""
+        if n <= 0:
+            return
+        now = time.time() if now is None else now
+        with self.database.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for _ in range(n):
+                db.execute('INSERT INTO api_usage VALUES (?, ?)', (scope, now))
+
     def reserve(self, *, scope='llm', limits=None, now=None):
         if limits is None:
             limits = [(3600, int(os.environ.get('API_CALLS_PER_HOUR', '200'))),

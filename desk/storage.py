@@ -8,8 +8,16 @@ import os
 import re
 from pathlib import Path
 import sqlite3
+import threading
 
 from .config import PROJECT_ROOT, RESULTS_DIR
+
+# Env-configured Databases share one pool per (url, schema): the desk's three
+# stores (audit, performance, budget) used to warm up one pool each, so
+# connecting to the shared database paid three cross-border handshakes in a
+# row. Explicit-url Databases (tests) keep private pools.
+_POOL_REGISTRY = {}
+_POOL_REGISTRY_LOCK = threading.Lock()
 
 
 def database_setting(name):
@@ -50,6 +58,7 @@ class Database:
         # Explicit paths keep offline tests/local experiments isolated.
         self._url = (database_url() if path is None else "") if url is None else url
         self.is_postgres = bool(self._url)
+        self._from_env = url is None and path is None
         self._pool = None
         if self.is_postgres:
             if not self._url.startswith(("postgresql://", "postgres://")):
@@ -65,11 +74,25 @@ class Database:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _pg_pool(self):
-        """One connection pool per Database, created on first use. Reusing
-        pooled connections skips the cross-border TCP+TLS+auth handshake that
-        previously cost ~1s on EVERY operation (each click rebuilt one)."""
+        """Pooled connections skip the cross-border TCP+TLS+auth handshake
+        that previously cost ~1s on EVERY operation. Env-configured databases
+        share one pool per (url, schema) across stores; explicit-url ones
+        keep a private pool."""
         if self._pool is not None:
             return self._pool
+        if self._from_env:
+            with _POOL_REGISTRY_LOCK:
+                key = (self._url, self.schema)
+                pool = _POOL_REGISTRY.get(key)
+                if pool is None:
+                    pool = self._open_new_pool()
+                    _POOL_REGISTRY[key] = pool
+                self._pool = pool
+                return pool
+        self._pool = self._open_new_pool()
+        return self._pool
+
+    def _open_new_pool(self):
         try:
             from psycopg_pool import ConnectionPool
         except ImportError:
@@ -85,7 +108,6 @@ class Database:
             raise RuntimeError(
                 "Cannot connect to the shared database. Check the connection URI, "
                 "database password, network and Supabase project status.") from None
-        self._pool = pool
         return pool
 
     @contextmanager

@@ -125,7 +125,9 @@ class DispatchAgent:
         self.budget = None   # desk may inject a session-local CallBudget
 
     def _completion(self, **kwargs):
-        (self.budget or CallBudget()).reserve()
+        # Budget is managed by the caller: chat() checks once per message and
+        # records actual rounds afterwards; one-shot callers reserve per call.
+        # (Reserving per round used to cost a database write per LLM round.)
         try:
             token_param = "max_completion_tokens" if self.provider == "openai" else "max_tokens"
             kwargs[token_param] = int(os.environ.get("MAX_OUTPUT_TOKENS", "2048"))
@@ -138,6 +140,7 @@ class DispatchAgent:
     def classify_followup(self, text, decision):
         """Interpret language without tools or write access; invalid JSON fails closed."""
         from desk.confirmation import FollowupIntent
+        (self.budget or CallBudget()).reserve()
         if len(text) > int(os.environ.get("MAX_INPUT_CHARS", "8000")):
             raise ValueError("Message is too long. Please shorten it.")
         proposal = {"order_id": decision.parsed.order_id,
@@ -186,51 +189,59 @@ class DispatchAgent:
     def chat(self, message, verbose=False):
         if len(message) > int(os.environ.get("MAX_INPUT_CHARS", "8000")):
             raise ValueError("Message is too long. Please shorten it.")
+        budget = self.budget or CallBudget()
+        budget.check()         # one read per message; actual rounds recorded below
         self.tool_log = []   # per message: route() and the faithfulness
                              # checker must never see a previous request's calls
         self.history.append({"role": "user", "content": message})
+        rounds_used = 0
         messages = [{"role": "system", "content": self.system_prompt},
                     *self.history]
         # OpenAI reasoning models reject function tools on /v1/chat/completions
         # unless reasoning is switched off; DeepSeek and Claude don't need it
         extra = ({"reasoning_effort": "none"} if self.provider == "openai"
                  else {})
-        for round_no in range(1, MAX_TOOL_ROUNDS + 1):
-            resp = self._completion(
-                model=self.model, messages=messages,
-                tools=tool_schemas(), temperature=0, **extra)
-            msg = resp.choices[0].message
-            messages.append(msg)
-            if not msg.tool_calls:
-                if verbose:
-                    print(f"[round {round_no}] model replied (no tool call)")
-                # persist the turn: everything since the last user message
-                self.history.extend(m.model_dump() if hasattr(m, "model_dump") else dict(m)
-                                    for m in messages[len(self.history) + 1:])
-                self._trim_history()
-                return msg.content or ""
-            for call in msg.tool_calls:
-                try:
-                    arguments = json.loads(call.function.arguments or "{}")
-                    if not isinstance(arguments, dict):
-                        raise ValueError("Tool arguments must be an object")
-                    if isinstance(arguments.get("order_id"), str):
-                        arguments["order_id"] = canonical_order_id(arguments["order_id"])
-                    result = dispatch_tool(call.function.name, arguments, desk=self.desk)
-                except (TypeError, ValueError):
-                    arguments, result = {}, {"error": "Invalid tool arguments. Please retry with a JSON object."}
-                self.tool_log.append({"tool": call.function.name,
-                                      "arguments": arguments,
-                                      "result": result})
-                messages.append({"role": "tool", "tool_call_id": call.id,
-                                 "content": json.dumps(result, default=str)})
-                if verbose:
-                    rendered = json.dumps(result, default=str)
-                    if len(rendered) > 240:
-                        rendered = rendered[:240] + "…"
-                    print(f"[round {round_no}] -> {call.function.name} {json.dumps(arguments)}")
-                    print(f"           <- {rendered}")
-        raise RuntimeError(f"tool loop did not converge in {MAX_TOOL_ROUNDS} rounds")
+        try:
+            for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+                resp = self._completion(
+                    model=self.model, messages=messages,
+                    tools=tool_schemas(), temperature=0, **extra)
+                rounds_used += 1
+                msg = resp.choices[0].message
+                messages.append(msg)
+                if not msg.tool_calls:
+                    if verbose:
+                        print(f"[round {round_no}] model replied (no tool call)")
+                    # persist the turn: everything since the last user message
+                    self.history.extend(m.model_dump() if hasattr(m, "model_dump") else dict(m)
+                                        for m in messages[len(self.history) + 1:])
+                    self._trim_history()
+                    return msg.content or ""
+                for call in msg.tool_calls:
+                    try:
+                        arguments = json.loads(call.function.arguments or "{}")
+                        if not isinstance(arguments, dict):
+                            raise ValueError("Tool arguments must be an object")
+                        if isinstance(arguments.get("order_id"), str):
+                            arguments["order_id"] = canonical_order_id(arguments["order_id"])
+                        result = dispatch_tool(call.function.name, arguments, desk=self.desk)
+                    except (TypeError, ValueError):
+                        arguments, result = {}, {"error": "Invalid tool arguments. Please retry with a JSON object."}
+                    self.tool_log.append({"tool": call.function.name,
+                                          "arguments": arguments,
+                                          "result": result})
+                    messages.append({"role": "tool", "tool_call_id": call.id,
+                                     "content": json.dumps(result, default=str)})
+                    if verbose:
+                        rendered = json.dumps(result, default=str)
+                        if len(rendered) > 240:
+                            rendered = rendered[:240] + "…"
+                        print(f"[round {round_no}] -> {call.function.name} {json.dumps(arguments)}")
+                        print(f"           <- {rendered}")
+            raise RuntimeError(f"tool loop did not converge in {MAX_TOOL_ROUNDS} rounds")
+        finally:
+            # failed attempts also consume the reservation (see DEPLOYMENT.md)
+            budget.record(rounds_used)
 
 
 if __name__ == "__main__":

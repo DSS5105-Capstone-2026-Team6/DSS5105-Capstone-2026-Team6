@@ -109,6 +109,15 @@ class DispatchDesk:
             self.performance = PerformanceStore()   # learned shop performance,
                                                     # shared via the ledger db
         self.state.audit = self.audit
+        self._version_cache = None   # ledger version; invalidated on our commits
+
+    def _ledger_version(self):
+        """audit.version cached per desk: a 30-message dispatch loop used to
+        pay one cross-border read per message even though the version only
+        moves on commits."""
+        if self._version_cache is None:
+            self._version_cache = self.audit.version
+        return self._version_cache
 
     # ---------------- conversation ----------------
 
@@ -117,7 +126,7 @@ class DispatchDesk:
         """One chat message -> Decision (candidates + explanation + tool
         log). No state moves here; that only happens in confirm().
         verbose=True streams each tool round to stdout."""
-        version = self.audit.version
+        version = self._ledger_version()
         reply = self.agent.chat(text, verbose=verbose)
         decision = route(text, reply, self.agent.tool_log,
                          workshops=self.workshops)
@@ -252,7 +261,7 @@ class DispatchDesk:
                                            for x in decision.excluded]
 
     def refresh(self, decision):
-        version = self.audit.version
+        version = self._ledger_version()
         result = rank_candidates(decision.parsed.order_id, decision.objective,
                                  excluded=decision.excluded, orders=self.orders,
                                  store=self.workshops, queues=self.state.queues,
@@ -357,6 +366,7 @@ class DispatchDesk:
         if decision.state_version is None:
             raise ValueError("Proposal has no state version. Request a new proposal.")
         if decision.state_version != self.audit.version:
+            self._version_cache = None
             raise ProposalChanged(self.refresh(decision))
         order = self.orders.by_id(decision.parsed.order_id)
         if order is None:
@@ -369,7 +379,7 @@ class DispatchDesk:
         if error:
             raise ValueError(error["error"])
         try:
-            return self.audit.allocate(order, self.workshops.workshops[wid],
+            record = self.audit.allocate(order, self.workshops.workshops[wid],
                 committed_by=committed_by, expected_version=decision.state_version,
                 decision_id=decision.decision_id,
                 evidence={"objective": decision.objective, "excluded": decision.excluded,
@@ -377,7 +387,10 @@ class DispatchDesk:
                           "reason": decision.explanation, "chosen": to_dict(decision.chosen),
                           "candidates": to_dict(decision.candidates),
                           "tool_log": decision.tool_log})
+            self._version_cache = None        # our commit moved the version
+            return record
         except StaleAllocation:
+            self._version_cache = None        # someone else moved it
             raise ProposalChanged(self.refresh(decision)) from None
 
     def confirm_all(self, decisions, committed_by="dispatcher"):
@@ -413,6 +426,7 @@ class DispatchDesk:
         if decision.state_version is None:
             raise ValueError("Proposal has no state version. Request a new proposal.")
         if decision.state_version != self.audit.version:
+            self._version_cache = None
             raise ProposalChanged(self.refresh(decision))
         order = self.orders.by_id(decision.parsed.order_id)
         if order is None:
@@ -431,7 +445,7 @@ class DispatchDesk:
                 raise ValueError(error["error"])
             parts.append((self.workshops.workshops[wid], pieces))
         try:
-            return self.audit.allocate_split(order, parts,
+            records = self.audit.allocate_split(order, parts,
                 committed_by=committed_by, expected_version=decision.state_version,
                 decision_id=decision.decision_id,
                 evidence={"objective": decision.objective, "excluded": decision.excluded,
@@ -439,7 +453,10 @@ class DispatchDesk:
                           "reason": decision.explanation, "split_proposal": split,
                           "candidates": to_dict(decision.candidates),
                           "tool_log": decision.tool_log})
+            self._version_cache = None
+            return records
         except StaleAllocation:
+            self._version_cache = None
             raise ProposalChanged(self.refresh(decision)) from None
 
 
