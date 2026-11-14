@@ -91,7 +91,7 @@ class ChatSession:
         """One incoming message -> (reply, options). Confirmation is checked
         first; anything that is not an explicit commit goes to the agent."""
         from desk.confirmation import (looks_like_confirmation,
-                                       looks_like_confirm_all, looks_like_skip)
+                                       looks_like_confirm_all, skip_target)
         from desk.desk import CANCEL_REPLY
         text = (text or "").strip()
         self.options_token = uuid4().hex
@@ -109,14 +109,9 @@ class ChatSession:
                      for _, r in records]
             lines += [f"NOT committed: {oid} ({why})" for oid, why in failures]
             return "\n".join(lines), []
-        if looks_like_skip(text):
-            # one tap closes the request: no LLM round, nothing committed
-            skipped, self.pending = self.pending, None
-            if skipped is not None:
-                self._drop(skipped)
-                return (f"Skipped {skipped.parsed.order_id} — nothing was "
-                        "committed."), []
-            return "Skipped — nothing was committed.", []
+        target = skip_target(text)
+        if target is not None:
+            return self._skip(target)
         if self.pending is None and looks_like_confirmation(text):
             # A yes with no open proposal means the process restarted (the
             # pending proposal lives in memory) or the proposal lapsed. Say
@@ -155,6 +150,26 @@ class ChatSession:
         self._add(self.pending)
         return decision.explanation or "(no reply)", self.options
 
+    def _skip(self, order_id):
+        """Close a request without committing: no LLM round. A bare skip
+        closes the open proposal; "skip ORD-081" closes that order's
+        proposal even if a later order is now the open one."""
+        if not order_id or (self.pending is not None
+                            and self.pending.parsed.order_id == order_id):
+            skipped, self.pending = self.pending, None
+            if skipped is None:
+                return ("Nothing is open to skip right now — nothing was "
+                        "committed."), []
+            self._drop(skipped)
+            return (f"Skipped {skipped.parsed.order_id or 'this request'} — "
+                    "nothing was committed."), []
+        if any(d.parsed.order_id == order_id for d in self.pending_all):
+            self.pending_all = [d for d in self.pending_all
+                                if d.parsed.order_id != order_id]
+            return f"Skipped {order_id} — nothing was committed.", []
+        return (f"{order_id} has no open proposal, so there is nothing to "
+                "skip — nothing was committed."), []
+
     def _offer_skip(self, decision):
         """An order already in the ledger: the conversation carries on as
         usual (the model's reply, its options and the proposal stay, so a
@@ -175,8 +190,10 @@ class ChatSession:
         others = [c for c in self.pending.candidates[:3]
                   if self.pending.chosen is None
                   or c.workshop_id != self.pending.chosen.workshop_id]
-        self.options = ["yes"] + [f"commit to {c.workshop_id}"
-                                  for c in others]
+        # every open proposal can also be closed in one tap (e.g. when no
+        # workshop meets the due date), not only duplicates
+        self.options = (["yes"] + [f"commit to {c.workshop_id}" for c in others]
+                        + ["skip"])
 
     def handle_option(self, token, index, requester=""):
         if token != self.options_token or not 0 <= index < len(self.options):
