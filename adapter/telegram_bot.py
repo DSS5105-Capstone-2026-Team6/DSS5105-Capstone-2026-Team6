@@ -42,6 +42,38 @@ except ImportError:  # run directly as a script
 ENV_PATH = PROJECT_ROOT / ".env"
 TOKEN_VAR = "TELEGRAM_BOT_TOKEN"
 
+START_TEXT = ("Dispatch desk is live. Send an order line, or @mention me in a "
+              "group. I never commit an allocation until someone says yes.\n"
+              "Send /help for a quick guide.")
+
+HELP_TEXT = """📦 Dispatch Desk — quick guide
+
+I find the best subcontract workshop for an order. Nothing is committed until someone replies yes.
+
+1️⃣ Send an order
+   ORD-041 — 600 beanies, due Apr 21
+   In a group, @mention me first. Paste several lines to send several orders.
+
+2️⃣ Reply to a proposal (tap a button or type)
+   yes — commit to the recommended workshop
+   commit to W2 — use another candidate
+   yes all — commit every open proposal
+   skip / skip ORD-041 — close it, nothing committed
+   cancel — drop the proposal
+
+3️⃣ Ask or adjust before committing
+   why W5 and not W2?
+   rank by cost instead / fastest delivery
+   exclude W6
+
+4️⃣ Commands
+   /queue — live workshop queues
+   /skip — close the open proposal
+   /help — this guide
+
+⚠️ No reply? I may be waking up. Wait about a minute and send again.
+After a restart, open proposals are cleared, so resend the order."""
+
 
 def _session_factory():
     from desk.desk import DispatchDesk
@@ -77,9 +109,10 @@ def build_application(token, make_session=None, proxy=None):
                 chunk, reply_markup=markup if i == len(chunks) - 1 else None)
 
     async def on_start(update, context):
-        await update.effective_message.reply_text(
-            "Dispatch desk is live. Send an order line, or @mention me in a "
-            "group. I never commit an allocation until someone says yes.")
+        await update.effective_message.reply_text(START_TEXT)
+
+    async def on_help(update, context):
+        await update.effective_message.reply_text(HELP_TEXT)
 
     async def on_queue(update, context):
         """/queue — the live workshop queues, the Telegram-side answer to the
@@ -179,6 +212,7 @@ def build_application(token, make_session=None, proxy=None):
         builder = builder.proxy(proxy).get_updates_proxy(proxy)
     app = builder.build()
     app.add_handler(CommandHandler("start", on_start))
+    app.add_handler(CommandHandler("help", on_help))
     app.add_handler(CommandHandler("queue", on_queue))
     app.add_handler(CommandHandler("skip", on_skip))
     app.add_handler(CallbackQueryHandler(on_option))
