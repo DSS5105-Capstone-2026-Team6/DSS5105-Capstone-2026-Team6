@@ -19,7 +19,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from adapter.session import ChatSession
-from desk.confirmation import FollowupIntent, looks_like_skip
+from desk.confirmation import FollowupIntent, looks_like_skip, skip_target
 from desk.contracts import Behaviour
 from desk.desk import DispatchDesk
 from desk.tools import dispatch_tool
@@ -175,6 +175,36 @@ def test_skip_words():
     assert looks_like_skip("Skip") and looks_like_skip("skip this one.")
     assert looks_like_skip("跳过")
     assert not looks_like_skip("skip W6 and use W2")
+
+
+def test_skip_phrasings_from_the_chat():
+    # what members actually typed in Telegram: none of these may reach the model
+    for t in ("/skip", "skip order", "skip ord-081", "Skip ORD 81.",
+              "/skip ORD-081", "skip order ORD-081", "/skip@DispatchBot", "跳过这单"):
+        assert looks_like_skip(t), t
+    assert skip_target("skip ord-081") == "ORD-081"
+    assert skip_target("skip order") == ""
+    assert not looks_like_skip("skipping lunch") and not looks_like_skip("skip W5")
+
+
+def test_bot_every_open_proposal_gets_a_skip_button(desk):
+    session = ChatSession(lambda: desk)
+    desk.agent.flow = _rank_flow("ORD-041")
+    _, options = session.handle("allocate ORD-041", "Ravi")
+    assert options[0] == "yes" and options[-1] == "skip"
+
+
+def test_bot_skip_with_order_id_never_reaches_the_model(desk):
+    session = ChatSession(lambda: desk)
+    desk.agent.flow = _rank_flow("ORD-041")
+    session.handle("allocate ORD-041", "Ravi")
+    desk.agent.flow = lambda _: pytest.fail("skip must not reach the model")
+    reply, _ = session.handle("skip ord-41", "Ravi")
+    assert reply == "Skipped ORD-041 — nothing was committed."
+    assert session.pending is None and session.pending_all == []
+    reply, _ = session.handle("skip ORD-099", "Ravi")
+    assert reply.startswith("ORD-099 has no open proposal")
+    assert desk.audit.load_all() == []
 
 
 # ---------------- refusal with an alternative ----------------

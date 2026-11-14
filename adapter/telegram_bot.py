@@ -133,6 +133,24 @@ def build_application(token, make_session=None, proxy=None):
                                   "try again."), []
             await send_reply(msg, reply, options, session.options_token)
 
+    async def on_skip(update, context):
+        """/skip [ORD-xxx] — the command form of the skip button. Without
+        this handler the command filter swallowed /skip silently."""
+        msg, chat = update.effective_message, update.effective_chat
+        if msg is None:
+            return
+        text = " ".join(["skip"] + list(context.args or []))
+        who = (update.effective_user.full_name
+               or update.effective_user.username or "member")
+        try:
+            session = session_for(chat.id)
+            reply, options = session.handle(text, requester=who)
+        except Exception:
+            traceback.print_exc()
+            await msg.reply_text("Something went wrong on my side — try again.")
+            return
+        await send_reply(msg, reply, options, session.options_token)
+
     async def on_option(update, context):
         """A tapped OPTIONS button re-enters the session as if the member had
         typed that choice, so clarification loops work over buttons too."""
@@ -162,6 +180,7 @@ def build_application(token, make_session=None, proxy=None):
     app = builder.build()
     app.add_handler(CommandHandler("start", on_start))
     app.add_handler(CommandHandler("queue", on_queue))
+    app.add_handler(CommandHandler("skip", on_skip))
     app.add_handler(CallbackQueryHandler(on_option))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
                                    on_message))

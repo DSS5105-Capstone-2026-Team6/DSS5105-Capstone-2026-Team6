@@ -16,6 +16,11 @@ CANCEL = {'no', 'cancel', 'stop', 'wait', 'hold on', 'not yet', '取消', '先�
 # Close a request without committing anything (the bot's skip button, e.g.
 # for an order that is already in the ledger).
 SKIP = {'skip', 'skip it', 'skip this', 'skip this one', '跳过'}
+# "skip order", "/skip", "skip ORD-081", "跳过这单" ... — the whole message
+# must be a skip; anything with more words ("skip W6 and use W2") is not.
+_SKIP_RE = re.compile(
+    r"/?(?:skip|跳过)(?:@\w+)?\s*(?:(?:it|this|this one|this order|the order|"
+    r"order|这单|这个订单)\s*)?(?P<oid>ord[\s_-]*\d+)?", re.I)
 # These messages must be interpreted as questions/changes, never a confirmation.
 BLOCKERS = re.compile(
     r"\?|？|\b(?:no|not|never|don\W?t|cannot|can\W?t|but|unless|if|wait|cancel|"
@@ -41,7 +46,19 @@ def looks_like_confirmation(text):
 
 
 def looks_like_skip(text):
-    return normalise(text) in SKIP
+    return skip_target(text) is not None
+
+
+def skip_target(text):
+    """None if the message is not a skip; otherwise the order id it names
+    (canonical form) or '' for a bare skip of the open proposal."""
+    t = normalise(text)
+    if t in SKIP:
+        return ''
+    m = _SKIP_RE.fullmatch(t)
+    if not m:
+        return None
+    return canonical_order_id(m.group('oid')) if m.group('oid') else ''
 
 
 def looks_like_confirm_all(text):
