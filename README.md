@@ -21,6 +21,7 @@
 | **Documentation** | [Allocator](docs/ALLOCATOR.md) · [Tolerance scan](docs/Tolerance_Scan.md) · [Evaluation](docs/EVALUATION.md) · [Failure analysis](docs/FAILURE_ANALYSIS.md) · [Full-120 rerun](docs/FULL120.md) · [Splits](docs/SPLITS.md) · [Shared DB](docs/SHARED_DATABASE.md) · [Deployment](docs/DEPLOYMENT.md) · [Strategic recommendations](Strategic_Recommendations.md) |
 
 The hosted app starts in a local sandbox; see [How it works](#how-it-works).
+*Note: any link in this document opens the corresponding detail in the repository when clicked.*
 
 ## Headline results
 
@@ -39,7 +40,10 @@ The allocator ranks candidates under **four switchable objectives**:
 lateness fallback) · **hybrid** (default — a tolerance plateau:
 within `late_tol` of the best lateness, then lowest defect rate inside the
 plateau). `late_tol = 0.5` was selected by the 2×2 scan across normal/shock
-× default/stages. The weighted Sprint-1 variant — `score = w·est.finish +
+× default/stages. The two hybrids differ in how they price a batch: the
+Sprint-1 weighted hybrid estimates turnaround as plain `pieces/capacity`,
+while the current hybrid prices defect rework in — expected work days are
+`pieces/capacity × (1 + 0.5 × defect_rate)`. The weighted Sprint-1 variant — `score = w·est.finish +
 (1−w)·[0.75·defect + 0.25·cost]`, min-max scaled, with w locked at 0.7 and
 the defect:cost split at 3:1 by a two-stage sweep — is reproduced in
 [harness/eft_benchmark.py](harness/eft_benchmark.py).
