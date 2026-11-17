@@ -319,7 +319,6 @@ def followup(body: FollowupBody, request: Request):
         if updated is not item["decision"] and updated.decision_id != body.decision_id:
             s["item_chats"][updated.decision_id] = s["item_chats"].pop(body.decision_id, thread)
     _log(s, "dispatcher", body.text, reply or "", decision_id=body.decision_id)
-    _refresh_stale(s)
     st = _state(s, sid)
     st["reply"] = reply
     return st
@@ -367,7 +366,10 @@ def confirm(body: ConfirmBody, request: Request):
              f"Committed {result.record_id} — {result.order_id} → {result.workshop_id}.")
     else:
         return {"error": err}
-    _refresh_stale(s)
+    # NO bulk re-rank here: after a commit every other proposal is stale,
+    # and re-ranking them all (rank + split_options + perf reads per card)
+    # is what froze the UI at "Committing". The clicked card refreshes
+    # itself via the one-click retry; others refresh on demand.
     return _state(s, sid)
 
 
@@ -393,7 +395,6 @@ def confirm_split(body: SplitBody, request: Request):
         del s["decisions"][body.decision_id]
         _log(s, "dispatcher", f"(split #{body.index + 1})",
              f"Committed {len(records)} parts.")
-    _refresh_stale(s)
     return _state(s, sid)
 
 
