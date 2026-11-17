@@ -26,3 +26,27 @@ services:
         sync: false
       - key: DISPATCH_DATABASE_PASSWORD
         sync: false
+
+  # FastAPI web frontend (api/): static UI + REST wrapper over desk/.
+  # Tracks the UI branch; the Streamlit app on main stays untouched.
+  # Records -> "shared DB" toggle reads the same Supabase ledger as the bot,
+  # so allocations made in Telegram appear here and vice versa.
+  - type: web
+    name: dispatch-desk-web
+    runtime: python
+    plan: free
+    branch: kimi/ui-polish_20261117-0953
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      # Same Supabase ledger as the bot (shared mode).
+      - key: DISPATCH_DATABASE_URL
+        sync: false
+      - key: DISPATCH_DATABASE_PASSWORD
+        sync: false
+      # Optional: set to gate the UI behind a password; leave blank for open.
+      - key: APP_PASSWORD
+        sync: false
