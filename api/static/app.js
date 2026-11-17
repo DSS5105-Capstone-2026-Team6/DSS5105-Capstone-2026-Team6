@@ -10,6 +10,9 @@ const BADGE = {allocate:["ALLOCATE","#d3f9d8"],refuse:["REFUSE","#ffe3e3"],
   answer:["ANSWER","#e9ecef"],no_data:["NO DATA","#e9ecef"]};
 const NEEDS_HUMAN = new Set(["ask","refuse","impossible","no_data"]);
 let STATE = null, CASE = "allocate", TAB = "desk";
+// the user's chosen objective is UI source of truth (never inferred from a
+// possibly-stale STATE snapshot); it syncs to the server on every change
+let OBJ = "hybrid";
 
 function status(t){ const el=$("status"); if(el) el.textContent = t; }
 async function refresh(){ STATE = await api("/api/state"); render(); }
@@ -37,9 +40,9 @@ function renderRail(){
     + `<div class="muted" style="margin-top:4px">live · ${s.shared?"shared db":"sandbox"}</div>`;
   const objs = ["lateness","defects","hybrid","cost"];
   $("objDock").innerHTML = `<h3>Re-rank objective</h3><div class="obj-grid">` +
-    objs.map(o => `<button class="small" style="${o===s.objective?"border-color:var(--blue-deep);color:var(--blue-deep);font-weight:700":""}"
+    objs.map(o => `<button class="small" style="${o===OBJ?"border-color:var(--blue-deep);color:var(--blue-deep);font-weight:700":""}"
       onclick="setObjective('${o}')">${o}</button>`).join("") + `</div>
-    <div class="row" style="margin-top:6px"><button class="small" onclick="rerankAll()">Re-rank all (${s.objective})</button></div>`;
+    <div class="row" style="margin-top:6px"><button class="small" onclick="rerankAll()">Re-rank all (${OBJ})</button></div>`;
   const shock = STATE.shock_target;
   const shockName = shock && STATE.workshops[shock] ? STATE.workshops[shock] : shock;
   $("worldDock").innerHTML = `<h3>World &amp; shock</h3>
@@ -52,8 +55,13 @@ function renderRail(){
     : `<div class="row"><input id="shockSeed" type="number" value="${STATE.shock_seed||5105}" style="width:80px">
       <button class="small" onclick="shockOn()">${icon("zap")}Trigger</button></div>`}`;
 }
-async function setObjective(o){ STATE = await post("/api/rerank", {objective:o}); render(); }
-async function rerankAll(){ setObjective($("#objDock") ? STATE.objective : "hybrid"); }
+async function setObjective(o){
+  OBJ = o;   // UI truth first — the highlight never snaps back on slow calls
+  render();
+  STATE = await post("/api/rerank", {objective:o});
+  render();
+}
+async function rerankAll(){ setObjective(OBJ); }
 async function worldSwitch(){
   status("Rebuilding desk…");
   STATE = await post("/api/world", {as_of:$("asOfSel").value, stages:$("stagesSel").checked});
@@ -130,7 +138,7 @@ function cardHtml(d){
       const star = i === d.recommended_split ? ` <span class="rec">${icon("star")}recommended</span>` : "";
       const parts = sp.parts.map(p => `<div class="split-part"><div class="meta">${p.pieces} pcs · ${esc(p.name)} (${p.workshop_id}) · queue ${live(p.workshop_id).toFixed(1)}d</div></div>`).join("");
       return `<div class="cand" onclick="confirmSplit('${d.decision_id}',${i})">
-        <div class="one-line"><b>#${i+1} · ${sp.n_shops} workshops</b>${star}</div>${parts}
+        <div class="one-line"><span class="chip split">SPLIT #${i+1}</span><b>${sp.n_shops} workshops</b>${star}</div>${parts}
         <div class="meta">finish ${sp.earliest_finish} (${sp.meets_due?"on time":sp.days_late+"d late"}) · cost ${sp.cost.toFixed(2)} · defect ${sp.defect_risk.toFixed(2)}</div></div>`;
     }).join("");
   }
@@ -245,7 +253,7 @@ async function confirmAllOpen(){
 }
 async function skipCard(id){ STATE = await post("/api/skip", {decision_id:id}); render(); }
 async function dismiss(id){ STATE = await post("/api/dismiss", {decision_id:id}); render(); }
-async function rerank(id){ STATE = await post("/api/rerank", {decision_id:id, objective:STATE.objective}); render(); }
+async function rerank(id){ STATE = await post("/api/rerank", {decision_id:id, objective:OBJ}); render(); }
 let _fuStream = null;
 async function followup(id){
   const box = $("fu-"+id), text = box.value.trim();
@@ -368,6 +376,8 @@ function renderChatLog(){
     _streamTimer = setInterval(() => {
       n += Math.max(2, Math.round(full.length / 40));
       fresh.textContent = full.slice(0, n);
+      // auto-follow the stream: keep the newest text in view as it grows
+      $("chatLog").scrollTop = $("chatLog").scrollHeight;
       if (n >= full.length){ fresh.textContent = full; clearInterval(_streamTimer); }
     }, 30);
   }
@@ -376,6 +386,10 @@ function locateCard(oid){
   if (!oid) return;
   const d = STATE.decisions.find(x => x.order_id === oid);
   if (!d) return;
+  // jump straight to the card's behaviour filter instead of requiring the
+  // user to pick it first
+  const target = caseOf(d);
+  if (target !== CASE){ CASE = target; renderKpis(); renderWorklist(); }
   const wl = $("worklist");
   wl.scrollTop = 0;               // reset the inner scroll first, then locate
   window.scrollTo({top: 0, behavior: "instant"});
@@ -519,6 +533,8 @@ async function init(){
   try {
     await loadSamples();
     await refresh();
+    OBJ = STATE.objective || "hybrid";   // adopt server truth once on load
+    render();
   } catch (e) {
     $("loginOverlay").style.display = "flex";
   }

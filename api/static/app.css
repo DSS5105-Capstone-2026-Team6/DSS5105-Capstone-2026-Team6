@@ -37,6 +37,7 @@ textarea{width:100%;min-height:110px;font-family:ui-monospace,monospace;font-siz
 .chip.allocate{background:#d3f9d8}.chip.refuse{background:#ffe3e3}
 .chip.impossible{background:#ffe8cc}.chip.ask{background:#d0ebff}
 .chip.answer,.chip.no_data{background:#e9ecef}
+.chip.split{background:var(--blue-deep);color:#fff}
 .cand{border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin:5px 0;cursor:pointer;transition:all .2s var(--ease)}
 .cand:hover{border-color:var(--blue);box-shadow:var(--shadow-md);transform:translateY(-2px)}
 .cand.chosen{border:2px solid var(--blue);background:#f1f8fe}
