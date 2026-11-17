@@ -127,6 +127,7 @@ def _state(s, sid):
     for x in s["decisions"].values():
         pub = _public(x["decision"], x["skipped"], committed)
         pub["chat"] = s["item_chats"].get(x["decision"].decision_id, [])
+        pub["msg"] = x["msg"]
         decisions.append(pub)
     return {
         "sid": sid,
@@ -328,7 +329,17 @@ def _commit(s, d, wid):
     try:
         return s["desk"].confirm(replace(d, chosen=target), committed_by="web"), None
     except ProposalChanged as exc:
-        return exc.decision, "stale"
+        # one-click semantics: the card went stale after another commit;
+        # retry once with the refreshed decision (same as confirm_all)
+        fresh = exc.decision
+        target = next((c for c in fresh.candidates if c.workshop_id == wid), None)
+        if target is None:
+            return fresh, "stale"
+        try:
+            return s["desk"].confirm(replace(fresh, chosen=target),
+                                     committed_by="web"), None
+        except (ProposalChanged, ValueError) as exc2:
+            return fresh, str(exc2)
     except ValueError as exc:
         return None, str(exc)
 
@@ -530,6 +541,13 @@ def scenario(body: ScenarioBody, request: Request):
 def state(request: Request):
     s, sid = _session(request)
     return _state(s, sid)
+
+
+@app.get("/api/orders")
+def open_orders(request: Request):
+    s, _ = _session(request)
+    return [o["order_id"] for o in s["desk"].orders.orders
+            if o.get("status") != "COMPLETE"]
 
 
 @app.get("/api/records")
@@ -758,6 +776,55 @@ def provider(body: ProviderBody, request: Request):
     s["model"] = body.model
     s["desk"] = new_desk
     return _state(s, sid)
+
+
+class CompareBody(BaseModel):
+    models: list[str] = []      # ["deepseek:deepseek-chat", "openai:gpt-6-luna"]
+    limit: int = 3
+
+
+@app.post("/api/compare_models")
+def compare_models(body: CompareBody, request: Request):
+    """Run the first `limit` dev-inbox requests through each model and score
+    behaviour labels against data/labels_inbox.json."""
+    from desk.config import DATA_DIR
+    from desk.chat_dump import ENVELOPE
+    import json as _json
+
+    labels_path = DATA_DIR / "labels_inbox.json"
+    inbox_path = DATA_DIR / "dispatch_requests.txt"
+    raw = _json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else []
+    labels = {x["request_id"]: x for x in raw} if isinstance(raw, list) else raw
+    lines = [l for l in inbox_path.read_text(encoding="utf-8").splitlines()
+             if l.strip() and not l.startswith("#")][:max(1, body.limit)]
+
+    out = []
+    for spec in body.models:
+        provider, _, model = spec.partition(":")
+        entry = {"model": spec, "provider": provider, "results": [], "error": None}
+        try:
+            desk = DispatchDesk(provider=provider, model=model or None)
+            for line in lines:
+                rid = (ENVELOPE.match(line).group(1) if ENVELOPE.match(line) else line[:3])
+                try:
+                    d = desk.handle_message(line, requester="compare")
+                    expected = (labels.get(rid) or {}).get("behaviour")
+                    got = d.behaviour.value
+                    entry["results"].append({
+                        "id": rid, "expected": expected, "got": got,
+                        "ok": expected is None or expected == got})
+                except Exception as exc:
+                    entry["results"].append({"id": rid, "expected": None,
+                                             "got": "error", "ok": False,
+                                             "error": str(exc)[:120]})
+        except Exception as exc:
+            entry["error"] = str(exc)[:200]
+        if entry["results"]:
+            scored = [r for r in entry["results"] if r["expected"]]
+            entry["accuracy"] = (round(sum(r["ok"] for r in scored) / len(scored), 3)
+                                 if scored else None)
+        out.append(entry)
+    return {"models": out, "n": len(lines)}
 
 
 class ShareBody(BaseModel):

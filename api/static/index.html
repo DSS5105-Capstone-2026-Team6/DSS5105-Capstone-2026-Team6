@@ -154,9 +154,32 @@
         <button id="scenarioBtn" class="small">Scenario preview</button>
       </div>
     </div>
+    <div class="dock" id="compareDock">
+      <h3>Compare models</h3>
+      <div class="row"><select id="cmpA" style="flex:1"></select></div>
+      <div class="row"><select id="cmpB" style="flex:1"></select></div>
+      <div class="row"><select id="cmpN" style="width:70px">
+        <option value="3">3 reqs</option><option value="5">5 reqs</option></select>
+        <button id="cmpBtn" class="small">Run</button></div>
+      <div id="cmpResult" class="muted">Pick two models and compare behaviour scores.</div>
+    </div>
   </aside>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/js/util.js"></script>
+<script src="/static/js/render.js"></script>
+<script src="/static/js/rail.js"></script>
+<script src="/static/js/worklist.js"></script>
+<script src="/static/js/icons.js"></script>
+<script src="/static/js/intake.js"></script>
+<script src="/static/js/confirm.js"></script>
+<script src="/static/js/scenario.js"></script>
+<script src="/static/js/records.js"></script>
+<script src="/static/js/chatlog.js"></script>
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/provider.js"></script>
+<script src="/static/js/toollog.js"></script>
+<script src="/static/js/compare.js"></script>
+<script src="/static/js/main.js"></script>
 </body>
 </html>
