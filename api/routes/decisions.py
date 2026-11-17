@@ -8,8 +8,8 @@ from pydantic import BaseModel
 
 from desk.budget import BudgetExceeded
 from desk.desk import ProposalChanged
-from api.state import (archive_tool_log, get_session, log, refresh_stale_async,
-                       state_payload)
+from api.state import (archive_tool_log, get_session, invalidate_ledger, log,
+                       refresh_stale_async, state_payload)
 
 router = APIRouter()
 
@@ -56,6 +56,7 @@ def followup(body: FollowupBody, request: Request):
         archive_tool_log(s, item["decision"])
         s["metrics"]["committed"].add(record.order_id)
         del s["decisions"][body.decision_id]
+        invalidate_ledger(s)
     elif updated is not None:
         # follow_up may return a NEW decision object with a NEW id — keep the
         # proposal's id stable so cards and follow-ups stay addressable
@@ -116,6 +117,7 @@ def confirm(body: ConfirmBody, request: Request):
         archive_tool_log(s, item["decision"])
         del s["decisions"][body.decision_id]
         s["metrics"]["committed"].add(result.order_id)
+        invalidate_ledger(s)
         log(s, "dispatcher", f"(card) {body.workshop_id}",
             f"Committed {result.record_id} — {result.order_id} → {result.workshop_id}.")
     else:
@@ -153,6 +155,7 @@ def confirm_split(body: ConfirmSplitBody, request: Request):
     archive_tool_log(s, decision)
     del s["decisions"][body.decision_id]
     s["metrics"]["committed"].add(records[0].order_id)   # split = one request
+    invalidate_ledger(s)
     log(s, "dispatcher", f"(split #{body.index + 1})",
         f"Committed {len(records)} parts.")
     refresh_stale_async(s)
@@ -177,6 +180,8 @@ def confirm_all(request: Request):
         s["metrics"]["committed"].add(record.order_id)
         log(s, "dispatcher", f"(confirm all) {d.parsed.order_id}",
             f"Committed {record.record_id}.")
+    if results:
+        invalidate_ledger(s)
     st = state_payload(s, sid)
     st["failures"] = failures
     return st

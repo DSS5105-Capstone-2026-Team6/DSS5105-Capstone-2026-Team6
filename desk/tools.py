@@ -737,14 +737,16 @@ UPDATE_WORKSHOP_PERFORMANCE_SCHEMA = {
 
 # ---------------- flag_at_risk ----------------
 
-def flag_at_risk(*, desk=None):
+def flag_at_risk(*, desk=None, records=None):
     """Read-only early warning: every committed batch whose projected finish
     (from the live queues) now lands after its due date. Never moves a batch;
-    reassignment remains a human decision (roadmap Table 4)."""
+    reassignment remains a human decision (roadmap Table 4).
+    `records` lets a caller with a version-gated cache avoid a second full
+    ledger read per page render (web frontends call this on every state)."""
     if desk is None:
         return {"error": "flag_at_risk needs a desk context (audit + queues)"}
     at_risk = []
-    for rec in desk.audit.load_all():
+    for rec in (records if records is not None else desk.audit.load_all()):
         order = desk.orders.by_id(rec.order_id)
         if order is None:
             continue

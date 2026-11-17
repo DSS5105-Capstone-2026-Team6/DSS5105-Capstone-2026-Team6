@@ -139,10 +139,17 @@ class Database:
             finally:
                 connection.close()
 
+    _TABLES_OK = set()   # (url, schema, names) verified once per process —
+                         # every shared desk creation re-paid 3 RTTs otherwise
+
     def require_tables(self, *names):
         if not self.is_postgres:
+            return
+        key = (self._url if self._from_env else id(self), self.schema, names)
+        if key in Database._TABLES_OK:
             return
         with self.connect() as db:
             for name in names:
                 if db.execute("SELECT to_regclass(?)", (self.schema + "." + name,)).fetchone()[0] is None:
                     raise RuntimeError("Shared database tables are missing. Run database/supabase_schema.sql first.")
+        Database._TABLES_OK.add(key)

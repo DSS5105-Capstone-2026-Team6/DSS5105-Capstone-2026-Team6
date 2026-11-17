@@ -6,7 +6,8 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from desk.desk import DispatchDesk
-from api.state import get_session, state_payload
+from api.state import (PerfFacade, get_session, invalidate_ledger,
+                       ledger_snapshot, state_payload, warm_caches_async)
 
 router = APIRouter()
 
@@ -27,6 +28,8 @@ def world(body: WorldBody, request: Request):
         s["desk"] = DispatchDesk(stages=body.stages)
     else:
         s["desk"] = DispatchDesk(stages=body.stages, storage_dir=s["storage_dir"])
+    invalidate_ledger(s)
+    warm_caches_async(s)
     return state_payload(s, sid)
 
 
@@ -79,8 +82,8 @@ def scenario(body: ScenarioBody, request: Request):
     desk = s["desk"]
     pd_ = date.fromisoformat(body.preview_date) if body.preview_date else None
     result = compare_sunday(body.order_id, desk.orders, desk.workshops,
-                            dict(desk.state.queues), body.closed, body.delay,
-                            perf=desk.performance, noise_pct=body.noise_pct,
+                            ledger_snapshot(s)[1], body.closed, body.delay,
+                            perf=PerfFacade(s), noise_pct=body.noise_pct,
                             seed=body.seed, preview_date=pd_)
     if "error" in result:
         return result

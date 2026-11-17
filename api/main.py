@@ -29,6 +29,25 @@ AUTH_TOKENS = {}
 app = FastAPI(title="Dispatch Desk API")
 
 
+def _warm_shared_pool():
+    """The first shared-DB toggle used to pay the cross-border TCP+TLS+auth
+    handshake (~1-3s) before anything answered. Open the registry pool at
+    boot instead, so toggling shared mode is instant."""
+    if not os.environ.get("DISPATCH_DATABASE_URL"):
+        return
+    def warm():
+        try:
+            from desk.storage import Database
+            Database()._pg_pool()
+        except Exception:
+            pass
+    import threading
+    threading.Thread(target=warm, daemon=True).start()
+
+
+_warm_shared_pool()
+
+
 @app.middleware("http")
 async def ensure_session_cookie(request: Request, call_next):
     """Sessions were created per request because the sid was never written
