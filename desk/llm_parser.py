@@ -29,6 +29,8 @@ Rules:
 - use ONLY values stated in the message; unknown -> null
 - order ids look like ORD-000; keep them verbatim
 - dates must be normalised to YYYY-MM-DD (the year is 2026 when omitted)
+- list EVERY order mentioned, one entry per order — never merge several
+  orders into one entry and never drop any, however many there are
 - if nothing order-like is present, return an empty "orders" list"""
 
 

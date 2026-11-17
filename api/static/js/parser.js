@@ -30,27 +30,22 @@ function _same(parsed, register){
   return _norm(parsed) === _norm(register);
 }
 
-function _orderCard(o){
+function _orderRow(o){
   const oid = o.order_id, rec = o.register;
-  let status;
-  if (!oid) status = '<span class="muted">no order id in the message</span>';
-  else if (!rec) status = '<span class="pr-warn">⚠ not in the order register</span>';
-  else status = `<span class="pr-ok">✓ in register</span> <span class="muted">· status ${esc(rec.status || "?")}</span>`;
-  const cells = PARSE_FIELDS.map(([key, label]) => {
-    const val = o[key], reg = rec ? rec[key] : null;
-    const same = _same(val, reg);
-    const cls = same === false ? "pr-cell diff" : "pr-cell";
-    const shown = (val != null && val !== "")
-      ? `<div class="v">${esc(val)}</div>` : '<div class="v null">not stated</div>';
-    let note = "";
-    if (same === true) note = '<div class="reg pr-ok">✓ matches register</div>';
-    else if (same === false) note = `<div class="reg pr-warn">register: ${esc(reg)}</div>`;
-    else if ((val == null || val === "") && reg != null && reg !== "")
-      note = `<div class="reg muted">register: ${esc(reg)}</div>`;
-    return `<div class="${cls}"><div class="k">${label}</div>${shown}${note}</div>`;
-  }).join("");
-  return `<div class="card"><span class="pr-order">${esc(oid || "Unnamed order")}</span> &nbsp;${status}
-    <div class="pr-grid">${cells}</div></div>`;
+  const status = !oid ? '<span class="muted">no id</span>'
+    : rec ? '<span class="pr-ok">✓ register</span>'
+    : '<span class="pr-warn">⚠ not in register</span>';
+  const bits = [o.pieces && `${o.pieces} pcs`, o.product,
+                o.customer && `for ${o.customer}`,
+                o.due_date && `due ${o.due_date}`].filter(Boolean);
+  // field-level disagreements with the register, compact ("due→register 04-09")
+  const diffs = PARSE_FIELDS
+    .filter(([k]) => _same(o[k], rec ? rec[k] : null) === false)
+    .map(([k, label]) => `${label.toLowerCase()}→register ${rec[k]}`);
+  return `<div class="pr-row"><b>${esc(oid || "new order")}</b> ${status} ` +
+    `<span class="muted">${esc(bits.join(" · "))}</span>` +
+    (diffs.length ? ` <span class="pr-warn">${esc(diffs.join(", "))}</span>` : "") +
+    `</div>`;
 }
 
 function renderParseResult(r){
@@ -60,7 +55,7 @@ function renderParseResult(r){
   const [tint, label] = INTENT_STYLE[intent] || INTENT_STYLE.other;
   let html = `<div class="pr-head"><span class="pr-chip" style="background:${tint}">${label}</span>
     <span class="muted">${found.length} order ref(s) · ${cons.length} constraint(s)</span></div>`;
-  html += found.length ? found.map(_orderCard).join("")
+  html += found.length ? found.map(_orderRow).join("")
                        : '<div class="muted">No order-like content in this message.</div>';
   if (cons.length){
     html += '<div class="pr-cons">' + cons.map(c => {

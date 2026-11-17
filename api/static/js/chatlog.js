@@ -6,8 +6,11 @@ function renderChatLog(){
   $("chatLog").innerHTML = log.length ? log.map((e,i) => {
     const oid = (e.text.match(/ORD-\d+/)||[null])[0];
     const fresh = isNew && i === log.length - 1;
+    const who = e.speaker === "request"
+      ? `Request #${e.n}${e.user ? " · " + e.user : ""}`
+      : e.speaker;
     return `<div class="chat-msg ${fresh?"fresh":""}" data-did="${e.decision_id||""}" data-oid="${oid||""}" onclick="locateCard('${e.decision_id||""}','${oid||""}')">
-      <span class="who">${esc(e.speaker)}:</span> ${esc(e.text)}
+      <span class="who">${esc(who)}:</span> ${esc(e.text)}
       <div class="muted reply-text" data-full="${esc(e.reply||"")}">${fresh?"":esc(e.reply||"")}</div></div>`;
   }).join("") : '<span class="muted">No exchanges yet.</span>';
   _seenChats = log.length;

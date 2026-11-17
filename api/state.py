@@ -45,6 +45,7 @@ def get_session(request):
             "item_chats": {},   # decision_id -> [{who, text}] per-card chat
             "tool_history": [],  # archived tool logs of committed/dismissed cards
             "metrics": {"dispatched": 0, "committed": set(), "failed": 0},
+            "req_counter": 0,    # Request #N numbering for chat log + cards
         }
     s = sessions[sid]
     s.setdefault("tool_history", [])
@@ -72,6 +73,8 @@ def public(d, skipped=False, committed_orders=()):
             for c in d.candidates
         ],
         "chosen": d.chosen.workshop_id if d.chosen else None,
+        "pieces": p.pieces,
+        "due_date": p.due_date,
         "splits": d.splits or [],
         "recommended_split": d.recommended_split,
         "options": list(d.options),
@@ -117,6 +120,8 @@ def state_payload(s, sid):
         pub = public(x["decision"], x["skipped"], committed)
         pub["chat"] = s["item_chats"].get(x["decision"].decision_id, [])
         pub["msg"] = x["msg"]
+        pub["sender"] = x.get("sender")
+        pub["req_n"] = x.get("n")
         decisions.append(pub)
     return {
         "sid": sid,

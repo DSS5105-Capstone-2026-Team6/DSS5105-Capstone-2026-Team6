@@ -112,6 +112,9 @@ legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-ri
 .pr-normalized .k{font-size:.72em;text-transform:uppercase;letter-spacing:.03em}
 .pr-normalized .v{font-weight:600;color:var(--blue-deep);white-space:pre-wrap;
   word-break:break-all;font-size:.82em;margin:2px 0 0}
+.pr-row{padding:4px 2px;border-bottom:1px solid #f1f3f5;font-size:.9em}
+.req-raw{margin:4px 0;padding:4px 8px;background:#f8fafc;border-left:3px solid var(--blue-pale);
+  border-radius:0 8px 8px 0;font-size:.82em;color:var(--muted)}
 
 /* compare-models animated run */
 .cmp-step{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-weight:600;color:var(--blue-deep)}

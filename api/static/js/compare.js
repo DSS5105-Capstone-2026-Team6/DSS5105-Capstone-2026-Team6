@@ -40,6 +40,23 @@ function _chip(b){
   return `<span class="chip ${b}" style="background:${color}">${label}</span>`;
 }
 
+/* one model on one request, with a live elapsed readout and a hard cap —
+   reasoner models think for minutes and used to leave the cell spinning
+   forever; at 150s the cell gives up (the call may still land server-side) */
+function _cmpRunCell(cell, model, r){
+  const t0 = Date.now();
+  cell.innerHTML = '<span class="cmp-spin"></span><span class="muted cmp-elapsed" style="margin-left:6px">0s</span>';
+  const tick = setInterval(() => {
+    const el = cell.querySelector(".cmp-elapsed");
+    if (el) el.textContent = Math.round((Date.now() - t0) / 1000) + "s";
+  }, 1000);
+  const cap = new Promise(res => setTimeout(() =>
+    res({error: "timed out after 150s — a slow/reasoning model; try again or pick a faster one"}), 150000));
+  return Promise.race([
+    post("/api/compare_run", {model, text: r.text, rid: r.rid}), cap,
+  ]).finally(() => clearInterval(tick));
+}
+
 async function compareModels(){
   const a = $("cmpA").value, b = $("cmpB").value;
   if (a === b){ status("Pick two different models to compare."); return; }
@@ -95,44 +112,49 @@ async function compareModels(){
       if (!alive()) return;
     }
 
-    /* ---- phase 2: classify with both models, cells fill progressively ---- */
+    /* ---- phase 2+3: classify with both models — three rows in flight,
+       both models in parallel per row (fresh desk per call server-side) ---- */
     stage.insertAdjacentHTML("beforeend",
       _cmpHeader(2, `Comparing — each request through both models…`));
     const results = {a: [], b: []};
-    for (const r of pick.requests){
-      const row = $("cmp-" + r.rid);
-      for (const key of ["a", "b"])
-        row.querySelector(`[data-model="${key}"]`).innerHTML =
-          '<span class="cmp-spin"></span>';
-      row.scrollIntoView({behavior: "smooth", block: "nearest"});
-      const [ra, rb] = await Promise.all([
-        post("/api/compare_run", {model: a, text: r.text, rid: r.rid}),
-        post("/api/compare_run", {model: b, text: r.text, rid: r.rid}),
-      ]);
-      if (!alive()) return;
-      for (const [key, res] of [["a", ra], ["b", rb]]){
-        const cell = row.querySelector(`[data-model="${key}"]`);
-        if (res.error){
-          cell.innerHTML = `<span class="warn">error</span>`;
-          cell.title = res.error;
-          results[key].push({ok: false, labeled: !!r.expected});
+    const queue = pick.requests.slice();
+    const worker = async () => {
+      while (queue.length){
+        if (!alive()) return;
+        const r = queue.shift();
+        const row = $("cmp-" + r.rid);
+        const cellA = row.querySelector('[data-model="a"]');
+        const cellB = row.querySelector('[data-model="b"]');
+        const [ra, rb] = await Promise.all([
+          _cmpRunCell(cellA, a, r), _cmpRunCell(cellB, b, r)]);
+        if (!alive()) return;
+        for (const [key, res] of [["a", ra], ["b", rb]]){
+          const cell = row.querySelector(`[data-model="${key}"]`);
+          if (res.error){
+            const isTimeout = res.error.startsWith("timed out");
+            cell.innerHTML = `<span class="warn">${isTimeout ? "timeout" : "error"}</span>`;
+            cell.title = res.error;
+            results[key].push({ok: false, labeled: !!r.expected});
+          } else {
+            cell.innerHTML = _chip(res.got);
+            cell.title = res.explanation || "";
+            results[key].push({got: res.got, expected: r.expected,
+                               ok: r.expected ? res.got === r.expected : null,
+                               labeled: !!r.expected});
+          }
+        }
+        /* phase 3 (per row): reveal the labelled ground truth */
+        const lab = row.querySelector(".cmp-label");
+        if (r.expected){
+          lab.innerHTML = `label: ${_chip(r.expected)}` +
+            (r.note ? ` <span class="muted" title="${esc(r.note)}">ⓘ</span>` : "");
         } else {
-          cell.innerHTML = _chip(res.got);
-          cell.title = res.explanation || "";
-          results[key].push({got: res.got, expected: r.expected,
-                             ok: r.expected ? res.got === r.expected : null,
-                             labeled: !!r.expected});
+          lab.innerHTML = '<span class="muted">no label on file</span>';
         }
       }
-      /* ---- phase 3 (per row): reveal the labelled ground truth ---- */
-      const lab = row.querySelector(".cmp-label");
-      if (r.expected){
-        lab.innerHTML = `label: ${_chip(r.expected)}` +
-          (r.note ? ` <span class="muted" title="${esc(r.note)}">ⓘ</span>` : "");
-      } else {
-        lab.innerHTML = '<span class="muted">no label on file</span>';
-      }
-    }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if (!alive()) return;
 
     /* ---- phase 4: accuracy bars ---- */
     stage.insertAdjacentHTML("beforeend", _cmpHeader(3, "Result"));

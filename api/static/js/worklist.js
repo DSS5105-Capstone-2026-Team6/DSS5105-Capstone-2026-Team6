@@ -82,10 +82,20 @@ function cardHtml(d){
       <button class="small" onclick="dismiss('${d.decision_id}')">${icon("trash")}Dismiss</button>
       ${d.skipped ? "" : `<button class="small" onclick="skipCard('${d.decision_id}')">${icon("skip")}Skip</button>`}
     </div>`;
+  // request provenance: #N, sender, pieces / due — and the full original
+  // text for plain chat input (JSON-parsed lines stay off the card)
+  const metaBits = [d.req_n ? `Request #${d.req_n}` : null, d.sender,
+                    d.pieces ? `${d.pieces} pcs` : null,
+                    d.due_date ? `due ${d.due_date}` : null].filter(Boolean);
+  const metaLine = metaBits.length
+    ? `<div class="meta" style="margin-top:2px">${esc(metaBits.join(" · "))}</div>` : "";
+  const rawMsg = d.msg && !d.msg.trim().startsWith("{")
+    ? `<div class="req-raw">${esc(d.msg)}</div>` : "";
   return `<div class="card ${d.already_committed||d.skipped?"done":""}" id="card-${d.decision_id}">
     <span class="chip ${d.behaviour}" style="background:${color}">${label}</span>
     ${d.order_id ? ` <b>${esc(d.order_id)}</b>` : ""}
     ${d.skipped ? ' <span class="muted">(skipped)</span>' : ""}
+    ${metaLine}${rawMsg}
     <div class="muted" style="margin:4px 0">${esc(d.explanation)}</div>
     ${(d.warnings||[]).map(w=>`<div class="warn">${icon("alert")}${esc(w)}</div>`).join("")}
     ${body}${actions}

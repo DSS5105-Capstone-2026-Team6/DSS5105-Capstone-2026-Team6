@@ -45,15 +45,6 @@ COMPARE_FILES = [   # request pool -> its label file
     ("dispatch_requests_heldout.txt", "labels_heldout.json"),
 ]
 
-_COMPARE_DESKS = {}   # (provider, model) -> DispatchDesk, reused across calls
-
-
-def _compare_desk(provider, model):
-    key = (provider, model)
-    if key not in _COMPARE_DESKS:
-        _COMPARE_DESKS[key] = DispatchDesk(provider=provider, model=model or None)
-    return _COMPARE_DESKS[key]
-
 
 class ComparePickBody(BaseModel):
     n: int = 8
@@ -111,12 +102,13 @@ class CompareRunBody(BaseModel):
 
 @router.post("/api/compare_run")
 def compare_run(body: CompareRunBody):
-    """Classify ONE request with ONE model (the UI drives the animation
-    and shows progress per request — and stays responsive for dispatch)."""
+    """Classify ONE request with ONE model. A fresh desk per call: compare
+    requests are independent, and separate desks are what lets the UI run
+    several classifications concurrently (agent history is not thread-safe)."""
     from desk.budget import BudgetExceeded
     provider_, _, model = body.model.partition(":")
     try:
-        desk = _compare_desk(provider_, model)
+        desk = DispatchDesk(provider=provider_, model=model or None)
     except Exception as exc:
         return {"error": f"Cannot start {body.model}: {exc}"}
     try:
