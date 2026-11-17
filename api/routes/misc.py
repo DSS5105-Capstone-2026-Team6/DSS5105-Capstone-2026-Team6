@@ -104,11 +104,23 @@ class CompareRunBody(BaseModel):
 def compare_run(body: CompareRunBody):
     """Classify ONE request with ONE model. A fresh desk per call: compare
     requests are independent, and separate desks are what lets the UI run
-    several classifications concurrently (agent history is not thread-safe)."""
+    several classifications concurrently (agent history is not thread-safe).
+    Compare calls get a tighter LLM timeout than the desk default — mixed
+    pools include hard cases (impossible/unanswerable) where a slow provider
+    burns the full 120s x 3 attempts per round and the run feels stuck."""
+    import os
+    from desk.agent import DispatchAgent, load_api_key
     from desk.budget import BudgetExceeded
+    from openai import OpenAI
     provider_, _, model = body.model.partition(":")
     try:
-        desk = DispatchDesk(provider=provider_, model=model or None)
+        spec = PROVIDERS[provider_]
+        client = OpenAI(api_key=load_api_key(provider_),
+                        base_url=spec["base_url"],
+                        timeout=float(os.environ.get("COMPARE_LLM_TIMEOUT", "60")),
+                        max_retries=int(os.environ.get("COMPARE_LLM_RETRIES", "1")))
+        agent = DispatchAgent(model=model or None, provider=provider_, client=client)
+        desk = DispatchDesk(agent=agent)
     except Exception as exc:
         return {"error": f"Cannot start {body.model}: {exc}"}
     try:

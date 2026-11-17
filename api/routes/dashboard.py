@@ -194,5 +194,7 @@ def reset(request: Request):
     s["desk"].performance.clear()
     s["decisions"] = {}
     s["chat_log"] = []
+    s["tool_history"] = []
     s["metrics"] = {"dispatched": 0, "committed": set(), "failed": 0}
+    s["req_counter"] = 0          # Request #N numbering restarts with the demo
     return state_payload(s, sid)

@@ -29,6 +29,16 @@ function renderChatLog(){
     }, 30);
   }
 }
+/* reverse direction: a card's "Request #N" scrolls the chat log to the
+   matching entry and flashes it */
+function locateChat(did){
+  const el = $("chatLog").querySelector(`.chat-msg[data-did="${did}"]`);
+  if (!el) return;
+  el.scrollIntoView({behavior: "smooth", block: "center"});
+  el.classList.remove("flash");
+  void el.offsetWidth;           // restart the CSS animation
+  el.classList.add("flash");
+}
 function locateCard(did, oid){
   // direct binding first: every chat entry now carries its decision id
   let d = did ? STATE.decisions.find(x => x.decision_id === did) : null;

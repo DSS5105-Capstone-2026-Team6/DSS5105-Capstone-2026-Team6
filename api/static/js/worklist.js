@@ -84,11 +84,11 @@ function cardHtml(d){
     </div>`;
   // request provenance: #N, sender, pieces / due — and the full original
   // text for plain chat input (JSON-parsed lines stay off the card)
-  const metaBits = [d.req_n ? `Request #${d.req_n}` : null, d.sender,
+  const metaBits = [d.sender,
                     d.pieces ? `${d.pieces} pcs` : null,
                     d.due_date ? `due ${d.due_date}` : null].filter(Boolean);
-  const metaLine = metaBits.length
-    ? `<div class="meta" style="margin-top:2px">${esc(metaBits.join(" · "))}</div>` : "";
+  const metaLine = (d.req_n || metaBits.length)
+    ? `<div class="meta" style="margin-top:2px">${d.req_n ? `<span class="req-link" title="locate in chat log" onclick="locateChat('${d.decision_id}')">Request #${d.req_n}</span>${metaBits.length ? " · " : ""}` : ""}${esc(metaBits.join(" · "))}</div>` : "";
   const rawMsg = d.msg && !d.msg.trim().startsWith("{")
     ? `<div class="req-raw">${esc(d.msg)}</div>` : "";
   return `<div class="card ${d.already_committed||d.skipped?"done":""}" id="card-${d.decision_id}">
