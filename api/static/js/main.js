@@ -47,8 +47,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const p = $(id);
       if (p && p.style.display !== "none" && !p.contains(e.target)
           && !e.target.closest("#toollogBtn") && !e.target.closest("#scenarioBtn")
-          && !e.target.closest("#parserBtn") && !e.target.closest("#compareDock"))
-        p.style.display = "none";
+          && !e.target.closest("#parserBtn") && !e.target.closest("#compareDock")){
+        if (id === "compareOverlay") abortCompare();   // also kills the run
+        else p.style.display = "none";
+      }
     }
   });
   switchTab("desk");

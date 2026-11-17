@@ -39,9 +39,9 @@ class CompareBody(BaseModel):
     limit: int = 3
 
 
-COMPARE_FILES = [   # request pool -> its label file (full120 is unlabeled)
+COMPARE_FILES = [   # request pool -> its label file
     ("dispatch_requests.txt", "labels_inbox.json"),
-    ("dispatch_requests_full120.txt", None),
+    ("dispatch_requests_full120.txt", "f_heldout.json"),
     ("dispatch_requests_heldout.txt", "labels_heldout.json"),
 ]
 
@@ -87,8 +87,19 @@ def compare_pick(body: ComparePickBody):
                          "text": line, "expected": lab.get("behaviour"),
                          "note": lab.get("note")})
     rng = random.Random(body.seed) if body.seed is not None else random.Random()
-    picked = rng.sample(pool, min(max(1, body.n), len(pool)))
+    # stratified: if any pool requests lack labels, take at most half the
+    # picks from them so every run still has something to score; when all
+    # pools are labelled (they now are) this is just a uniform draw.
+    labeled = [r for r in pool if r["expected"]]
+    unlabeled = [r for r in pool if not r["expected"]]
+    n = min(max(1, body.n), len(pool))
+    n_unl = min(len(unlabeled), n // 2)
+    n_lab = min(len(labeled), n - n_unl)
+    n_unl = min(len(unlabeled), n - n_lab)   # top up if labelled ran short
+    picked = rng.sample(labeled, n_lab) + rng.sample(unlabeled, n_unl)
+    rng.shuffle(picked)
     return {"requests": picked, "pool": len(pool),
+            "labeled_pool": len(labeled),
             "files": [f for f, _ in COMPARE_FILES]}
 
 

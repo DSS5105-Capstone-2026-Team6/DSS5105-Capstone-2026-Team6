@@ -67,7 +67,10 @@
 <div id="compareOverlay" class="popover-panel wide" style="display:none">
   <div class="row" style="justify-content:space-between">
     <h3 style="margin:0">Compare models</h3>
-    <button class="small" onclick="document.getElementById('compareOverlay').style.display='none'">✕</button>
+    <div class="row" style="gap:6px">
+      <button class="small" onclick="abortCompare()">Stop</button>
+      <button class="small" onclick="abortCompare()">✕</button>
+    </div>
   </div>
   <div id="cmpStage" class="popover-scroll"></div>
 </div>

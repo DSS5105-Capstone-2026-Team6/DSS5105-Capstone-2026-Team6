@@ -23,6 +23,15 @@ function fillCompareSelects(){
 
 const _sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/* interrupt: closing the overlay or pressing Stop invalidates the run —
+   in-flight requests finish but the loop never touches the UI again */
+window._cmpRunId = 0;
+function abortCompare(){
+  window._cmpRunId++;
+  $("compareOverlay").style.display = "none";
+  $("cmpBtn").disabled = false;
+}
+
 function _cmpHeader(step, text){
   return `<div class="cmp-step"><span class="cmp-step-n">${step}</span>${esc(text)}</div>`;
 }
@@ -34,6 +43,8 @@ function _chip(b){
 async function compareModels(){
   const a = $("cmpA").value, b = $("cmpB").value;
   if (a === b){ status("Pick two different models to compare."); return; }
+  const run = ++window._cmpRunId;          // closing/Stop invalidates this run
+  const alive = () => run === window._cmpRunId;
   const stage = $("cmpStage");
   $("compareOverlay").style.display = "block";
   $("cmpBtn").disabled = true;
@@ -52,9 +63,11 @@ async function compareModels(){
       chip.title = f;
       filesRow.appendChild(chip);
       await _sleep(260);
+      if (!alive()) return;
       chip.classList.add("open");
     }
     const pick = await post("/api/compare_pick", {n: 8});
+    if (!alive()) return;
     stage.insertAdjacentHTML("beforeend",
       _cmpHeader(1, `Picked ${pick.requests.length} of ${pick.pool} requests — locating each message…`));
     const list = document.createElement("div");
@@ -75,9 +88,11 @@ async function compareModels(){
       list.appendChild(row);
       row.scrollIntoView({behavior: "smooth", block: "nearest"});
       await _sleep(340);
+      if (!alive()) return;
       row.querySelector(".cmp-star").innerHTML = icon("star");
       row.classList.add("starred");
       await _sleep(120);
+      if (!alive()) return;
     }
 
     /* ---- phase 2: classify with both models, cells fill progressively ---- */
@@ -94,6 +109,7 @@ async function compareModels(){
         post("/api/compare_run", {model: a, text: r.text, rid: r.rid}),
         post("/api/compare_run", {model: b, text: r.text, rid: r.rid}),
       ]);
+      if (!alive()) return;
       for (const [key, res] of [["a", ra], ["b", rb]]){
         const cell = row.querySelector(`[data-model="${key}"]`);
         if (res.error){
@@ -144,8 +160,9 @@ async function compareModels(){
       sum.children[i].querySelector(".cmp-fill").style.width = acc + "%";
     }
   } catch(e){
-    stage.insertAdjacentHTML("beforeend",
-      `<div class="warn">Compare failed: ${esc(e)}</div>`);
+    if (alive())
+      stage.insertAdjacentHTML("beforeend",
+        `<div class="warn">Compare failed: ${esc(e)}</div>`);
   }
-  $("cmpBtn").disabled = false;
+  if (alive()) $("cmpBtn").disabled = false;
 }
