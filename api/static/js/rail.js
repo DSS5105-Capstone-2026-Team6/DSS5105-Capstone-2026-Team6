@@ -31,15 +31,18 @@ function renderRail(){
 async function setObjective(o){
   OBJ = o;   // UI truth first — the highlight never snaps back on slow calls
   render();
-  STATE = await post("/api/rerank", {objective:o});
-  render();
+  if (applyState(await post("/api/rerank", {objective:o}))) render();
 }
 async function rerankAll(){ setObjective(OBJ); }
 async function worldSwitch(){
   status("Rebuilding desk…");
-  STATE = await post("/api/world", {as_of:$("asOfSel").value, stages:$("stagesSel").checked});
-  render(); status("");
+  if (applyState(await post("/api/world", {as_of:$("asOfSel").value, stages:$("stagesSel").checked}))){
+    const lo = $("lensOrder");
+    if (lo) delete lo.dataset.filled;   // refill the lens list for the new world
+    render();
+  }
+  status("");
 }
-async function shockOn(){ STATE = await post("/api/shock", {seed:+($("shockSeed").value||5105)}); render(); }
-async function shockOff(){ STATE = await del("/api/shock"); render(); }
+async function shockOn(){ if (applyState(await post("/api/shock", {seed:+($("shockSeed").value||5105)}))) render(); }
+async function shockOff(){ if (applyState(await del("/api/shock"))) render(); }
 

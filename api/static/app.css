@@ -143,5 +143,12 @@ img.chart{transition:none;transform-origin:0 0;max-width:none}
 #chatDock{display:flex;flex-direction:column;flex:1;min-height:0;margin-bottom:0}
 #chatLog{flex:1;overflow-y:auto;min-height:0}
 #batchDock{flex-shrink:0;margin-bottom:0}
+
+/* compare-models dock: selects must not overflow the rail */
+#compareDock select{max-width:100%;width:100%}
+#compareDock .row{margin:6px 0}
+#cmpResult{word-break:break-word;white-space:normal;font-size:.82em}
+#cmpResult .sc-table{font-size:.78em}
+#cmpResult .sc-table td,#cmpResult .sc-table th{padding:2px 4px}
 .filebtn{border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer;font-size:.8rem}
 .filebtn:hover{border-color:var(--blue)}

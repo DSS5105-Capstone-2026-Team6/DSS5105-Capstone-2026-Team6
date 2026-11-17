@@ -15,6 +15,13 @@ let STATE = null, CASE = "allocate", TAB = "desk";
 let OBJ = "hybrid";
 
 function status(t){ const el=$("status"); if(el) el.textContent = t; }
+/* every action response goes through here: an error payload must NEVER
+   replace STATE (it has no queues/decisions — render() would die and the
+   page freezes, which is exactly what "committing forever" was) */
+function applyState(r){
+  if (r && r.error){ status(r.error); return false; }
+  STATE = r; return true;
+}
 async function refresh(){ STATE = await api("/api/state"); render(); }
 function caseOf(d){ return d.behaviour === "answer" ? "no_data" : d.behaviour; }
 

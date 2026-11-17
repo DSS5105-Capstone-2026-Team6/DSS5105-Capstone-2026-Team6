@@ -29,9 +29,13 @@ function renderChatLog(){
 function locateCard(oid){
   if (!oid) return;
   // ask/no_data cards often have no order id — fall back to matching the
-  // original message text
-  const d = STATE.decisions.find(x => x.order_id === oid)
-         || STATE.decisions.find(x => (x.msg||"").includes(oid));
+  // original message text, then any parsed order id appearing in the reply
+  let d = STATE.decisions.find(x => x.order_id === oid)
+       || STATE.decisions.find(x => (x.msg||"").includes(oid));
+  if (!d){
+    // last resort: the reply of an ask/no_data card mentions the order
+    d = STATE.decisions.find(x => (x.explanation||"").includes(oid));
+  }
   if (!d) return;
   // jump straight to the card's behaviour filter instead of requiring the
   // user to pick it first

@@ -12,12 +12,13 @@ async function renderRecords(){
 async function shareToggle(){
   if (!confirm(STATE.shared ? "Back to sandbox (session state resets)?"
                             : "Reset this session and connect to the SHARED database?")) return;
-  STATE = await post("/api/share", {shared: !STATE.shared});
-  render(); status(STATE.shared ? "Connected to the shared database." : "Back in sandbox.");
+  if (applyState(await post("/api/share", {shared: !STATE.shared}))){
+    render();
+    status(STATE.shared ? "Connected to the shared database." : "Back in sandbox.");
+  }
 }
 async function resetDemo(){
   if (!confirm("Archive allocations and wipe learned performance?")) return;
-  STATE = await post("/api/reset", {});
-  render(); status("Reset done.");
+  if (applyState(await post("/api/reset", {}))) { render(); status("Reset done."); }
 }
 
