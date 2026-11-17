@@ -101,6 +101,15 @@ legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-ri
 @keyframes flash{0%,100%{background:transparent}50%{background:var(--blue-pale)}}
 img.chart{width:100%;border:1px solid var(--line);border-radius:12px;margin:6px 0 14px;box-shadow:var(--shadow-sm)}
 
+/* smooth CSS zoom for the chart images: GPU transform, no re-render jank */
+.chart-viewport{overflow:auto;max-height:420px;border-radius:12px;position:relative}
+img.chart{transition:none;transform-origin:0 0;max-width:none}
+.chart-card .zoom-hint{font-size:.72em;color:var(--muted)}
+.sc-table{width:100%;border-collapse:collapse;font-size:.82em;margin:8px 0}
+.sc-table th{text-align:left;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);padding:4px 6px}
+.sc-table td{padding:4px 6px;border-bottom:1px solid #f1f3f5}
+.sc-table tr:hover td{background:#f8fafc}
+
 /* ---------- dashboard grid ---------- */
 .stat-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px}
 .tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow-sm)}

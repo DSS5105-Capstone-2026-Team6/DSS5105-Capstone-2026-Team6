@@ -39,14 +39,17 @@ function renderRail(){
     objs.map(o => `<button class="small" style="${o===s.objective?"border-color:var(--blue-deep);color:var(--blue-deep);font-weight:700":""}"
       onclick="setObjective('${o}')">${o}</button>`).join("") + `</div>
     <div class="row" style="margin-top:6px"><button class="small" onclick="rerankAll()">Re-rank all (${s.objective})</button></div>`;
+  const shock = STATE.shock_target;
+  const shockName = shock && STATE.workshops[shock] ? STATE.workshops[shock] : shock;
   $("worldDock").innerHTML = `<h3>World &amp; shock</h3>
     <div class="row"><select id="asOfSel" onchange="worldSwitch()">
-      <option value="2026-04-01">April 1st · demo inbox</option>
-      <option value="2026-01-01">January 1st · full replay</option></select>
-      <label class="muted"><input type="checkbox" id="stagesSel" onchange="worldSwitch()"> stages</label></div>
-    <div class="row"><input id="shockSeed" type="number" value="5105" style="width:80px">
-      <button class="small" onclick="shockOn()">${icon("zap")}Trigger</button>
-      <button class="small" onclick="shockOff()">${icon("check")}Resolve</button></div>`;
+      <option value="2026-04-01" ${STATE.as_of==="2026-04-01"?"selected":""}>April 1st · demo inbox</option>
+      <option value="2026-01-01" ${STATE.as_of==="2026-01-01"?"selected":""}>January 1st · full replay</option></select>
+      <label class="muted"><input type="checkbox" id="stagesSel" ${STATE.stages?"checked":""} onchange="worldSwitch()"> stages</label></div>
+    ${shock ? `<div class="warn">${icon("zap")}${esc(shockName)} is SUSPENDED (seed ${STATE.shock_seed})</div>
+      <div class="row"><button class="small" onclick="shockOff()">${icon("check")}Resolve shock</button></div>`
+    : `<div class="row"><input id="shockSeed" type="number" value="${STATE.shock_seed||5105}" style="width:80px">
+      <button class="small" onclick="shockOn()">${icon("zap")}Trigger</button></div>`}`;
 }
 async function setObjective(o){ STATE = await post("/api/rerank", {objective:o}); render(); }
 async function rerankAll(){ setObjective($("#objDock") ? STATE.objective : "hybrid"); }
@@ -254,9 +257,38 @@ async function runScenario(){
   };
   status("Computing…");
   const r = await post("/api/scenario", body);
-  $("scResult").innerHTML = r.error ? `<div class="warn">${esc(r.error)}</div>` : `
-    <div class="muted">Baseline pick: ${esc(r.baseline_pick.name)} · Scenario pick: ${esc(r.scenario_pick.name)}</div>
-    <pre>${esc(JSON.stringify(r.scenario.map(x=>({w:x.workshop_id, eta:x.estimated_finish, late:x.days_late})), null, 1))}</pre>`;
+  if (r.error){
+    $("scResult").innerHTML = `<div class="warn">${esc(r.error)}</div>`;
+    status(""); return;
+  }
+  // full queue table per the py version's dataframe: baseline vs scenario ETA,
+  // turnaround, sunday pause, transport, late days — with the queue column
+  // from the live queues (shock effects visible there)
+  const rows = r.baseline.map((b,i) => {
+    const a = r.scenario[i];
+    const q = STATE.queues[b.workshop_id] ?? 0;
+    return `<tr>
+      <td><b>${esc(a.name)}</b> <span class="muted">(${a.workshop_id})</span></td>
+      <td>${q.toFixed(1)}d</td>
+      <td>${b.estimated_finish}</td>
+      <td>${a.estimated_finish}</td>
+      <td>${a.est_finish_days.toFixed(1)}</td>
+      <td>${a.sunday_pause_days}</td>
+      <td>${body.delay}</td>
+      <td>${a.days_late > 0 ? `<span class="warn">${a.days_late}d late</span>` : `<span class="ok">on time</span>`}</td>
+    </tr>`;
+  }).join("");
+  $("scResult").innerHTML = `
+    <div class="muted" style="margin:4px 0">Simulated date: ${esc(r.start_date)} · Objective: ${esc(body.objective)}
+      · Baseline pick: <b>${esc(r.baseline_pick.name)}</b> · Scenario pick: <b>${esc(r.scenario_pick.name)}</b></div>
+    <table class="sc-table">
+      <thead><tr><th>Workshop</th><th>Queue</th><th>Baseline ETA</th><th>Scenario ETA</th>
+        <th>Turnaround (d)</th><th>Sun pause</th><th>Transport</th><th>Late</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="muted">${esc(r.scenario_pick.name)} recommended — est. delivery ${esc(r.scenario_pick.estimated_finish)},
+      ${r.scenario_pick.days_late} late day(s), cost ${r.scenario_pick.cost.toFixed(2)},
+      defect ${(r.scenario_pick.defect_risk*100).toFixed(1)}%.</div>`;
   status("");
 }
 
@@ -284,14 +316,30 @@ async function resetDemo(){
 }
 
 /* ---------------- left rail: chat log + returned batch ---------------- */
+let _seenChats = 0, _streamTimer = null;
 function renderChatLog(){
   const log = STATE.chat_log || [];
+  const isNew = log.length > _seenChats;
   $("chatLog").innerHTML = log.length ? log.map((e,i) => {
     const oid = (e.text.match(/ORD-\d+/)||[null])[0];
-    return `<div class="chat-msg" data-oid="${oid||""}" onclick="locateCard('${oid||""}')">
+    const fresh = isNew && i === log.length - 1;
+    return `<div class="chat-msg ${fresh?"fresh":""}" data-oid="${oid||""}" onclick="locateCard('${oid||""}')">
       <span class="who">${esc(e.speaker)}:</span> ${esc(e.text)}
-      <div class="muted">${esc(e.reply||"").slice(0,120)}</div></div>`;
+      <div class="muted reply-text" data-full="${esc(e.reply||"")}">${fresh?"":esc(e.reply||"")}</div></div>`;
   }).join("") : '<span class="muted">No exchanges yet.</span>';
+  _seenChats = log.length;
+  // stream-render the newest reply: reveal it progressively like a typewriter
+  const fresh = $("chatLog").querySelector(".fresh .reply-text");
+  if (fresh){
+    const full = fresh.dataset.full;
+    let n = 0;
+    clearInterval(_streamTimer);
+    _streamTimer = setInterval(() => {
+      n += Math.max(2, Math.round(full.length / 40));
+      fresh.textContent = full.slice(0, n);
+      if (n >= full.length){ fresh.textContent = full; clearInterval(_streamTimer); }
+    }, 30);
+  }
 }
 function locateCard(oid){
   if (!oid) return;
@@ -320,6 +368,40 @@ async function recordBatch(){
   $("rbNote").textContent = r.error ? r.error : `Recorded ✓ ${r.batch_note||""}`;
 }
 
+/* smooth CSS zoom for charts: scale the image (GPU), pan via the viewport
+   scroll — no re-render, no jank, no state drift */
+function makeChartZoom(){
+  for (const vp of document.querySelectorAll(".chart-viewport")){
+    if (vp.__zoom) continue;
+    vp.__zoom = true;
+    const img = vp.querySelector("img");
+    let scale = 1;
+    const apply = () => { img.style.transform = `scale(${scale})`; };
+    vp.addEventListener("wheel", e => {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.12 : 1/1.12;
+      scale = Math.min(6, Math.max(1, scale * f));
+      if (scale === 1){ img.style.transform = ""; vp.scrollTo(0,0); return; }
+      // zoom towards the cursor: keep the hovered point stable
+      const r = vp.getBoundingClientRect();
+      const px = (e.clientX - r.left + vp.scrollLeft) / (r.width * (scale/f));
+      const py = (e.clientY - r.top + vp.scrollTop) / (r.height * (scale/f));
+      apply();
+      vp.scrollLeft = px * r.width * scale - (e.clientX - r.left);
+      vp.scrollTop  = py * r.height * scale - (e.clientY - r.top);
+    }, {passive:false});
+    let drag = null;
+    vp.addEventListener("mousedown", e => { drag = {x:e.clientX, y:e.clientY, l:vp.scrollLeft, t:vp.scrollTop}; e.preventDefault(); });
+    window.addEventListener("mousemove", e => {
+      if (!drag) return;
+      vp.scrollLeft = drag.l - (e.clientX - drag.x);
+      vp.scrollTop  = drag.t - (e.clientY - drag.y);
+    });
+    window.addEventListener("mouseup", () => drag = null);
+    vp.addEventListener("dblclick", () => { scale = 1; img.style.transform = ""; vp.scrollTo({left:0, top:0, behavior:"smooth"}); });
+  }
+}
+
 /* ---------------- dashboard (tiles + grid of matplotlib charts) ---------------- */
 const TILE_DEFS = [
   ["requests", "Requests"], ["committed", "Committed"], ["pending", "Pending"],
@@ -337,6 +419,7 @@ async function renderDashboard(){
        ["chartLens","lens"],["chartErrors","errors"],
        ["chartCapacity","capacity"],["chartUsage","usage"],["chartMap","map"]])
     $(id).src = `/api/chart/${kind}?t=${t}`;
+  makeChartZoom();
 }
 
 /* ---------------- provider / model ---------------- */

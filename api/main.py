@@ -32,9 +32,23 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "api_sessions"
 
 app = FastAPI(title="Dispatch Desk API")
-_sessions = {}   # sid -> {"desk", "decisions": {id: {decision, msg, skipped}},
-                  #        "objective", "chat_log": [], "authed": bool}
+_sessions = {}
 _AUTH_TOKENS = {}
+
+
+@app.middleware("http")
+async def ensure_session_cookie(request: Request, call_next):
+    """Sessions were created per request because the sid was never written
+    back to the client — every API call started a fresh session (decisions,
+    objective, chat log all reset). Issue and persist a sid cookie."""
+    request.state.new_sid = None
+    if "sid" not in request.cookies:
+        request.state.new_sid = secrets.token_hex(12)
+    response = await call_next(request)
+    if request.state.new_sid:
+        response.set_cookie("sid", request.state.new_sid,
+                            max_age=7 * 86400, samesite="lax")
+    return response
 
 
 # ---------------- helpers ----------------
@@ -48,10 +62,8 @@ def _new_desk(shared):
 
 
 def _session(request: Request):
-    sid = request.cookies.get("sid")
+    sid = request.cookies.get("sid") or request.state.new_sid
     if sid not in _sessions:
-        _sessions[sid or secrets.token_hex(12)] = None
-        sid = [k for k, v in _sessions.items() if v is None][-1] if sid not in _sessions else sid
         store = RESULTS_DIR / secrets.token_hex(6)
         store.mkdir(parents=True, exist_ok=True)
         _sessions[sid] = {
@@ -67,6 +79,8 @@ def _session(request: Request):
                                         # parse+dispatch must not interleave
             "timings": [],              # [{kind, ms}] per desk interaction
             "api_errors": 0,
+            "shock_target": None,
+            "stages": False,
         }
     return _sessions[sid], sid
 
@@ -117,17 +131,25 @@ def _state(s, sid):
                       for x in s["decisions"].values()],
         "chat_log": s["chat_log"],
         "at_risk": flag_at_risk(desk=desk),
-        "as_of": os.environ.get("CHAT_AS_OF", ""),
+        "as_of": _current_as_of(),
         "providers": {k: {"label": v["label"],
                           "models": v["models"]} for k, v in PROVIDERS.items()},
         "provider": s["provider"],
         "model": s["model"],
         "api_errors": s["api_errors"],
+        "shock_target": s["shock_target"],
+        "shock_seed": s.get("shock_seed", 5105),
+        "stages": s["stages"],
     }
 
 
 def _log(s, speaker, text, reply):
     s["chat_log"].append({"speaker": speaker, "text": text, "reply": reply})
+
+
+def _current_as_of():
+    from desk.config import CHAT_AS_OF
+    return CHAT_AS_OF
 
 
 def _refresh_stale(s):
@@ -417,7 +439,12 @@ def world(body: WorldBody, request: Request):
     from desk.config import set_as_of
     s, sid = _session(request)
     set_as_of(body.as_of)
-    s["desk"] = DispatchDesk(stages=body.stages) if s["shared"] else _new_desk(False)
+    s["stages"] = body.stages
+    s["shock_target"] = None      # a world change clears any active shock
+    if s["shared"]:
+        s["desk"] = DispatchDesk(stages=body.stages)
+    else:
+        s["desk"] = DispatchDesk(stages=body.stages, storage_dir=s["storage_dir"])
     return _state(s, sid)
 
 
@@ -433,17 +460,23 @@ def shock_on(body: ShockBody, request: Request):
     active = [w for w in desk.workshops.workshops.values() if w.status == "ACTIVE"]
     target = random.Random(body.seed).choice(sorted(active, key=lambda w: w.workshop_id))
     target.status = "SUSPENDED"
-    st = _state(s, sid)
-    st["shock_target"] = target.workshop_id
-    return st
+    s["shock_target"] = target.workshop_id
+    s["shock_seed"] = body.seed
+    return _state(s, sid)
 
 
 @app.delete("/api/shock")
 def shock_off(request: Request):
     s, sid = _session(request)
-    for w in s["desk"].workshops.workshops.values():
+    desk = s["desk"]
+    # restore the tracked target first (the Streamlit desk does the same),
+    # then any other SUSPENDED workshop
+    if s["shock_target"] in desk.workshops.workshops:
+        desk.workshops.workshops[s["shock_target"]].status = "ACTIVE"
+    for w in desk.workshops.workshops.values():
         if w.status == "SUSPENDED":
             w.status = "ACTIVE"
+    s["shock_target"] = None
     return _state(s, sid)
 
 
