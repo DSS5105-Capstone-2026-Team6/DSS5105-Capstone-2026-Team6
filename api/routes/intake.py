@@ -40,32 +40,20 @@ class ParseBody(BaseModel):
     text: str
 
 
-def _normalized_request(out):
-    """Rebuild a clean dispatch message from the parse, so 'Dispatch this
-    message' sends the structured request — not the raw chat line."""
-    segs = []
+def _normalized_requests(out):
+    """One compact JSON line per parsed order — the inbox takes these as
+    individual requests, so a message mentioning 20 orders dispatches as
+    20 separate cards (constraints ride along on every line)."""
+    import json as _json
+    cons = out.get("constraints") or []
+    lines = []
     for o in out.get("orders") or []:
-        head = o.get("order_id") or "New order"
-        details = []
-        if o.get("pieces") and o.get("product"):
-            details.append(f"{o['pieces']} {o['product']}")
-        elif o.get("product"):
-            details.append(str(o["product"]))
-        elif o.get("pieces"):
-            details.append(f"{o['pieces']} pieces")
-        if o.get("customer"):
-            details.append(f"for {o['customer']}")
-        if o.get("due_date"):
-            details.append(f"due {o['due_date']}")
-        segs.append(f"{head} — {', '.join(details)}" if details else head)
-    cons = []
-    for c in out.get("constraints") or []:
-        by = f" (by {c['imposed_by']})" if c.get("imposed_by") else ""
-        cons.append(f"{c.get('type', 'constraint')}: {c.get('detail', '')}{by}")
-    text = ". ".join(segs)
-    if cons:
-        text += (". " if text else "") + "Constraints: " + "; ".join(cons)
-    return text.strip()
+        req = {k: v for k, v in o.items()
+               if k != "register" and v not in (None, "")}
+        if cons:
+            req["constraints"] = cons
+        lines.append(_json.dumps(req, ensure_ascii=False))
+    return lines
 
 
 @router.post("/api/parse")
@@ -84,7 +72,7 @@ def parse(body: ParseBody, request: Request):
         for o in out.get("orders") or []:
             rec = s["desk"].orders.by_id(o.get("order_id")) if o.get("order_id") else None
             o["register"] = dict(rec) if rec else None
-        normalized = _normalized_request(out)
+        normalized = _normalized_requests(out)
         if normalized:
             out["normalized"] = normalized
     s["timings"].append({"kind": "parse", "ms": round((time.perf_counter() - t0) * 1000)})
