@@ -20,9 +20,37 @@
   </div>
 </div>
 
+<!-- Tool log overlay -->
+<div id="toollogOverlay" class="overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="overlay-panel">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">Tool log</h3>
+      <button class="small" onclick="document.getElementById('toollogOverlay').style.display='none'">✕</button>
+    </div>
+    <div class="muted">Per order: behaviour chip + the tool calls the agent made</div>
+    <div id="toollogBody"></div>
+  </div>
+</div>
+
 <div class="layout">
   <main>
-    <h1><span class="dot"></span> Dispatch Desk</h1>
+    <header class="topbar">
+      <h1><span class="dot"></span> Dispatch Desk</h1>
+      <div class="topbar-right">
+        <select id="providerSel" title="Provider"></select>
+        <select id="modelSel" title="Model"></select>
+      </div>
+    </header>
+
+    <!-- primary action bar: the main flow is always one glance away -->
+    <div class="actionbar">
+      <button id="dispatchBtn" class="primary">▶ Dispatch</button>
+      <button id="confirmAllBtn">✅ Confirm all open</button>
+      <button id="toollogBtn">🧾 Tool log</button>
+      <button id="scenarioBtn">📅 Scenario preview</button>
+      <span id="status"></span>
+    </div>
+
     <div class="tabs">
       <button id="tabbtn-desk" class="active">Desk</button>
       <button id="tabbtn-dashboard">Dashboard</button>
@@ -31,37 +59,35 @@
 
     <!-- ============ DESK TAB ============ -->
     <section id="tab-desk">
-      <h2>Scenario preview · Production and transport</h2>
-      <div class="row">
-        <input id="scOrder" value="ORD-063" style="width:110px" title="Order ID">
-        <input id="scDate" type="date" title="preview start date">
-        <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
-        <input id="scDelay" type="number" min="0" max="14" value="0" style="width:70px" title="extra transport days">
-        <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:70px" title="capacity noise %">
-        <input id="scSeed" type="number" value="5105" style="width:80px" title="seed">
-        <button id="scRun" class="small">Run</button>
+      <div id="scenarioPanel" class="dock" style="display:none">
+        <h3>Scenario preview · production and transport</h3>
+        <div class="row">
+          <input id="scOrder" value="ORD-063" style="width:105px" title="Order ID">
+          <input id="scDate" type="date" title="preview start date">
+          <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
+          <input id="scDelay" type="number" min="0" max="14" value="0" style="width:64px" title="extra transport days">
+          <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:64px" title="capacity noise %">
+          <input id="scSeed" type="number" value="5105" style="width:76px" title="seed">
+          <button id="scRun" class="small primary">Run</button>
+        </div>
+        <div id="scResult"></div>
       </div>
-      <div id="scResult"></div>
 
       <h2>Inbox</h2>
       <div class="row">
         <select id="sampleSel"></select>
         <button id="sampleBtn" class="small">Load sample</button>
-        <label class="small" style="border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer">
-          Upload .txt<input id="fileInput" type="file" accept=".txt" style="display:none"></label>
+        <label class="small filebtn">Upload .txt<input id="fileInput" type="file" accept=".txt" hidden></label>
         <button class="small" onclick="document.getElementById('inbox').value=''">Clear</button>
       </div>
       <textarea id="inbox" placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29."></textarea>
-      <div class="row">
-        <button id="dispatchBtn" class="primary">Dispatch</button>
-        <button id="confirmAllBtn" class="small">✅ Confirm all open</button>
-        <span id="status"></span>
-      </div>
 
-      <h2>LLM parser</h2>
-      <textarea id="parserBox" placeholder="Boss: ORD-045 — 150 vests for Cotton Club, due Apr 09. It's urgent." style="min-height:70px"></textarea>
-      <div class="row"><button id="parseBtn" class="small">Parse</button></div>
-      <div id="parseResult"></div>
+      <details class="parser-box">
+        <summary>LLM parser — parse one freeform message first</summary>
+        <textarea id="parserBox" placeholder="Boss: ORD-045 — 150 vests for Cotton Club, due Apr 09. It's urgent." style="min-height:70px;margin-top:8px"></textarea>
+        <div class="row"><button id="parseBtn" class="small">Parse</button></div>
+        <div id="parseResult"></div>
+      </details>
 
       <div id="kpis" class="kpis"></div>
       <div id="caseFilter" class="row"></div>

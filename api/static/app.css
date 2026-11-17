@@ -75,3 +75,20 @@ pre{background:#f8f9fa;border:1px solid var(--line);border-radius:8px;padding:8p
 .chat-msg{margin:4px 0;font-size:.84em}
 .chat-msg .who{font-weight:600;color:var(--blue-deep)}
 legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px}
+
+/* ---------- layout: topbar + sticky action bar ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.topbar h1{margin:0}
+.topbar-right{display:flex;gap:8px}
+.topbar-right select{max-width:180px}
+.actionbar{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;
+  background:#f8fafc;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:10px}
+.actionbar .primary{padding:8px 20px;font-size:.95rem;box-shadow:var(--shadow-sm)}
+#status{margin-left:auto}
+.parser-box{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin:10px 0;background:#fff}
+.overlay{position:fixed;inset:0;background:rgba(28,43,58,.25);z-index:50}
+.overlay-panel{position:absolute;top:60px;right:20px;width:420px;max-width:90vw;max-height:76vh;overflow:auto;
+  background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-md);
+  animation:fadeUp .25s var(--ease) both}
+.filebtn{border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer;font-size:.8rem}
+.filebtn:hover{border-color:var(--blue)}

@@ -51,8 +51,11 @@ def _session(request: Request):
     if sid not in _sessions:
         _sessions[sid or secrets.token_hex(12)] = None
         sid = [k for k, v in _sessions.items() if v is None][-1] if sid not in _sessions else sid
+        store = RESULTS_DIR / secrets.token_hex(6)
+        store.mkdir(parents=True, exist_ok=True)
         _sessions[sid] = {
-            "desk": _new_desk(shared=False),
+            "desk": DispatchDesk(storage_dir=str(store)),
+            "storage_dir": str(store),
             "shared": False,
             "decisions": {},
             "objective": "hybrid",
@@ -113,6 +116,7 @@ def _state(s, sid):
         "providers": {k: {"label": v["label"],
                           "models": v["models"]} for k, v in PROVIDERS.items()},
         "provider": s["provider"],
+        "model": s["model"],
     }
 
 
@@ -506,6 +510,25 @@ def reset(request: Request):
     s["desk"].performance.clear()
     s["decisions"] = {}
     s["chat_log"] = []
+    return _state(s, sid)
+
+
+class ProviderBody(BaseModel):
+    provider: str
+    model: str | None = None
+
+
+@app.post("/api/provider")
+def provider(body: ProviderBody, request: Request):
+    s, sid = _session(request)
+    if body.provider not in PROVIDERS:
+        return {"error": f"unknown provider {body.provider}"}
+    s["provider"] = body.provider
+    s["model"] = body.model
+    s["desk"] = (DispatchDesk(provider=body.provider, model=body.model)
+                 if s["shared"]
+                 else DispatchDesk(provider=body.provider, model=body.model,
+                                   storage_dir=s["storage_dir"]))
     return _state(s, sid)
 
 

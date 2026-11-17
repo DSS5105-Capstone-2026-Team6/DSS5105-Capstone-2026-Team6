@@ -17,7 +17,7 @@ function caseOf(d){ return d.behaviour === "answer" ? "no_data" : d.behaviour; }
 
 /* ---------------- render root ---------------- */
 function render(){
-  renderRail(); renderKpis(); renderWorklist(); renderRecords(); renderDashboardLink();
+  renderRail(); renderKpis(); renderWorklist(); renderRecords(); renderProvider();
 }
 function renderAll(){ render(); }
 
@@ -296,6 +296,39 @@ async function renderDashboard(){
     }).join("") + `<text x="45%" y="215" font-size="9" fill="#868e96">cost ($/pc) →</text>`);
 }
 
+/* ---------------- provider / model ---------------- */
+function renderProvider(){
+  const s = STATE;
+  $("providerSel").innerHTML = Object.entries(s.providers)
+    .map(([k,v]) => `<option value="${k}" ${k===s.provider?"selected":""}>${esc(v.label)}</option>`).join("");
+  const models = s.providers[s.provider].models;
+  $("modelSel").innerHTML = models.map(m =>
+    `<option value="${m[0]}" ${m[0]===s.model?"selected":""}>${esc(m[1])}</option>`).join("");
+}
+function renderProviderModels(){
+  const s = STATE;
+  const models = s.providers[$("providerSel").value].models;
+  $("modelSel").innerHTML = models.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("");
+}
+async function providerChanged(){
+  status("Switching provider…");
+  STATE = await post("/api/provider", {provider:$("providerSel").value, model:$("modelSel").value});
+  render(); status("");
+}
+
+/* ---------------- tool log overlay ---------------- */
+function renderToolLogOverlay(){
+  const ds = STATE.decisions.filter(d => (d.tool_log||[]).length);
+  $("toollogBody").innerHTML = ds.length ? ds.map(d => {
+    const [label,color] = BADGE[d.behaviour] || BADGE.no_data;
+    return `<div class="card">
+      <div class="one-line"><span class="chip ${d.behaviour}" style="background:${color}">${label}</span>
+      <b>${esc(d.order_id || "(no order)")}</b> <span class="muted">· ${d.tool_log.length} call(s)</span></div>
+      ${d.tool_log.map(t => `<div class="muted" style="margin-left:10px">· <code>${esc(t.tool)}</code> ${esc(JSON.stringify(t.arguments||{})).slice(0,80)}</div>`).join("")}
+    </div>`;
+  }).join("") : '<div class="muted">No tool calls yet — dispatch something first.</div>';
+}
+
 /* ---------------- tabs / login ---------------- */
 function switchTab(t){
   TAB = t;
@@ -329,6 +362,14 @@ document.addEventListener("DOMContentLoaded", () => {
   $("resetBtn").onclick = resetDemo;
   $("confirmAllBtn").onclick = confirmAllOpen;
   $("scRun").onclick = runScenario;
+  $("providerSel").onchange = () => { renderProviderModels(); providerChanged(); };
+  $("modelSel").onchange = providerChanged;
+  $("toollogBtn").onclick = () => { renderToolLogOverlay(); $("toollogOverlay").style.display = "block"; };
+  $("scenarioBtn").onclick = () => {
+    const p = $("scenarioPanel");
+    p.style.display = p.style.display === "none" ? "" : "none";
+    if (p.style.display !== "none") p.scrollIntoView({behavior:"smooth", block:"nearest"});
+  };
   for (const x of ["desk","dashboard","records"]) $("tabbtn-"+x).onclick = () => switchTab(x);
   switchTab("desk");
   // APP_PASSWORD gate: try state first; server hides it when no password is set
