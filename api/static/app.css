@@ -136,8 +136,11 @@ img.chart{transition:none;transform-origin:0 0;max-width:none}
 .icon{display:inline-block;vertical-align:-2px;margin-right:4px}
 .icon svg{display:block}
 
-/* ---------- full-height chat dock ---------- */
-#chatDock{display:flex;flex-direction:column;height:calc(100vh - 60px);position:sticky;top:16px}
+/* ---------- left rail: chat log must never be covered by the batch dock ---------- */
+.leftrail{display:flex;flex-direction:column;gap:12px;position:sticky;top:16px;
+  height:calc(100vh - 40px);align-self:start}
+#chatDock{display:flex;flex-direction:column;flex:1;min-height:0;margin-bottom:0}
 #chatLog{flex:1;overflow-y:auto;min-height:0}
+#batchDock{flex-shrink:0;margin-bottom:0}
 .filebtn{border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer;font-size:.8rem}
 .filebtn:hover{border-color:var(--blue)}

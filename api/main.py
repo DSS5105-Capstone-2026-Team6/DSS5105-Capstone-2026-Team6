@@ -81,6 +81,7 @@ def _session(request: Request):
             "api_errors": 0,
             "shock_target": None,
             "stages": False,
+            "item_chats": {},   # decision_id -> [{who, text}] per-card chat
         }
     return _sessions[sid], sid
 
@@ -110,6 +111,7 @@ def _public(d, skipped=False, committed_orders=()):
         "options": list(d.options),
         "tool_log": [{"tool": t.get("tool"), "arguments": t.get("arguments")}
                      for t in d.tool_log],
+        "chat": [],
     }
 
 
@@ -121,14 +123,18 @@ def _state(s, sid):
     desk = s["desk"]
     from desk.tools import flag_at_risk
     committed = _committed_orders(s)
+    decisions = []
+    for x in s["decisions"].values():
+        pub = _public(x["decision"], x["skipped"], committed)
+        pub["chat"] = s["item_chats"].get(x["decision"].decision_id, [])
+        decisions.append(pub)
     return {
         "sid": sid,
         "shared": s["shared"],
         "objective": s["objective"],
         "queues": dict(desk.state.queues),
         "workshops": {wid: w.name for wid, w in desk.workshops.workshops.items()},
-        "decisions": [_public(x["decision"], x["skipped"], committed)
-                      for x in s["decisions"].values()],
+        "decisions": decisions,
         "chat_log": s["chat_log"],
         "at_risk": flag_at_risk(desk=desk),
         "as_of": _current_as_of(),
@@ -297,10 +303,17 @@ def followup(body: FollowupBody, request: Request):
     finally:
         s["timings"].append({"kind": "followup",
                              "ms": round((time.perf_counter() - t0) * 1000)})
+    thread = s["item_chats"].setdefault(body.decision_id, [])
+    thread.append({"who": "you", "text": body.text})
     if record is not None:
+        thread.append({"who": "desk", "text": reply or ""})
         del s["decisions"][body.decision_id]
     elif updated is not None:
+        thread.append({"who": "desk", "text": reply or ""})
         item["decision"] = updated
+        # a replaced decision object gets a new id; carry the thread over
+        if updated is not item["decision"] and updated.decision_id != body.decision_id:
+            s["item_chats"][updated.decision_id] = s["item_chats"].pop(body.decision_id, thread)
     _log(s, "dispatcher", body.text, reply or "")
     _refresh_stale(s)
     st = _state(s, sid)
@@ -553,10 +566,11 @@ def chart(kind: str, request: Request):
         from datetime import date
         open_orders = [o["order_id"] for o in desk.orders.orders
                        if o.get("status") != "COMPLETE"]
-        res = rank_candidates(open_orders[0], objective=s["objective"],
+        order_id = request.query_params.get("order_id") or open_orders[0]
+        res = rank_candidates(order_id, objective=s["objective"],
                               orders=desk.orders, store=desk.workshops,
                               queues=desk.state.queues, perf=desk.performance)
-        due = date.fromisoformat(desk.orders.by_id(open_orders[0])["due_date"])
+        due = date.fromisoformat(desk.orders.by_id(order_id)["due_date"])
         png = charts.lens(res.get("candidates", []), res.get("chosen"),
                           (due - chat_today()).days)
     elif kind == "dist":
@@ -732,12 +746,17 @@ def provider(body: ProviderBody, request: Request):
     s, sid = _session(request)
     if body.provider not in PROVIDERS:
         return {"error": f"unknown provider {body.provider}"}
+    try:
+        new_desk = (DispatchDesk(provider=body.provider, model=body.model)
+                    if s["shared"]
+                    else DispatchDesk(provider=body.provider, model=body.model,
+                                      storage_dir=s["storage_dir"]))
+    except Exception as exc:
+        # keep the old desk; the UI must not lose state on a bad key
+        return {"error": f"Cannot switch to {body.provider}: {exc}"}
     s["provider"] = body.provider
     s["model"] = body.model
-    s["desk"] = (DispatchDesk(provider=body.provider, model=body.model)
-                 if s["shared"]
-                 else DispatchDesk(provider=body.provider, model=body.model,
-                                   storage_dir=s["storage_dir"]))
+    s["desk"] = new_desk
     return _state(s, sid)
 
 

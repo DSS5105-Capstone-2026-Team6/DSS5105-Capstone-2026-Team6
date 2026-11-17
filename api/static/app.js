@@ -18,6 +18,7 @@ function caseOf(d){ return d.behaviour === "answer" ? "no_data" : d.behaviour; }
 /* ---------------- render root ---------------- */
 function render(){
   renderRail(); renderKpis(); renderWorklist(); renderRecords(); renderProvider(); renderChatLog();
+  if (TAB === "dashboard") renderDashboard();
 }
 function renderAll(){ render(); }
 
@@ -91,9 +92,22 @@ function setCase(b){ CASE = b; renderWorklist(); }
 
 /* ---------------- worklist ---------------- */
 function renderWorklist(){
+  // preserve which "other option" panels are open across the re-render
+  const openDetails = [...document.querySelectorAll("#worklist details[open][data-keep-open]")]
+    .map(el => el.dataset.keepOpen);
   const shown = STATE.decisions.filter(d => caseOf(d) === CASE);
   $("worklist").innerHTML = `<div class="muted" style="margin:4px 0">${BADGE[CASE][0]} · ${shown.length} request(s)</div>`
     + shown.map(cardHtml).join("");
+  for (const key of openDetails){
+    const el = document.querySelector(`details[data-keep-open="${key}"]`);
+    if (el) el.open = true;
+  }
+}
+function chatHtml(d){
+  const msgs = d.chat || [];
+  return msgs.map(m =>
+    `<div class="chat-msg ${m.who==="you"?"me":""}"><span class="who">${m.who==="you"?"you":"desk"}:</span> ${esc(m.text)}</div>`
+  ).join("");
 }
 function cardHtml(d){
   const [label, color] = BADGE[d.behaviour] || BADGE.no_data;
@@ -133,8 +147,8 @@ function cardHtml(d){
     <div class="muted" style="margin:4px 0">${esc(d.explanation)}</div>
     ${(d.warnings||[]).map(w=>`<div class="warn">${icon("alert")}${esc(w)}</div>`).join("")}
     ${body}${actions}
-    <details><summary>Other option (tell me)</summary>
-      <div class="chat-box" id="chat-${d.decision_id}"></div>
+    <details data-keep-open="fu-${d.decision_id}"><summary>Other option (tell me)</summary>
+      <div class="chat-box" id="chat-${d.decision_id}">${chatHtml(d)}</div>
       <div class="row"><input id="fu-${d.decision_id}" placeholder="why not W4? / commit to W2 / yes" style="flex:1">
       <button class="small" onclick="followup('${d.decision_id}')">Send</button></div>
     </details>
@@ -232,16 +246,33 @@ async function confirmAllOpen(){
 async function skipCard(id){ STATE = await post("/api/skip", {decision_id:id}); render(); }
 async function dismiss(id){ STATE = await post("/api/dismiss", {decision_id:id}); render(); }
 async function rerank(id){ STATE = await post("/api/rerank", {decision_id:id, objective:STATE.objective}); render(); }
+let _fuStream = null;
 async function followup(id){
   const box = $("fu-"+id), text = box.value.trim();
   if (!text) return;
   box.value = ""; status("Working…");
   const r = await post("/api/followup", {decision_id:id, text});
+  if (r.error){ status(r.error); return; }
   STATE = r; render();
-  const log = $("chat-"+id);
-  if (log) log.innerHTML += `<div class="chat-msg"><span class="who">you:</span> ${esc(text)}</div>
-    <div class="chat-msg"><span class="who">desk:</span> ${esc(r.reply||"")}</div>`;
   status("");
+  // stream the reply into the card's chat area (it persists server-side now)
+  const log = $("chat-"+id);
+  const reply = r.reply || "";
+  if (log && reply){
+    const el = document.createElement("div");
+    el.className = "chat-msg";
+    el.innerHTML = `<span class="who">desk:</span> <span class="stream"></span>`;
+    log.appendChild(el);
+    const out = el.querySelector(".stream");
+    let n = 0;
+    clearInterval(_fuStream);
+    _fuStream = setInterval(() => {
+      n += Math.max(2, Math.round(reply.length / 40));
+      out.textContent = reply.slice(0, n);
+      log.scrollTop = log.scrollHeight;
+      if (n >= reply.length){ out.textContent = reply; clearInterval(_fuStream); }
+    }, 25);
+  }
 }
 
 /* ---------------- scenario ---------------- */
@@ -412,13 +443,27 @@ const TILE_DEFS = [
 ];
 async function renderDashboard(){
   const a = await api("/api/analytics");
+  // lens order selector: any open order, not pinned to the first one
+  if ($("lensOrder") && !$("lensOrder").dataset.filled){
+    const d = await api("/api/dashboard");
+    // open orders from decisions + register: use dashboard lens default list
+    const orders = (d.lens && d.lens_order) ? [d.lens_order] : [];
+    const all = new Set(orders.concat(STATE.decisions.map(x=>x.order_id).filter(Boolean)));
+    // fall back: the lens endpoint accepts any open order id; offer a few
+    $("lensOrder").innerHTML = [...all].filter(Boolean).map(o =>
+      `<option ${o===d.lens_order?"selected":""}>${o}</option>`).join("");
+    $("lensOrder").dataset.filled = "1";
+  }
   $("statTiles").innerHTML = TILE_DEFS.map(([k,label]) =>
     `<div class="tile"><div class="v">${esc(a.tiles[k] ?? "—")}</div><div class="k">${label}</div></div>`).join("");
   const t = Date.now();   // cache-bust so charts reflect commits immediately
+  const order = $("lensOrder") ? $("lensOrder").value : "";
   for (const [id,kind] of [["chartTimeline","timeline"],["chartDist","dist"],
        ["chartLens","lens"],["chartErrors","errors"],
-       ["chartCapacity","capacity"],["chartUsage","usage"],["chartMap","map"]])
-    $(id).src = `/api/chart/${kind}?t=${t}`;
+       ["chartCapacity","capacity"],["chartUsage","usage"],["chartMap","map"]]){
+    const extra = id === "chartLens" && order ? `&order_id=${order}` : "";
+    $(id).src = `/api/chart/${kind}?t=${t}${extra}`;
+  }
   makeChartZoom();
 }
 
@@ -438,8 +483,9 @@ function renderProviderModels(){
 }
 async function providerChanged(){
   status("Switching provider…");
-  STATE = await post("/api/provider", {provider:$("providerSel").value, model:$("modelSel").value});
-  render(); status("");
+  const r = await post("/api/provider", {provider:$("providerSel").value, model:$("modelSel").value});
+  if (r.error){ status(r.error); return; }   // old desk + tiles stay correct
+  STATE = r; render(); status("");
 }
 
 /* ---------------- tool log overlay ---------------- */
