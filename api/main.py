@@ -192,7 +192,6 @@ def _refresh_stale(s):
         # cards in the DOM and follow-up requests all reference it
         fresh.decision_id = key
         x["decision"] = fresh
-        x["decision"] = desk.refresh(d)
 
 
 # ---------------- pages & auth ----------------
@@ -363,7 +362,11 @@ def _commit(s, d, wid):
         fresh = exc.decision
         target = next((c for c in fresh.candidates if c.workshop_id == wid), None)
         if target is None:
-            return fresh, "stale"
+            # previously this was a silent "stale" — the user saw nothing and
+            # assumed the click did not register. Surface it instead.
+            return fresh, (f"{wid} dropped out of the top candidates after "
+                           f"the queue changed — the card was refreshed, "
+                           f"re-pick a workshop.")
         try:
             return s["desk"].confirm(replace(fresh, chosen=target),
                                      committed_by="web"), None
@@ -387,6 +390,11 @@ def confirm(body: ConfirmBody, request: Request):
     result, err = _commit(s, item["decision"], body.workshop_id)
     if err == "stale":
         item["decision"] = result
+    elif err is not None and result is not None:
+        # refreshed but the picked workshop fell out of the top candidates —
+        # keep the fresh card on screen and tell the user why nothing happened
+        item["decision"] = result
+        return {"error": err}
     elif err is None:
         del s["decisions"][body.decision_id]
         _log(s, "dispatcher", f"(card) {body.workshop_id}",
