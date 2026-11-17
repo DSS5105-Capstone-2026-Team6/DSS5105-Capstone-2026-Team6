@@ -150,8 +150,11 @@ def _state(s, sid):
     }
 
 
-def _log(s, speaker, text, reply):
-    s["chat_log"].append({"speaker": speaker, "text": text, "reply": reply})
+def _log(s, speaker, text, reply, decision_id=None):
+    """Chat entries carry their decision id so the UI can locate the card
+    directly — no order-id guessing (ask cards often have none)."""
+    s["chat_log"].append({"speaker": speaker, "text": text, "reply": reply,
+                          "decision_id": decision_id})
 
 
 def _current_as_of():
@@ -272,7 +275,7 @@ def dispatch(body: DispatchBody, request: Request):
                              explanation="Request failed. Please retry later.")
             s["decisions"][d.decision_id] = {"decision": d, "msg": msg, "skipped": False}
             out.append(d)
-            _log(s, "dispatcher", msg, d.explanation)
+            _log(s, "dispatcher", msg, d.explanation, decision_id=d.decision_id)
         s["timings"].append({"kind": "dispatch", "ms": round((time.perf_counter() - t0) * 1000)})
     _refresh_stale(s)
     return _state(s, sid)
@@ -315,7 +318,7 @@ def followup(body: FollowupBody, request: Request):
         # a replaced decision object gets a new id; carry the thread over
         if updated is not item["decision"] and updated.decision_id != body.decision_id:
             s["item_chats"][updated.decision_id] = s["item_chats"].pop(body.decision_id, thread)
-    _log(s, "dispatcher", body.text, reply or "")
+    _log(s, "dispatcher", body.text, reply or "", decision_id=body.decision_id)
     _refresh_stale(s)
     st = _state(s, sid)
     st["reply"] = reply
@@ -397,8 +400,13 @@ def confirm_split(body: SplitBody, request: Request):
 @app.post("/api/confirm_all")
 def confirm_all(request: Request):
     s, sid = _session(request)
+    from desk.contracts import Behaviour
+    # only ALLOCATE cards are batch-confirmable — a refusal with candidates
+    # is still a refusal (the Streamlit desk filters the same way)
     open_d = [x["decision"] for x in s["decisions"].values()
-              if not x["skipped"] and x["decision"].candidates
+              if not x["skipped"]
+              and x["decision"].behaviour is Behaviour.ALLOCATE
+              and x["decision"].candidates
               and x["decision"].chosen]
     results, failures = s["desk"].confirm_all(open_d, committed_by="web")
     for d, record in results:

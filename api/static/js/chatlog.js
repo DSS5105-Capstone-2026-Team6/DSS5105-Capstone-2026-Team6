@@ -6,7 +6,7 @@ function renderChatLog(){
   $("chatLog").innerHTML = log.length ? log.map((e,i) => {
     const oid = (e.text.match(/ORD-\d+/)||[null])[0];
     const fresh = isNew && i === log.length - 1;
-    return `<div class="chat-msg ${fresh?"fresh":""}" data-oid="${oid||""}" onclick="locateCard('${oid||""}')">
+    return `<div class="chat-msg ${fresh?"fresh":""}" data-did="${e.decision_id||""}" data-oid="${oid||""}" onclick="locateCard('${e.decision_id||""}','${oid||""}')">
       <span class="who">${esc(e.speaker)}:</span> ${esc(e.text)}
       <div class="muted reply-text" data-full="${esc(e.reply||"")}">${fresh?"":esc(e.reply||"")}</div></div>`;
   }).join("") : '<span class="muted">No exchanges yet.</span>';
@@ -26,15 +26,13 @@ function renderChatLog(){
     }, 30);
   }
 }
-function locateCard(oid){
-  if (!oid) return;
-  // ask/no_data cards often have no order id — fall back to matching the
-  // original message text, then any parsed order id appearing in the reply
-  let d = STATE.decisions.find(x => x.order_id === oid)
-       || STATE.decisions.find(x => (x.msg||"").includes(oid));
-  if (!d){
-    // last resort: the reply of an ask/no_data card mentions the order
-    d = STATE.decisions.find(x => (x.explanation||"").includes(oid));
+function locateCard(did, oid){
+  // direct binding first: every chat entry now carries its decision id
+  let d = did ? STATE.decisions.find(x => x.decision_id === did) : null;
+  if (!d && oid){
+    d = STATE.decisions.find(x => x.order_id === oid)
+     || STATE.decisions.find(x => (x.msg||"").includes(oid))
+     || STATE.decisions.find(x => (x.explanation||"").includes(oid));
   }
   if (!d) return;
   // jump straight to the card's behaviour filter instead of requiring the
