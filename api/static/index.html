@@ -4,175 +4,97 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dispatch Desk</title>
-<style>
-:root{--blue-deep:#1971c2;--blue:#339af0;--blue-soft:#74c0fc;--blue-pale:#d0ebff;
-  --ink:#1c2b3a;--muted:#868e96;--line:#e3eaf2;
-  --shadow-sm:0 1px 4px rgba(25,113,194,.07);--shadow-md:0 6px 18px rgba(25,113,194,.13);
-  --ease:cubic-bezier(.25,.8,.25,1)}
-*{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#f8fafc}
-.wrap{max-width:960px;margin:0 auto;padding:20px 16px 60px}
-h1{font-size:1.3rem;display:flex;align-items:center;gap:8px}
-h1 .dot{width:10px;height:10px;border-radius:50%;background:var(--blue-deep);display:inline-block}
-h2{font-size:.95rem;margin:18px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-textarea{width:100%;min-height:110px;border:1px solid var(--line);border-radius:12px;padding:10px;
-  font-family:ui-monospace,monospace;font-size:.9rem;resize:vertical}
-textarea:focus{outline:none;border-color:var(--blue);box-shadow:var(--shadow-sm)}
-.row{display:flex;gap:10px;align-items:center;margin:10px 0;flex-wrap:wrap}
-select,button{border:1px solid var(--line);border-radius:10px;padding:7px 14px;font-size:.9rem;
-  background:#fff;cursor:pointer;transition:all .2s var(--ease)}
-button:hover{border-color:var(--blue);box-shadow:var(--shadow-sm);transform:translateY(-1px)}
-button.primary{background:var(--blue-deep);border-color:var(--blue-deep);color:#fff}
-button:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.card{border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin:8px 0;background:#fff;
-  box-shadow:var(--shadow-sm);animation:fadeUp .3s var(--ease) both}
-@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.chip{display:inline-block;padding:1px 8px;border-radius:8px;font-weight:600;font-size:.82em}
-.chip.allocate{background:#d3f9d8}.chip.refuse{background:#ffe3e3}
-.chip.impossible{background:#ffe8cc}.chip.ask{background:#d0ebff}
-.chip.answer,.chip.no_data{background:#e9ecef}
-.muted{color:var(--muted);font-size:.85em}
-.cand{display:flex;justify-content:space-between;align-items:center;gap:8px;
-  border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin:5px 0;cursor:pointer;
-  transition:all .2s var(--ease)}
-.cand:hover{border-color:var(--blue);box-shadow:var(--shadow-md);transform:translateY(-1px)}
-.cand.star{border:2px solid var(--blue);background:#f1f8fe}
-.qbar{display:flex;height:6px;border-radius:4px;background:#e9ecef;overflow:hidden;margin:4px 0 2px}
-.qbar i{background:var(--blue-soft);display:block}
-.qbar b{background:var(--blue-deep);display:block}
-.qwrap{position:sticky;top:10px;float:right;width:220px;margin-left:14px;
-  border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff;box-shadow:var(--shadow-sm)}
-.qrow{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:.82em}
-.qrow .name{min-width:80px}.qrow .days{margin-left:auto;color:var(--muted)}
-details{margin-top:6px}summary{cursor:pointer;color:var(--blue-deep);font-size:.85em}
-code{background:#f1f3f5;border-radius:5px;padding:1px 5px;font-size:.85em}
-pre{background:#f8f9fa;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:.75rem;overflow:auto}
-#status{font-size:.85em;color:var(--muted);min-height:1.2em}
-</style>
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<div class="wrap">
-  <h1><span class="dot"></span> Dispatch Desk <span class="muted" style="font-weight:400">· FastAPI + static UI prototype</span></h1>
 
-  <div class="qwrap" id="queueDock"><b>Live queues</b><div id="queues" class="muted">…</div></div>
-
-  <h2>Inbox</h2>
-  <div class="row">
-    <select id="sampleSel"></select>
-    <button onclick="loadSample()">Load sample</button>
-    <button onclick="clearBox()">Clear</button>
+<div id="loginOverlay" style="display:none">
+  <div class="card">
+    <h3>Dispatch Desk</h3>
+    <p class="muted">Enter the app password</p>
+    <div class="row" style="justify-content:center">
+      <input id="pw" type="password" placeholder="APP_PASSWORD">
+      <button id="loginBtn" class="primary">Sign in</button>
+    </div>
+    <div id="pwErr" class="warn"></div>
   </div>
-  <textarea id="inbox" placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29."></textarea>
-  <div class="row">
-    <button class="primary" id="dispatchBtn" onclick="dispatch()">Dispatch</button>
-    <button onclick="resetAll()">Reset demo</button>
-    <span id="status"></span>
-  </div>
-
-  <h2>Worklist</h2>
-  <div id="worklist"></div>
-
-  <h2>Records</h2>
-  <div id="records" class="muted">No committed records yet.</div>
 </div>
 
-<script>
-const $ = id => document.getElementById(id);
-const api = (p, opt) => fetch(p, opt).then(r => r.json());
-const post = (p, body) => api(p, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+<div class="layout">
+  <main>
+    <h1><span class="dot"></span> Dispatch Desk</h1>
+    <div class="tabs">
+      <button id="tabbtn-desk" class="active">Desk</button>
+      <button id="tabbtn-dashboard">Dashboard</button>
+      <button id="tabbtn-records">Records</button>
+    </div>
 
-const BADGE = {allocate:["ALLOCATE","#d3f9d8"], refuse:["REFUSE","#ffe3e3"],
-  impossible:["IMPOSSIBLE","#ffe8cc"], ask:["ASK","#d0ebff"],
-  answer:["ANSWER","#e9ecef"], no_data:["NO DATA","#e9ecef"]};
+    <!-- ============ DESK TAB ============ -->
+    <section id="tab-desk">
+      <h2>Scenario preview · Production and transport</h2>
+      <div class="row">
+        <input id="scOrder" value="ORD-063" style="width:110px" title="Order ID">
+        <input id="scDate" type="date" title="preview start date">
+        <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
+        <input id="scDelay" type="number" min="0" max="14" value="0" style="width:70px" title="extra transport days">
+        <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:70px" title="capacity noise %">
+        <input id="scSeed" type="number" value="5105" style="width:80px" title="seed">
+        <button id="scRun" class="small">Run</button>
+      </div>
+      <div id="scResult"></div>
 
-function status(t){ $("status").textContent = t; }
+      <h2>Inbox</h2>
+      <div class="row">
+        <select id="sampleSel"></select>
+        <button id="sampleBtn" class="small">Load sample</button>
+        <label class="small" style="border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer">
+          Upload .txt<input id="fileInput" type="file" accept=".txt" style="display:none"></label>
+        <button class="small" onclick="document.getElementById('inbox').value=''">Clear</button>
+      </div>
+      <textarea id="inbox" placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29."></textarea>
+      <div class="row">
+        <button id="dispatchBtn" class="primary">Dispatch</button>
+        <button id="confirmAllBtn" class="small">✅ Confirm all open</button>
+        <span id="status"></span>
+      </div>
 
-async function loadSamples(){
-  const names = await api("/api/samples");
-  $("sampleSel").innerHTML = names.map(n => `<option>${n}</option>`).join("");
-}
-async function loadSample(){
-  const r = await api("/api/sample?name=" + encodeURIComponent($("sampleSel").value));
-  if (r.text) $("inbox").value = r.text;
-}
-function clearBox(){ $("inbox").value = ""; }
+      <h2>LLM parser</h2>
+      <textarea id="parserBox" placeholder="Boss: ORD-045 — 150 vests for Cotton Club, due Apr 09. It's urgent." style="min-height:70px"></textarea>
+      <div class="row"><button id="parseBtn" class="small">Parse</button></div>
+      <div id="parseResult"></div>
 
-async function dispatch(){
-  const text = $("inbox").value.trim();
-  if (!text) { status("Paste a message first."); return; }
-  $("dispatchBtn").disabled = true; status("Dispatching… (LLM rounds, one per line)");
-  try {
-    const r = await post("/api/dispatch", {text});
-    renderDecisions(r.decisions || []);
-    refreshRecords(); refreshQueues();
-    status(`${(r.decisions||[]).length} request(s) dispatched.`);
-  } catch(e){ status("Dispatch failed: " + e); }
-  $("dispatchBtn").disabled = false;
-}
+      <div id="kpis" class="kpis"></div>
+      <div id="caseFilter" class="row"></div>
+      <div id="worklist"></div>
+    </section>
 
-function renderDecisions(list){
-  const wl = $("worklist");
-  for (const d of list){
-    const [label, color] = BADGE[d.behaviour] || BADGE.no_data;
-    const div = document.createElement("div");
-    div.className = "card"; div.id = "card-" + d.decision_id;
-    let cands = "";
-    for (const c of d.candidates){
-      const star = d.chosen === c.workshop_id ? " star" : "";
-      cands += `<div class="cand${star}" onclick="confirm('${d.decision_id}','${c.workshop_id}',this)">
-        <span><b>${esc(c.name)} (${c.workshop_id})</b>${d.chosen===c.workshop_id?" ⭐":""}</span>
-        <span class="muted">finish ${c.estimated_finish} · cost ${c.cost.toFixed(2)} · defect ${c.defect_risk.toFixed(2)}</span></div>`;
-    }
-    const tools = (d.tool_log||[]).map(t => `<code>${esc(t.tool)}</code>`).join(" ");
-    div.innerHTML = `<span class="chip ${d.behaviour}" style="background:${color}">${label}</span>
-      ${d.order_id ? ` <b>${esc(d.order_id)}</b>` : ""}
-      <div class="muted" style="margin:4px 0">${esc(d.explanation)}</div>
-      ${(d.warnings||[]).map(w=>`<div style="color:#e8590c;font-size:.85em">⚠ ${esc(w)}</div>`).join("")}
-      ${cands || '<div class="muted">no candidates</div>'}
-      <details><summary>tool log (${(d.tool_log||[]).length})</summary><div style="margin-top:4px">${tools}</div></details>`;
-    wl.prepend(div);
-  }
-}
+    <!-- ============ DASHBOARD TAB ============ -->
+    <section id="tab-dashboard" style="display:none">
+      <div id="dashTimeline"></div>
+      <div id="dashLens"></div>
+      <div id="dashCapacity"></div>
+      <div id="dashMap"></div>
+    </section>
 
-async function confirm(decisionId, wid, el){
-  status("Committing…");
-  const r = await post("/api/confirm", {decision_id: decisionId, workshop_id: wid});
-  const card = $("card-" + decisionId);
-  if (r.committed){
-    card.innerHTML = `<span style="color:#2b8a3e">✅ Committed ${r.committed.record_id} — ${r.committed.order_id} → ${r.committed.workshop_id}</span>`;
-    status("Committed.");
-  } else {
-    status(r.error === "stale" ? "Proposal changed — review the refreshed card." : (r.error || "commit failed"));
-  }
-  refreshRecords(); refreshQueues();
-}
+    <!-- ============ RECORDS TAB ============ -->
+    <section id="tab-records" style="display:none">
+      <div class="row">
+        <span class="muted">Storage: <b id="recordsShared"></b></span>
+        <button id="shareBtn" class="small"></button>
+        <button id="resetBtn" class="small">Reset demo</button>
+      </div>
+      <div id="recordsList"></div>
+    </section>
+  </main>
 
-async function refreshRecords(){
-  const r = await api("/api/records");
-  $("records").innerHTML = r.length ? r.map(x =>
-    `<div class="card"><b>${x.record_id}</b> · ${x.order_id} → ${x.workshop_id} (${x.pieces} pcs)<br>
-     <span class="muted">${x.committed_by} · ${x.committed_at}</span></div>`).reverse().join("")
-    : '<span class="muted">No committed records yet.</span>';
-}
+  <!-- ============ RIGHT RAIL ============ -->
+  <aside>
+    <div class="dock" id="queueDock"></div>
+    <div class="dock" id="objDock"></div>
+    <div class="dock" id="worldDock"></div>
+  </aside>
+</div>
 
-async function refreshQueues(){
-  const q = await api("/api/queues");
-  const max = Math.max(0.1, ...Object.values(q));
-  $("queues").innerHTML = Object.entries(q).sort().map(([w,d]) =>
-    `<div class="qrow"><span class="name">${w}</span>
-     <span class="qbar" style="flex:1"><i style="width:${(100*d/max).toFixed(1)}%"></i></span>
-     <span class="days">${d.toFixed(1)}d</span></div>`).join("");
-}
-
-async function resetAll(){
-  if (!confirm("Reset the demo ledger and learned performance?")) return;
-  await post("/api/reset", {});
-  $("worklist").innerHTML = ""; refreshRecords(); refreshQueues(); status("Reset done.");
-}
-
-loadSamples(); refreshQueues(); refreshRecords();
-setInterval(refreshQueues, 5000);
-</script>
+<script src="/static/app.js"></script>
 </body>
 </html>
