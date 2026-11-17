@@ -462,6 +462,72 @@ def records(request: Request):
     return [asdict(r) for r in s["desk"].audit.load_all()]
 
 
+@app.get("/api/chart/{kind}")
+def chart(kind: str, request: Request):
+    from fastapi.responses import Response
+    from api import charts
+    s, _ = _session(request)
+    desk = s["desk"]
+    if kind == "timeline":
+        pts = []
+        seen = set()
+        for r in desk.audit.load_all():
+            w = desk.workshops.workshops[r.workshop_id]
+            if r.workshop_id not in seen:
+                seen.add(r.workshop_id)
+                pts.append({"t": "2026-04-01", "queue": w.queue0, "workshop": w.name})
+            pts.append({"t": r.committed_at, "queue": r.queue_after, "workshop": w.name})
+        png = charts.timeline(pts)
+    elif kind == "capacity":
+        rows = [{"workshop": w.name,
+                 "profile": w.capacity,
+                 "current": (l["eff_capacity"] if (l := desk.performance.learned(wid, profile=w)) else w.capacity)}
+                for wid, w in sorted(desk.workshops.workshops.items())]
+        png = charts.capacity(rows)
+    elif kind == "lens":
+        from desk.allocator import rank_candidates
+        from desk.config import chat_today
+        from datetime import date
+        open_orders = [o["order_id"] for o in desk.orders.orders
+                       if o.get("status") != "COMPLETE"]
+        res = rank_candidates(open_orders[0], objective=s["objective"],
+                              orders=desk.orders, store=desk.workshops,
+                              queues=desk.state.queues, perf=desk.performance)
+        due = date.fromisoformat(desk.orders.by_id(open_orders[0])["due_date"])
+        png = charts.lens(res.get("candidates", []), res.get("chosen"),
+                          (due - chat_today()).days)
+    elif kind == "map":
+        png = charts.objective_map([
+            {"workshop": w.name, "cost": w.cost, "defect": w.defect_rate,
+             "queue": desk.state.queues[wid]}
+            for wid, w in desk.workshops.workshops.items()])
+    else:
+        return JSONResponse({"error": "unknown chart"}, status_code=404)
+    return Response(content=png, media_type="image/png")
+
+
+class BatchBody(BaseModel):
+    workshop_id: str
+    pieces: int
+    promised: str
+    actual: str
+
+
+@app.post("/api/batch")
+def record_batch(body: BatchBody, request: Request):
+    s, sid = _session(request)
+    desk = s["desk"]
+    from desk.tools import update_workshop_performance
+    out = update_workshop_performance(
+        body.workshop_id, body.pieces, body.promised, body.actual,
+        store=desk.workshops, perf=desk.performance)
+    if "error" in out:
+        return {"error": out["error"]}
+    st = _state(s, sid)
+    st["batch_note"] = out["note"]
+    return st
+
+
 @app.get("/api/dashboard")
 def dashboard(request: Request):
     s, _ = _session(request)

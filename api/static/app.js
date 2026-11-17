@@ -17,12 +17,16 @@ function caseOf(d){ return d.behaviour === "answer" ? "no_data" : d.behaviour; }
 
 /* ---------------- render root ---------------- */
 function render(){
-  renderRail(); renderKpis(); renderWorklist(); renderRecords(); renderProvider();
+  renderRail(); renderKpis(); renderWorklist(); renderRecords(); renderProvider(); renderChatLog();
 }
 function renderAll(){ render(); }
 
 /* ---------------- rail ---------------- */
 function renderRail(){
+  // returned-batch workshop select (rebuilt once per state refresh)
+  const ws = Object.entries(STATE.workshops || {});
+  $("rbWorkshop").innerHTML = ws.map(([id,name]) =>
+    `<option value="${id}">${esc(name)} (${id})</option>`).join("");
   const s = STATE;
   const qs = s.queues, max = Math.max(0.1, ...Object.values(qs));
   $("queueDock").innerHTML = `<h3>Live queues</h3>` + Object.entries(qs).sort()
@@ -252,82 +256,43 @@ async function resetDemo(){
   render(); status("Reset done.");
 }
 
-/* ---------------- dashboard (inline SVG, zoomable) ---------------- */
-function svgEl(w,h,inner){ return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;touch-action:none;cursor:grab" class="zoomable">${inner}</svg>`; }
+/* ---------------- left rail: chat log + returned batch ---------------- */
+function renderChatLog(){
+  const log = STATE.chat_log || [];
+  $("chatLog").innerHTML = log.length ? log.map((e,i) => {
+    const oid = (e.text.match(/ORD-\d+/)||[null])[0];
+    return `<div class="chat-msg" data-oid="${oid||""}" onclick="locateCard('${oid||""}')">
+      <span class="who">${esc(e.speaker)}:</span> ${esc(e.text)}
+      <div class="muted">${esc(e.reply||"").slice(0,120)}</div></div>`;
+  }).join("") : '<span class="muted">No exchanges yet.</span>';
+}
+function locateCard(oid){
+  if (!oid) return;
+  const d = STATE.decisions.find(x => x.order_id === oid);
+  if (!d) return;
+  const el = $("card-"+d.decision_id);
+  if (el){ el.scrollIntoView({behavior:"smooth", block:"center"});
+    el.style.boxShadow = "0 0 0 2px var(--blue)";
+    setTimeout(() => el.style.boxShadow = "", 1600); }
+}
+async function recordBatch(){
+  const body = {workshop_id: $("rbWorkshop").value,
+                pieces: +$("rbPieces").value || 1,
+                promised: $("rbPromised").value,
+                actual: $("rbActual").value};
+  if (!body.promised || !body.actual){ $("rbNote").textContent = "Pick both dates."; return; }
+  const r = await post("/api/batch", body);
+  STATE = r; render();
+  $("rbNote").textContent = r.error ? r.error : `Recorded ✓ ${r.batch_note||""}`;
+}
 
-/* wheel-zoom around the cursor + drag-pan, via viewBox manipulation */
-function makeZoomable(scope){
-  for (const svg of (scope||document).querySelectorAll("svg.zoomable")){
-    if (svg.__zoomable) continue;
-    svg.__zoomable = true;
-    const base = svg.viewBox.baseVal;
-    const vb = {x: base.x, y: base.y, w: base.width, h: base.height};
-    const apply = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-    svg.addEventListener("wheel", e => {
-      e.preventDefault();
-      const f = e.deltaY < 0 ? 0.85 : 1/0.85;
-      const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-      const c = pt.matrixTransform(svg.getScreenCTM().inverse());
-      const nw = Math.min(base.width*4, Math.max(base.width*0.1, vb.w*f));
-      const nh = vb.h * (nw / vb.w);
-      vb.x = c.x - (c.x - vb.x) * (nw / vb.w);
-      vb.y = c.y - (c.y - vb.y) * (nh / vb.h);
-      vb.w = nw; vb.h = nh; apply();
-    }, {passive:false});
-    let drag = null;
-    svg.addEventListener("mousedown", e => { drag = {x:e.clientX, y:e.clientY, vx:vb.x, vy:vb.y}; svg.style.cursor="grabbing"; });
-    window.addEventListener("mousemove", e => {
-      if (!drag) return;
-      const k = vb.w / svg.clientWidth;
-      vb.x = drag.vx - (e.clientX - drag.x) * k;
-      vb.y = drag.vy - (e.clientY - drag.y) * k;
-      apply();
-    });
-    window.addEventListener("mouseup", () => { drag = null; svg.style.cursor="grab"; });
-    svg.addEventListener("dblclick", () => { Object.assign(vb, {x:base.x,y:base.y,w:base.width,h:base.height}); apply(); });
-  }
-}
-function bars(data, w=560, h=180, colors=["#d0ebff","#1971c2"]){
-  if (!data.length) return "";
-  const max = Math.max(0.1, ...data.map(d=>d.v));
-  const bw = (w-40)/data.length;
-  return svgEl(w,h, data.map((d,i)=>{
-    const bh = (h-40)*d.v/max;
-    return `<rect x="${30+i*bw+4}" y="${h-25-bh}" width="${bw-8}" height="${bh}" rx="3" fill="${d.c||colors[1]}"/>
-      <text x="${30+i*bw+bw/2}" y="${h-8}" font-size="9" text-anchor="middle" fill="#868e96">${esc(d.k)}</text>
-      <text x="${30+i*bw+bw/2}" y="${h-30-bh}" font-size="9" text-anchor="middle" fill="#1c2b3a">${d.v.toFixed(1)}</text>`;
-  }).join(""));
-}
-function lineChart(points, w=560, h=180){
-  if (!points.length) return '<div class="muted">Queue timeline appears after the first commit.</div>';
-  const shops = [...new Set(points.map(p=>p.workshop))];
-  const max = Math.max(0.1, ...points.map(p=>p.queue));
-  const colors = ["#1971c2","#339af0","#74c0fc","#d0ebff","#2b8a3e","#f08c00","#e8590c","#868e96"];
-  return svgEl(w,h, shops.map((s,si)=>{
-    const pts = points.filter(p=>p.workshop===s);
-    const step = pts.map((p,i)=>`${i===0?"M":"L"}${30+i*(w-50)/Math.max(1,points.length/shops.length-1||1)},${h-25-(h-45)*p.queue/max}`).join(" ");
-    return `<path d="${step}" fill="none" stroke="${colors[si%8]}" stroke-width="2"/>`;
-  }).join("") + shops.map((s,i)=>`<circle cx="${30+i*70}" cy="12" r="4" fill="${colors[i%8]}"/><text x="${38+i*70}" y="15" font-size="9" fill="#1c2b3a">${esc(s)}</text>`).join(""));
-}
+/* ---------------- dashboard (server-rendered matplotlib charts) ---------------- */
 async function renderDashboard(){
-  const d = await api("/api/dashboard");
-  setTimeout(() => makeZoomable($("tab-dashboard")), 0);
-  $("dashTimeline").innerHTML = `<h3>Queue timeline</h3>` + lineChart(d.timeline);
-  const cap = d.capacity.map(c => ({k:c.workshop, v:c.current, c: c.source==="learned"?"#1971c2":c.source==="observing"?"#74c0fc":"#d0ebff"}));
-  $("dashCapacity").innerHTML = `<h3>Capacity: profile vs learned</h3>` + bars(cap) +
-    `<div class="muted"><span class="legend-dot" style="background:#1971c2"></span>learned <span class="legend-dot" style="background:#74c0fc"></span>observing <span class="legend-dot" style="background:#d0ebff"></span>profile</div>`;
-  if (d.lens && d.lens.candidates){
-    const rows = d.lens.candidates.map(r => ({k:r.workshop_id, v:r.est_finish_days, c: r.workshop_id===d.lens.chosen?"#1971c2":"#d0ebff"}));
-    $("dashLens").innerHTML = `<h3>Allocator lens — ${esc(d.lens_order)}, objective ${esc(STATE.objective)}</h3>` + bars(rows);
-  }
-  const bs = d.bubbles;
-  const maxC = Math.max(0.1,...bs.map(b=>b.cost)), maxD = Math.max(0.1,...bs.map(b=>b.defect)), maxQ = Math.max(0.1,...bs.map(b=>b.queue));
-  $("dashMap").innerHTML = `<h3>Objective map — cost × defect (bubble = live queue)</h3>` +
-    svgEl(560,220, bs.map(b=>{
-      const x=40+480*b.cost/maxC, y=190-160*b.defect/maxD, r=5+14*b.queue/maxQ;
-      return `<circle cx="${x}" cy="${y}" r="${r}" fill="#74c0fc" fill-opacity=".7" stroke="#1971c2"/>
-              <text x="${x+r+3}" y="${y+3}" font-size="9" fill="#1c2b3a">${esc(b.workshop)}</text>`;
-    }).join("") + `<text x="45%" y="215" font-size="9" fill="#868e96">cost ($/pc) →</text>`);
+  const t = Date.now();   // cache-bust so charts reflect commits immediately
+  $("chartTimeline").src = `/api/chart/timeline?t=${t}`;
+  $("chartLens").src = `/api/chart/lens?t=${t}`;
+  $("chartCapacity").src = `/api/chart/capacity?t=${t}`;
+  $("chartMap").src = `/api/chart/map?t=${t}`;
 }
 
 /* ---------------- provider / model ---------------- */
@@ -401,6 +366,16 @@ document.addEventListener("DOMContentLoaded", () => {
   $("toollogBtn").onclick = () => { renderToolLogOverlay(); $("toollogOverlay").style.display = "block"; };
   $("scenarioBtn").onclick = () => { $("scenarioOverlay").style.display = "block"; };
   for (const x of ["desk","dashboard","records"]) $("tabbtn-"+x).onclick = () => switchTab(x);
+  $("rbBtn").onclick = recordBatch;
+  // non-modal popovers close on any outside click
+  document.addEventListener("click", e => {
+    for (const id of ["toollogOverlay","scenarioOverlay"]){
+      const p = $(id);
+      if (p && p.style.display !== "none" && !p.contains(e.target)
+          && !e.target.closest("#toollogBtn") && !e.target.closest("#scenarioBtn"))
+        p.style.display = "none";
+    }
+  });
   switchTab("desk");
   // APP_PASSWORD gate: try state first; server hides it when no password is set
   init().catch(() => {});

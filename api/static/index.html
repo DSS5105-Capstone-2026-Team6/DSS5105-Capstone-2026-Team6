@@ -20,41 +20,54 @@
   </div>
 </div>
 
-<!-- Tool log overlay -->
-<div id="toollogOverlay" class="overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="overlay-panel">
-    <div class="row" style="justify-content:space-between">
-      <h3 style="margin:0">Tool log</h3>
-      <button class="small" onclick="document.getElementById('toollogOverlay').style.display='none'">✕</button>
-    </div>
-    <div class="muted">Per order: behaviour chip + the tool calls the agent made</div>
-    <div id="toollogBody"></div>
+<!-- Tool log popover (non-modal, does not cover the window) -->
+<div id="toollogOverlay" class="popover-panel" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">Tool log</h3>
+    <button class="small" onclick="document.getElementById('toollogOverlay').style.display='none'">✕</button>
   </div>
+  <div class="muted">Per order: behaviour chip + the tool calls the agent made</div>
+  <div id="toollogBody"></div>
 </div>
 
-<!-- Scenario overlay -->
-<div id="scenarioOverlay" class="overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="overlay-panel" style="width:560px">
-    <div class="row" style="justify-content:space-between">
-      <h3 style="margin:0">Scenario preview · production and transport</h3>
-      <button class="small" onclick="document.getElementById('scenarioOverlay').style.display='none'">✕</button>
-    </div>
-    <div class="row">
-      <input id="scOrder" value="ORD-063" style="width:105px" title="Order ID">
-      <input id="scDate" type="date" title="preview start date">
-      <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
-    </div>
-    <div class="row">
-      <label class="muted">transport <input id="scDelay" type="number" min="0" max="14" value="0" style="width:56px"></label>
-      <label class="muted">noise % <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:56px"></label>
-      <label class="muted">seed <input id="scSeed" type="number" value="5105" style="width:70px"></label>
-      <button id="scRun" class="small primary">Run</button>
-    </div>
-    <div id="scResult"></div>
+<!-- Scenario popover (non-modal) -->
+<div id="scenarioOverlay" class="popover-panel wide" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">Scenario preview · production and transport</h3>
+    <button class="small" onclick="document.getElementById('scenarioOverlay').style.display='none'">✕</button>
   </div>
+  <div class="row">
+    <input id="scOrder" value="ORD-063" style="width:105px" title="Order ID">
+    <input id="scDate" type="date" title="preview start date">
+    <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
+  </div>
+  <div class="row">
+    <label class="muted">transport <input id="scDelay" type="number" min="0" max="14" value="0" style="width:56px"></label>
+    <label class="muted">noise % <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:56px"></label>
+    <label class="muted">seed <input id="scSeed" type="number" value="5105" style="width:70px"></label>
+    <button id="scRun" class="small primary">Run</button>
+  </div>
+  <div id="scResult"></div>
 </div>
 
 <div class="layout">
+  <!-- ============ LEFT RAIL: chat log + returned batches ============ -->
+  <aside class="leftrail">
+    <div class="dock" id="chatDock">
+      <h3>Chat log</h3>
+      <div id="chatLog" class="chatlog muted">No exchanges yet.</div>
+    </div>
+    <div class="dock" id="batchDock">
+      <h3>Record a returned batch</h3>
+      <div class="row"><select id="rbWorkshop" style="flex:1"></select></div>
+      <div class="row"><input id="rbPieces" type="number" value="400" step="50" style="width:90px" title="pieces">
+        <input id="rbPromised" type="date" title="promised"></div>
+      <div class="row"><input id="rbActual" type="date" title="actual return">
+        <button id="rbBtn" class="small">Record</button></div>
+      <div id="rbNote" class="muted"></div>
+    </div>
+  </aside>
+
   <main>
     <header class="topbar">
       <h1><span class="dot"></span> Dispatch Desk</h1>
@@ -102,10 +115,10 @@
 
     <!-- ============ DASHBOARD TAB ============ -->
     <section id="tab-dashboard" style="display:none">
-      <div id="dashTimeline"></div>
-      <div id="dashLens"></div>
-      <div id="dashCapacity"></div>
-      <div id="dashMap"></div>
+      <h3>Queue timeline</h3><img id="chartTimeline" class="chart" alt="">
+      <h3>Allocator lens</h3><img id="chartLens" class="chart" alt="">
+      <h3>Capacity: profile vs learned</h3><img id="chartCapacity" class="chart" alt="">
+      <h3>Objective map</h3><img id="chartMap" class="chart" alt="">
     </section>
 
     <!-- ============ RECORDS TAB ============ -->

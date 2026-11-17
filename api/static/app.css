@@ -7,7 +7,8 @@
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#f8fafc}
-.layout{max-width:1240px;margin:0 auto;padding:20px 16px 60px;display:grid;grid-template-columns:1fr 250px;gap:22px}
+.layout{max-width:1400px;margin:0 auto;padding:20px 16px 60px;display:grid;grid-template-columns:250px 1fr 250px;gap:18px}
+@media (max-width:1100px){.layout{grid-template-columns:1fr 250px}.leftrail{display:none}}
 @media (max-width:900px){.layout{grid-template-columns:1fr}}
 h1{font-size:1.35rem;display:flex;align-items:center;gap:8px;margin:0 0 14px}
 h1 .dot{width:10px;height:10px;border-radius:50%;background:var(--blue-deep)}
@@ -87,8 +88,17 @@ legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-ri
 #status{margin-left:auto}
 .parser-box{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin:10px 0;background:#fff}
 .overlay{position:fixed;inset:0;background:rgba(28,43,58,.25);z-index:50}
-.overlay-panel{position:absolute;top:60px;right:20px;width:420px;max-width:90vw;max-height:76vh;overflow:auto;
-  background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-md);
-  animation:fadeUp .25s var(--ease) both}
+/* non-modal popovers: they sit next to the rail, never cover the window */
+.popover-panel{position:fixed;top:70px;right:270px;width:400px;max-width:44vw;max-height:72vh;overflow:auto;
+  background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+  box-shadow:var(--shadow-md);z-index:40;animation:fadeUp .25s var(--ease) both}
+.popover-panel.wide{width:560px}
+@media (max-width:900px){.popover-panel{right:12px;left:12px;width:auto}}
+.chatlog{max-height:300px;overflow:auto;font-size:.82em}
+.chatlog .chat-msg{cursor:pointer;border-radius:6px;padding:2px 4px}
+.chatlog .chat-msg:hover{background:#f1f8fe}
+.chatlog .chat-msg.flash{animation:flash 1.2s ease-in-out 2}
+@keyframes flash{0%,100%{background:transparent}50%{background:var(--blue-pale)}}
+img.chart{width:100%;border:1px solid var(--line);border-radius:12px;margin:6px 0 14px;box-shadow:var(--shadow-sm)}
 .filebtn{border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer;font-size:.8rem}
 .filebtn:hover{border-color:var(--blue)}
