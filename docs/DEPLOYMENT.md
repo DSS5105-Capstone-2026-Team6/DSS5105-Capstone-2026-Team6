@@ -114,6 +114,26 @@ and a monitor has something to ping.
   always-on VM, or switching the bot to a Telegram webhook, where the incoming request
   wakes the service and Telegram retries deliveries that fail.
 
+## FastAPI web frontend on Render
+
+The alternative web UI (`api/` — static UI + REST wrapper over `desk/`, Streamlit
+parity) deploys as a second free Render web service from `render.yaml`
+(`dispatch-desk-web`, branch `kimi/ui-polish_20261117-0953`; the Streamlit app on
+`main` is untouched). Build `pip install -r api/requirements.txt`, start
+`uvicorn api.main:app --host 0.0.0.0 --port $PORT`. Dashboard
+(Plotly via CDN) and all desk features run without Streamlit installed.
+
+- **Secrets** (Render dashboard): `DEEPSEEK_API_KEY`, plus
+  `DISPATCH_DATABASE_URL` / `DISPATCH_DATABASE_PASSWORD` for the shared Supabase
+  ledger — the same values the bot uses. `APP_PASSWORD` is optional here; blank
+  leaves the UI open.
+- **Database and bot sharing.** Sessions start in a sandbox; Records → shared-DB
+  toggle switches the session to the Supabase ledger, so allocations made in
+  Telegram appear in the web UI and vice versa (same tables, same advisory lock).
+- **Sleep.** Same free-tier caveat as the bot: point a second UptimeRobot monitor
+  at `https://<web-service>.onrender.com/` (5-minute interval) to keep it awake,
+  and warm it by hand before a demo.
+
 ## Confirmation behavior
 
 Buttons and familiar replies such as "yes", "好的", and "这单就给 W2 吧" take the

@@ -42,6 +42,11 @@ class PerformanceStore:
     def __init__(self, path=None):
         self.database = Database(path)
         self.path = self.database.path
+        # learned() results cached briefly: a commit triggers _refresh_stale,
+        # which re-ranks EVERY open card and would otherwise re-read the
+        # performance table once per workshop per card (the split-commit
+        # bottleneck in shared mode). observe()/clear() invalidate.
+        self._cache = {}
         if self.database.is_postgres:
             self.database.require_tables('performance')
             return
@@ -58,6 +63,7 @@ class PerformanceStore:
         and the resulting learned state (or why it is not active yet).
         `profile` (the WorkshopStore record) makes the delay->capacity
         conversion proportional to the batch's work content."""
+        self._cache.pop(workshop_id, None)
         with self.database.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             return self._observe(db, workshop_id, pieces, promised_date, actual_date, profile)
@@ -103,6 +109,7 @@ class PerformanceStore:
     def clear(self):
         """Drop every learned observation (demo reset wipes these too, so a
         fresh world starts back on the profile cards)."""
+        self._cache.clear()
         with self.database.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute("DELETE FROM performance")
@@ -114,6 +121,10 @@ class PerformanceStore:
         MIN_SAMPLES batches have been observed (profile card fallback).
         profile: the WorkshopStore record, used to convert the capacity
         ratio into pieces/day."""
+        import time
+        hit = self._cache.get(workshop_id)
+        if _db is None and hit and time.time() - hit[1] < 3.0:
+            return hit[0]
         row = self._row(workshop_id, db=_db)
         if row is None:
             return None
@@ -131,6 +142,9 @@ class PerformanceStore:
             out["eff_capacity"] = round(profile.capacity * ratio, 2)
             out["profile_capacity"] = profile.capacity
             out["eff_lead_days"] = profile.lead_days + max(0, round(wmean))
+        if _db is None:
+            import time as _t
+            self._cache[workshop_id] = (out, _t.time())
         return out
 
     # ---------------- internals ----------------

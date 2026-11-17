@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispatch Desk</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<div id="loginOverlay" style="display:none">
+  <div class="card">
+    <h3>Dispatch Desk</h3>
+    <p class="muted">Enter the app password</p>
+    <div class="row" style="justify-content:center">
+      <input id="pw" type="password" placeholder="APP_PASSWORD">
+      <button id="loginBtn" class="primary">Sign in</button>
+    </div>
+    <div id="pwErr" class="warn"></div>
+  </div>
+</div>
+
+<!-- Tool log popover (non-modal, does not cover the window) -->
+<div id="toollogOverlay" class="popover-panel" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">Tool log</h3>
+    <button class="small" onclick="document.getElementById('toollogOverlay').style.display='none'">✕</button>
+  </div>
+  <div class="muted">Per order: behaviour chip + the tool calls the agent made</div>
+  <div id="toollogBody" class="popover-scroll"></div>
+</div>
+
+<!-- LLM parser popover (non-modal: runs alongside dispatch) -->
+<div id="parserOverlay" class="popover-panel wide" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">LLM parser</h3>
+    <button class="small" onclick="document.getElementById('parserOverlay').style.display='none'">✕</button>
+  </div>
+  <div class="muted">Parse one freeform message into structured orders &amp; constraints, checked against the register</div>
+  <textarea id="parserBox" placeholder="Boss: ORD-045 — 150 vests for Cotton Club, due Apr 09. It's urgent." style="min-height:70px;margin-top:8px"></textarea>
+  <div class="row"><button id="parseBtn" class="small primary">Parse</button></div>
+  <div id="parseResult" class="popover-scroll"></div>
+</div>
+
+<!-- Scenario popover (non-modal) -->
+<div id="scenarioOverlay" class="popover-panel wide" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">Scenario preview · production and transport</h3>
+    <button class="small" onclick="document.getElementById('scenarioOverlay').style.display='none'">✕</button>
+  </div>
+  <div class="row">
+    <input id="scOrder" value="ORD-063" style="width:105px" title="Order ID">
+    <input id="scDate" type="date" title="preview start date">
+    <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
+  </div>
+  <div class="row">
+    <label class="muted">transport <input id="scDelay" type="number" min="0" max="14" value="0" style="width:56px"></label>
+    <label class="muted">noise % <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:56px"></label>
+    <label class="muted">seed <input id="scSeed" type="number" value="5105" style="width:70px"></label>
+    <button id="scRun" class="small primary">Run</button>
+  </div>
+  <div id="scResult"></div>
+</div>
+
+<!-- Compare-models popover (non-modal: runs alongside dispatch) -->
+<div id="compareOverlay" class="popover-panel wide" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">Compare models</h3>
+    <div class="row" style="gap:6px">
+      <button class="small" onclick="abortCompare()">Stop</button>
+      <button class="small" onclick="abortCompare()">✕</button>
+    </div>
+  </div>
+  <div id="cmpStage" class="popover-scroll"></div>
+</div>
+
+<div class="layout">
+  <!-- ============ LEFT RAIL: chat log + returned batches ============ -->
+  <aside class="leftrail">
+    <div class="dock" id="chatDock">
+      <h3>Chat log</h3>
+      <div id="chatLog" class="chatlog muted">No exchanges yet.</div>
+    </div>
+    <div class="dock" id="batchDock">
+      <h3>Record a returned batch</h3>
+      <div class="row"><select id="rbWorkshop" style="flex:1"></select></div>
+      <div class="row"><input id="rbPieces" type="number" value="400" step="50" style="width:90px" title="pieces">
+        <input id="rbPromised" type="date" title="promised"></div>
+      <div class="row"><input id="rbActual" type="date" title="actual return">
+        <button id="rbBtn" class="small">Record</button></div>
+      <div id="rbNote" class="muted"></div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <h1><span class="dot"></span> Dispatch Desk</h1>
+      <div class="topbar-right">
+        <button id="parserBtn" class="small" title="Parse one freeform message first">LLM parser</button>
+        <select id="providerSel" title="Provider"></select>
+        <select id="modelSel" title="Model"></select>
+      </div>
+    </header>
+
+    <!-- primary action bar: only the main flow lives here -->
+    <div class="actionbar">
+      <button id="dispatchBtn" class="primary"><span class="icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg></span>Dispatch</button>
+      <button id="confirmAllBtn"><span class="icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="4 12.5 9.5 18 20 6"/></svg></span>Confirm all open</button>
+      <span id="status"></span>
+    </div>
+
+    <div class="tabs">
+      <button id="tabbtn-desk" class="active">Desk</button>
+      <button id="tabbtn-dashboard">Dashboard</button>
+      <button id="tabbtn-records">Records</button>
+    </div>
+
+    <!-- ============ DESK TAB ============ -->
+    <section id="tab-desk">
+      <h2>Inbox</h2>
+      <div class="row">
+        <select id="sampleSel"></select>
+        <button id="sampleBtn" class="small">Load sample</button>
+        <label class="small filebtn">Upload .txt<input id="fileInput" type="file" accept=".txt" hidden></label>
+        <button class="small" onclick="document.getElementById('inbox').value=''">Clear</button>
+      </div>
+      <textarea id="inbox" placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29."></textarea>
+
+      <div id="kpis" class="kpis"></div>
+      <div id="caseFilter" class="row"></div>
+      <div id="dispatchProgress" class="progress-wrap" style="display:none">
+        <div class="progress-label" id="progressLabel"></div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div id="worklist" class="worklist-scroll"></div>
+    </section>
+
+    <!-- ============ DASHBOARD TAB ============ -->
+    <section id="tab-dashboard" style="display:none">
+      <div id="statTiles" class="stat-tiles"></div>
+      <div class="chart-grid">
+        <div class="chart-card"><h3>Queue timeline</h3><div id="chartTimeline" class="chart-plot"></div></div>
+        <div class="chart-card"><h3>Behaviour distribution</h3><div id="chartDist" class="chart-plot"></div></div>
+        <div class="chart-card"><h3>Allocator lens <select id="lensOrder" class="small" style="float:right" onchange="renderLens()"></select></h3><div id="chartLens" class="chart-plot"></div></div>
+        <div class="chart-card"><h3>Error types</h3><div id="chartErrors" class="chart-plot"></div></div>
+        <div class="chart-card"><h3>Capacity: profile vs learned</h3><div id="chartCapacity" class="chart-plot"></div></div>
+        <div class="chart-card"><h3>LLM usage trend</h3><div id="chartUsage" class="chart-plot"></div></div>
+        <div class="chart-card"><h3>Objective map</h3><div id="chartMap" class="chart-plot"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ RECORDS TAB ============ -->
+    <section id="tab-records" style="display:none">
+      <div class="row">
+        <span class="muted">Storage: <b id="recordsShared"></b></span>
+        <button id="shareBtn" class="small"></button>
+        <button id="resetBtn" class="small">Reset demo</button>
+      </div>
+      <div id="recordsList"></div>
+    </section>
+  </main>
+
+  <!-- ============ RIGHT RAIL ============ -->
+  <aside>
+    <div class="dock" id="queueDock"></div>
+    <div class="dock" id="objDock"></div>
+    <div class="dock" id="worldDock"></div>
+    <div class="dock" id="panelDock">
+      <h3>Panels</h3>
+      <div class="row">
+        <button id="toollogBtn" class="small">Tool log</button>
+        <button id="scenarioBtn" class="small">Scenario preview</button>
+      </div>
+    </div>
+    <div class="dock" id="compareDock">
+      <h3>Compare models</h3>
+      <div class="row"><select id="cmpA" style="flex:1"></select></div>
+      <div class="row"><select id="cmpB" style="flex:1"></select></div>
+      <div class="row"><button id="cmpBtn" class="small primary">Compare · 8 random requests</button></div>
+    </div>
+  </aside>
+</div>
+
+<script src="/static/js/util.js"></script>
+<script src="/static/js/render.js"></script>
+<script src="/static/js/rail.js"></script>
+<script src="/static/js/worklist.js"></script>
+<script src="/static/js/icons.js"></script>
+<script src="/static/js/intake.js"></script>
+<script src="/static/js/confirm.js"></script>
+<script src="/static/js/scenario.js"></script>
+<script src="/static/js/records.js"></script>
+<script src="/static/js/chatlog.js"></script>
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/provider.js"></script>
+<script src="/static/js/toollog.js"></script>
+<script src="/static/js/parser.js"></script>
+<script src="/static/js/compare.js"></script>
+<script src="/static/js/main.js"></script>
+</body>
+</html>
