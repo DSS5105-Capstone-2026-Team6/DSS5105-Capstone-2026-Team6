@@ -175,14 +175,23 @@ def _refresh_stale_async(s):
 
 
 def _refresh_stale(s):
-    """One-click confirm: re-rank open proposals whose version went stale."""
+    """One-click confirm: re-rank open proposals whose version went stale.
+    refresh() returns a NEW decision with a NEW id — the dict key must move
+    too, otherwise follow-ups and commits can't find the card ("already
+    closed" on a perfectly open request)."""
     desk = s["desk"]
     version = desk.audit.version
-    for x in s["decisions"].values():
+    for key in list(s["decisions"].keys()):
+        x = s["decisions"][key]
         d = x["decision"]
         if (x["skipped"] or not d.candidates or d.parsed.order_id is None
                 or d.state_version in (None, version)):
             continue
+        fresh = desk.refresh(d)
+        # refresh mints a new id, but the proposal's id must stay stable —
+        # cards in the DOM and follow-up requests all reference it
+        fresh.decision_id = key
+        x["decision"] = fresh
         x["decision"] = desk.refresh(d)
 
 
@@ -332,14 +341,9 @@ def followup(body: FollowupBody, request: Request):
     if record is not None:
         del s["decisions"][body.decision_id]
     elif updated is not None:
-        # follow_up may return a NEW decision object with a NEW id: move the
-        # thread BEFORE swapping (checking "is" after assignment always fails)
-        if updated.decision_id != body.decision_id:
-            s["item_chats"][updated.decision_id] = \
-                s["item_chats"].pop(body.decision_id, thread)
-            s["decisions"][updated.decision_id] = \
-                s["decisions"].pop(body.decision_id)
-            item = s["decisions"][updated.decision_id]
+        # follow_up may return a NEW decision object with a NEW id — keep the
+        # proposal's id stable so cards and follow-ups stay addressable
+        updated.decision_id = body.decision_id
         item["decision"] = updated
     _log(s, "dispatcher", body.text, reply or "", decision_id=body.decision_id)
     st = _state(s, sid)
@@ -487,8 +491,10 @@ def rerank(body: RerankBody, request: Request):
     for did in targets:
         item = s["decisions"].get(did)
         if item and item["decision"].candidates:
-            item["decision"] = desk.refresh(
+            fresh = desk.refresh(
                 replace(item["decision"], objective=body.objective))
+            fresh.decision_id = did   # keep the proposal's id stable
+            item["decision"] = fresh
     return _state(s, sid)
 
 
