@@ -5,7 +5,8 @@ from pydantic import BaseModel
 
 from desk.config import PROVIDERS
 from desk.desk import DispatchDesk
-from api.state import get_session, new_desk, state_payload
+from api.state import (get_session, invalidate_ledger, new_desk,
+                       state_payload, warm_caches_async)
 
 router = APIRouter()
 
@@ -31,6 +32,8 @@ def provider(body: ProviderBody, request: Request):
     s["provider"] = body.provider
     s["model"] = body.model
     s["desk"] = new_desk_
+    invalidate_ledger(s)
+    warm_caches_async(s)
     return state_payload(s, sid)
 
 
@@ -142,4 +145,6 @@ def share(body: ShareBody, request: Request):
     s["shared"] = body.shared
     s["decisions"] = {}
     s["desk"] = DispatchDesk() if body.shared else new_desk(False)
+    invalidate_ledger(s)
+    warm_caches_async(s)
     return state_payload(s, sid)

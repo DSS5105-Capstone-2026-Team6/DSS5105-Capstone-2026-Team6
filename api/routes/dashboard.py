@@ -8,7 +8,9 @@ from pydantic import BaseModel
 
 from desk.config import PROVIDERS
 from api import charts
-from api.state import (committed_orders, get_session, public, state_payload)
+from api.state import (PerfFacade, get_session, invalidate_ledger,
+                       ledger_records, ledger_snapshot, perf_learned, public,
+                       state_payload)
 
 router = APIRouter()
 
@@ -29,7 +31,7 @@ def open_orders(request: Request):
 @router.get("/api/records")
 def records(request: Request):
     s, _ = get_session(request)
-    return [asdict(r) for r in s["desk"].audit.load_all()]
+    return [asdict(r) for r in ledger_records(s)]
 
 
 def _behaviour_dist(s):
@@ -53,10 +55,11 @@ def _usage_rows(s):
     return usage
 
 
-def _timeline_points(desk):
+def _timeline_points(s):
+    desk = s["desk"]
     pts = []
     seen = set()
-    for r in desk.audit.load_all():
+    for r in ledger_records(s):
         w = desk.workshops.workshops[r.workshop_id]
         if r.workshop_id not in seen:
             seen.add(r.workshop_id)
@@ -72,11 +75,11 @@ def chart_data(kind: str, request: Request):
     s, _ = get_session(request)
     desk = s["desk"]
     if kind == "timeline":
-        data = charts.timeline(_timeline_points(desk))
+        data = charts.timeline(_timeline_points(s))
     elif kind == "capacity":
         rows = [{"workshop": w.name,
                  "profile": w.capacity,
-                 "current": (l["eff_capacity"] if (l := desk.performance.learned(wid, profile=w)) else w.capacity)}
+                 "current": (l["eff_capacity"] if (l := perf_learned(s, wid, profile=w)) else w.capacity)}
                 for wid, w in sorted(desk.workshops.workshops.items())]
         data = charts.capacity(rows)
     elif kind == "lens":
@@ -90,7 +93,7 @@ def chart_data(kind: str, request: Request):
         order_id = request.query_params.get("order_id") or open_order_ids[0]
         res = rank_candidates(order_id, objective=s["objective"],
                               orders=desk.orders, store=desk.workshops,
-                              queues=desk.state.queues, perf=desk.performance)
+                              queues=ledger_snapshot(s)[1], perf=PerfFacade(s))
         due = date.fromisoformat(desk.orders.by_id(order_id)["due_date"])
         data = charts.lens(res.get("candidates", []), res.get("chosen"),
                            (due - chat_today()).days)
@@ -106,9 +109,10 @@ def chart_data(kind: str, request: Request):
         data = charts.usage_trend([{"day": d, "rounds": n}
                                    for d, n in sorted(usage.items())])
     elif kind == "map":
+        queues = ledger_snapshot(s)[1]
         data = charts.objective_map([
             {"workshop": w.name, "cost": w.cost, "defect": w.defect_rate,
-             "queue": desk.state.queues[wid]}
+             "queue": queues[wid]}
             for wid, w in desk.workshops.workshops.items()])
     else:
         return JSONResponse({"error": "unknown chart"}, status_code=404)
@@ -121,13 +125,13 @@ def analytics(request: Request):
     throughput, error types, model usage, and queue backlog."""
     s, _ = get_session(request)
     desk = s["desk"]
-    decisions = [public(x["decision"], x["skipped"], committed_orders(s))
+    records, queues = ledger_snapshot(s)
+    committed_ids = {r.order_id for r in records}
+    decisions = [public(x["decision"], x["skipped"], committed_ids)
                  for x in s["decisions"].values()]
     dist = {}
     for d in decisions:
         dist[d["behaviour"]] = dist.get(d["behaviour"], 0) + 1
-    records = desk.audit.load_all()
-    committed_ids = {r.order_id for r in records}
     # per-session rates: a split commit writes one ledger row per part but is
     # still ONE answered request, so count unique order ids against the
     # number of requests dispatched — never ledger rows vs open cards
@@ -137,7 +141,6 @@ def analytics(request: Request):
     total = max(1, m["dispatched"])
     timings = s["timings"]
     avg_ms = round(sum(t["ms"] for t in timings) / len(timings), 1) if timings else 0
-    queues = desk.state.queues
     from datetime import datetime, timezone
     today = datetime.now(timezone.utc).date().isoformat()
     usage = _usage_rows(s)
@@ -182,6 +185,7 @@ def record_batch(body: BatchBody, request: Request):
         store=desk.workshops, perf=desk.performance)
     if "error" in out:
         return {"error": out["error"]}
+    invalidate_ledger(s)   # learned performance changed too
     st = state_payload(s, sid)
     st["batch_note"] = out["note"]
     return st
@@ -192,6 +196,7 @@ def reset(request: Request):
     s, sid = get_session(request)
     s["desk"].audit.reset()
     s["desk"].performance.clear()
+    invalidate_ledger(s)
     s["decisions"] = {}
     s["chat_log"] = []
     s["tool_history"] = []
