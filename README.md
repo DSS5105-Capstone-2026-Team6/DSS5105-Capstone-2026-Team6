@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml/badge.svg)](https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-1971c2)
-![tests](https://img.shields.io/badge/pytest-283%20passed%20%C2%B7%206%20cloud%20checks%20on%20demand-2b8a3e)
+![tests](https://img.shields.io/badge/pytest-292%20passed%20%C2%B7%206%20cloud%20checks%20on%20demand-2b8a3e)
 
 > The factory (SweaterCo) farms out batches to 8 outside workshops when it is full.
 > This system answers the dispatcher's three questions for every incoming order —
@@ -15,7 +15,8 @@
 
 | | |
 |---|---|
-| **Web app** | [dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app](https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app) — the password is provided with our submission (it is not stored in this repository) |
+| **Web app (new UI)** | [dispatcher-doubot.onrender.com](https://dispatcher-doubot.onrender.com) — FastAPI + static CSS/JS frontend on Render (no Streamlit), same desk core and shared ledger; runs in the same service as the bot |
+| **Web app (Streamlit)** | [dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app](https://dss5105-capstone-2026-team6-yrcuaguw78h57dg9dc4pmi.streamlit.app) — the password is provided with our submission (it is not stored in this repository) |
 | **Telegram bot** | [@Ddispatcherr_bot](https://t.me/Ddispatcherr_bot) — runs on Render, writes to the same shared ledger as the web app. If it does not answer within a minute, open [dispatcher-doubot.onrender.com](https://dispatcher-doubot.onrender.com) once to wake it, then send the message again |
 | **Try it in 1 minute** | Desk tab → **Sample inbox** → **Dispatch** → click a candidate card to confirm → see it on the **Records** tab |
 | **Documentation** | [Allocator](docs/ALLOCATOR.md) · [Tolerance scan](docs/Tolerance_Scan.md) · [Evaluation](docs/EVALUATION.md) · [Failure analysis](docs/FAILURE_ANALYSIS.md) · [Full-120 rerun](docs/FULL120.md) · [Splits](docs/SPLITS.md) · [Shared DB](docs/SHARED_DATABASE.md) · [Deployment](docs/DEPLOYMENT.md) · [Strategic recommendations](Strategic_Recommendations.md) |
@@ -96,7 +97,7 @@ uv run streamlit run app/streamlit_app.py
 **5. Check everything else works**
 
 ```bash
-uv run --with matplotlib pytest                   # 283 tests; 6 shared-database checks are opt-in
+uv run --with matplotlib pytest                   # 292 tests; 6 shared-database checks are opt-in
 uv run python desk/agent.py "R07: ORD-063 — 100 cardigans, make Apr 29."   # one chat request, end to end
 uv run python harness/simulate.py                 # the three course baselines
 uv run python harness/eft_benchmark.py --seeds 10 # EFT and the Sprint 1 weighted hybrid, normal + shock
@@ -112,6 +113,13 @@ uv run python eval/replay_offline.py              # re-score recorded dev + held
 uv run python eval/run_eval.py                    # live run of the 30-request inbox (needs a key)
 uv run python eval/score_run.py --results results/<run>.jsonl
 uv run python eval/run_full120.py --limit 10      # full-120 timeline smoke test (needs OPENAI_API_KEY)
+```
+
+**Optional — the static web UI** (Streamlit parity, no Streamlit needed —
+FastAPI + plain HTML/CSS/JS, Plotly dashboard):
+
+```bash
+uv run uvicorn api.main:app --port 8000     # then open http://localhost:8000
 ```
 
 **Optional — Telegram bot.** Create a bot with BotFather, put its token in
@@ -157,14 +165,15 @@ Column definitions for the order and workshop data are in
 | *Backend failed to start* | The provider key is missing or wrong: check `DEEPSEEK_API_KEY` (or the key for the provider picked in the sidebar). |
 | *Session request cap reached* / *Request limit reached* | Per-session and hourly/daily API caps protect the shared key. Reopen the page, wait, or raise `API_CALLS_PER_HOUR` / `API_CALLS_PER_DAY`. |
 | *Shared database tables are missing* | Run `database/supabase_schema.sql` once on the database, or unset `DISPATCH_DATABASE_URL` to use local SQLite. |
-| The desk seems stuck after *Reset & connect to shared DB* | Expected, not a crash: the shared Supabase database is in another region, so connecting takes about 40 s and each dispatch is noticeably slower, because every read and commit is a cross-border round trip. Wait for the spinner to finish. For quick testing, stay on the session sandbox (the default) and connect only to check Records. |
+| The desk seems stuck after *Reset & connect to shared DB* | Expected, not a crash: the shared Supabase database is in another region, so every read and commit is a cross-border round trip. The web apps now cache the ledger per session and warm the connection pool at boot, so steady-state reads are sub-second — but connecting still takes a few seconds and each dispatch is noticeably slower than the sandbox. For quick testing, stay on the session sandbox (the default) and connect only to check Records. |
 | Telegram `/queue` test fails with `No module named matplotlib` | Run the tests as `uv run --with matplotlib pytest`, or `pip install matplotlib`. |
 | Telegram bot does not reply | The Render free instance was asleep, and messages sent while it slept are dropped. Open [dispatcher-doubot.onrender.com](https://dispatcher-doubot.onrender.com) until it shows *dispatch bot alive* (30–60 s), then resend. See [Deployment](docs/DEPLOYMENT.md#telegram-bot-on-render). |
 | `harness/simulate.py` cannot find its data | Run it from the repository root, with `harness/` and `data/` side by side. |
 
 ## How it works
 
-Two thin front-ends, one deterministic core, one ledger. The LLM only ever
+Three thin front-ends (Streamlit, FastAPI + static CSS/JS, Telegram), one
+deterministic core, one ledger. The LLM only ever
 emits JSON tool-call lists — every number comes from a tool.
 
 ```mermaid
@@ -175,6 +184,7 @@ flowchart LR
     subgraph CLOUD["Hosting"]
         BOT["Telegram Bot<br/>adapter/<br/>long polling<br/>UptimeRobot keep-alive"]:::front
         UI["Streamlit App<br/>app/<br/>sandbox by default<br/>Reset and connect"]:::front
+        API["FastAPI + static UI<br/>api/<br/>same service as the bot"]:::front
     end
 
     subgraph CORE["core package · desk — single source of truth"]
@@ -197,6 +207,7 @@ flowchart LR
 
     TG --> BOT --> DESK
     WEB --> UI --> DESK
+    WEB --> API --> DESK
     DESK --> AGENT
     PARSER --> AGENT
     AGENT <--> LLM
@@ -209,6 +220,7 @@ flowchart LR
     STORE --> SUPA
     BOT <--> SUPA
     UI <--> SUPA
+    API <--> SUPA
 
     click DESK "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/desk.py"
     click PARSER "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/llm_parser.py"
@@ -223,6 +235,7 @@ flowchart LR
     click STORE "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/desk/storage.py"
     click BOT "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/adapter/telegram_bot.py"
     click UI "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/app/streamlit_app.py"
+    click API "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/api/main.py"
     click SUPA "https://github.com/DSS5105-Capstone-2026-Team6/DSS5105-Capstone-2026-Team6/blob/main/docs/SHARED_DATABASE.md"
 
     classDef front fill:#d0ebff,stroke:#1971c2,stroke-width:1.5px,color:#1c2b3a
@@ -238,7 +251,10 @@ records**. The desk has 10 deterministic tools (9 callable by the LLM, plus
 `split_options` called by the desk), code-assigned behaviour routing, a
 transactional allocation ledger with a `UNIQUE order_id`, learned workshop
 performance, a Streamlit dispatcher UI (live queues, allocator lens, world
-switch Apr-1/Jan-1, stages mode, shock trigger, LLM parser, batch confirm) and
+switch Apr-1/Jan-1, stages mode, shock trigger, LLM parser, batch confirm),
+a FastAPI + static CSS/JS web UI with the same desk features (Plotly
+dashboard, LLM-parser popover with register check, compare-models studio,
+request provenance in the chat log) and
 a Telegram bot shell (one-tap commit buttons, `/queue` charts, yes all).
 
 - **Only a human commits.** The model's tools are read-only; the
@@ -298,7 +314,8 @@ reproduce the run are in [docs/FULL120.md](docs/FULL120.md).
 ├── README.md
 ├── .env.example               # template for local keys (copy to .env)
 ├── pyproject.toml             # uv project, Python 3.11+
-├── render.yaml · runtime.txt  # Render blueprint for the Telegram bot
+├── render.yaml · runtime.txt  # Render blueprint: bot + FastAPI web UI in one service
+├── Dockerfile                 # container deploy of the FastAPI frontend (any host)
 ├── docs/                      # ALLOCATOR · Tolerance_Scan · EVALUATION · FAILURE_ANALYSIS · FULL120 · SPLITS · SHARED_DATABASE · DEPLOYMENT
 ├── data/                      # Track 2 dataset (shared simulator input)
 │   ├── orders.csv             # 120 orders
@@ -333,13 +350,19 @@ reproduce the run are in [docs/FULL120.md](docs/FULL120.md).
 │   ├── tabs/                  # Desk (intake -> dispatch -> worklist), Dashboard, Records
 │   ├── rail/ · sidebar/       # objective, world & shock, live queues; chat log, returned batches
 │   └── theme/ · components/ · local_auth/
+├── api/                       # FastAPI + static CSS/JS web UI (Streamlit parity)
+│   ├── main.py · state.py     # app assembly; per-cookie sessions, cached ledger snapshot
+│   ├── routes/                # intake · decisions · world · dashboard · misc
+│   ├── charts.py              # Plotly chart data builders
+│   └── static/                # index.html, app.css, js/ modules
 ├── adapter/                   # Telegram bot shell (session, telegram_bot, /queue charts)
+│   └── run_all.py             # one Render service: bot polling + uvicorn together
 ├── database/supabase_schema.sql   # shared PostgreSQL schema (RLS on)
 ├── scripts/check_database.py  # read-only shared-DB connectivity check
 ├── eval/                      # run_eval · score_run · faithfulness · replay_offline · shock · run_full120
 ├── notebooks/                 # full-120 timeline notebook
 ├── results/                   # committed evaluation runs and scores
-└── tests/                     # pytest suite: one failure case per feature (289 tests)
+└── tests/                     # pytest suite: one failure case per feature (292 tests)
 ```
 
 ## Team
