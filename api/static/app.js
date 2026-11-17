@@ -252,8 +252,41 @@ async function resetDemo(){
   render(); status("Reset done.");
 }
 
-/* ---------------- dashboard (inline SVG) ---------------- */
-function svgEl(w,h,inner){ return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto">${inner}</svg>`; }
+/* ---------------- dashboard (inline SVG, zoomable) ---------------- */
+function svgEl(w,h,inner){ return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;touch-action:none;cursor:grab" class="zoomable">${inner}</svg>`; }
+
+/* wheel-zoom around the cursor + drag-pan, via viewBox manipulation */
+function makeZoomable(scope){
+  for (const svg of (scope||document).querySelectorAll("svg.zoomable")){
+    if (svg.__zoomable) continue;
+    svg.__zoomable = true;
+    const base = svg.viewBox.baseVal;
+    const vb = {x: base.x, y: base.y, w: base.width, h: base.height};
+    const apply = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    svg.addEventListener("wheel", e => {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 0.85 : 1/0.85;
+      const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+      const c = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const nw = Math.min(base.width*4, Math.max(base.width*0.1, vb.w*f));
+      const nh = vb.h * (nw / vb.w);
+      vb.x = c.x - (c.x - vb.x) * (nw / vb.w);
+      vb.y = c.y - (c.y - vb.y) * (nh / vb.h);
+      vb.w = nw; vb.h = nh; apply();
+    }, {passive:false});
+    let drag = null;
+    svg.addEventListener("mousedown", e => { drag = {x:e.clientX, y:e.clientY, vx:vb.x, vy:vb.y}; svg.style.cursor="grabbing"; });
+    window.addEventListener("mousemove", e => {
+      if (!drag) return;
+      const k = vb.w / svg.clientWidth;
+      vb.x = drag.vx - (e.clientX - drag.x) * k;
+      vb.y = drag.vy - (e.clientY - drag.y) * k;
+      apply();
+    });
+    window.addEventListener("mouseup", () => { drag = null; svg.style.cursor="grab"; });
+    svg.addEventListener("dblclick", () => { Object.assign(vb, {x:base.x,y:base.y,w:base.width,h:base.height}); apply(); });
+  }
+}
 function bars(data, w=560, h=180, colors=["#d0ebff","#1971c2"]){
   if (!data.length) return "";
   const max = Math.max(0.1, ...data.map(d=>d.v));
@@ -278,6 +311,7 @@ function lineChart(points, w=560, h=180){
 }
 async function renderDashboard(){
   const d = await api("/api/dashboard");
+  setTimeout(() => makeZoomable($("tab-dashboard")), 0);
   $("dashTimeline").innerHTML = `<h3>Queue timeline</h3>` + lineChart(d.timeline);
   const cap = d.capacity.map(c => ({k:c.workshop, v:c.current, c: c.source==="learned"?"#1971c2":c.source==="observing"?"#74c0fc":"#d0ebff"}));
   $("dashCapacity").innerHTML = `<h3>Capacity: profile vs learned</h3>` + bars(cap) +
@@ -365,11 +399,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("providerSel").onchange = () => { renderProviderModels(); providerChanged(); };
   $("modelSel").onchange = providerChanged;
   $("toollogBtn").onclick = () => { renderToolLogOverlay(); $("toollogOverlay").style.display = "block"; };
-  $("scenarioBtn").onclick = () => {
-    const p = $("scenarioPanel");
-    p.style.display = p.style.display === "none" ? "" : "none";
-    if (p.style.display !== "none") p.scrollIntoView({behavior:"smooth", block:"nearest"});
-  };
+  $("scenarioBtn").onclick = () => { $("scenarioOverlay").style.display = "block"; };
   for (const x of ["desk","dashboard","records"]) $("tabbtn-"+x).onclick = () => switchTab(x);
   switchTab("desk");
   // APP_PASSWORD gate: try state first; server hides it when no password is set

@@ -32,6 +32,28 @@
   </div>
 </div>
 
+<!-- Scenario overlay -->
+<div id="scenarioOverlay" class="overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="overlay-panel" style="width:560px">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">Scenario preview · production and transport</h3>
+      <button class="small" onclick="document.getElementById('scenarioOverlay').style.display='none'">✕</button>
+    </div>
+    <div class="row">
+      <input id="scOrder" value="ORD-063" style="width:105px" title="Order ID">
+      <input id="scDate" type="date" title="preview start date">
+      <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
+    </div>
+    <div class="row">
+      <label class="muted">transport <input id="scDelay" type="number" min="0" max="14" value="0" style="width:56px"></label>
+      <label class="muted">noise % <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:56px"></label>
+      <label class="muted">seed <input id="scSeed" type="number" value="5105" style="width:70px"></label>
+      <button id="scRun" class="small primary">Run</button>
+    </div>
+    <div id="scResult"></div>
+  </div>
+</div>
+
 <div class="layout">
   <main>
     <header class="topbar">
@@ -42,12 +64,10 @@
       </div>
     </header>
 
-    <!-- primary action bar: the main flow is always one glance away -->
+    <!-- primary action bar: only the main flow lives here -->
     <div class="actionbar">
       <button id="dispatchBtn" class="primary">▶ Dispatch</button>
       <button id="confirmAllBtn">✅ Confirm all open</button>
-      <button id="toollogBtn">🧾 Tool log</button>
-      <button id="scenarioBtn">📅 Scenario preview</button>
       <span id="status"></span>
     </div>
 
@@ -59,20 +79,6 @@
 
     <!-- ============ DESK TAB ============ -->
     <section id="tab-desk">
-      <div id="scenarioPanel" class="dock" style="display:none">
-        <h3>Scenario preview · production and transport</h3>
-        <div class="row">
-          <input id="scOrder" value="ORD-063" style="width:105px" title="Order ID">
-          <input id="scDate" type="date" title="preview start date">
-          <label class="muted"><input id="scClosed" type="checkbox"> Sundays closed</label>
-          <input id="scDelay" type="number" min="0" max="14" value="0" style="width:64px" title="extra transport days">
-          <input id="scNoise" type="number" min="0" max="50" step="5" value="0" style="width:64px" title="capacity noise %">
-          <input id="scSeed" type="number" value="5105" style="width:76px" title="seed">
-          <button id="scRun" class="small primary">Run</button>
-        </div>
-        <div id="scResult"></div>
-      </div>
-
       <h2>Inbox</h2>
       <div class="row">
         <select id="sampleSel"></select>
@@ -118,6 +124,13 @@
     <div class="dock" id="queueDock"></div>
     <div class="dock" id="objDock"></div>
     <div class="dock" id="worldDock"></div>
+    <div class="dock" id="panelDock">
+      <h3>Panels</h3>
+      <div class="row">
+        <button id="toollogBtn" class="small">🧾 Tool log</button>
+        <button id="scenarioBtn" class="small">📅 Scenario preview</button>
+      </div>
+    </div>
   </aside>
 </div>
 
