@@ -117,22 +117,23 @@ and a monitor has something to ping.
 ## FastAPI web frontend on Render
 
 The alternative web UI (`api/` — static UI + REST wrapper over `desk/`, Streamlit
-parity) deploys as a second free Render web service from `render.yaml`
-(`dispatch-desk-web`, branch `kimi/ui-polish_20261117-0953`; the Streamlit app on
-`main` is untouched). Build `pip install -r api/requirements.txt`, start
-`uvicorn api.main:app --host 0.0.0.0 --port $PORT`. Dashboard
-(Plotly via CDN) and all desk features run without Streamlit installed.
+parity) runs **inside the bot's Render service**: `adapter/run_all.py` starts the
+bot's long polling in a background thread and uvicorn in the foreground on `$PORT`
+(build installs both `adapter/requirements.txt` and `api/requirements.txt`).
+One free service serves both, and the bot's existing UptimeRobot monitor keeps
+the web UI awake as well. The service tracks `main` (the old `bot` branch is
+retired). Dashboard charts use Plotly from a CDN; everything else is self-contained.
 
-- **Secrets** (Render dashboard): `DEEPSEEK_API_KEY`, plus
-  `DISPATCH_DATABASE_URL` / `DISPATCH_DATABASE_PASSWORD` for the shared Supabase
-  ledger — the same values the bot uses. `APP_PASSWORD` is optional here; blank
-  leaves the UI open.
-- **Database and bot sharing.** Sessions start in a sandbox; Records → shared-DB
-  toggle switches the session to the Supabase ledger, so allocations made in
-  Telegram appear in the web UI and vice versa (same tables, same advisory lock).
-- **Sleep.** Same free-tier caveat as the bot: point a second UptimeRobot monitor
-  at `https://<web-service>.onrender.com/` (5-minute interval) to keep it awake,
-  and warm it by hand before a demo.
+- **Secrets** (Render dashboard): `TELEGRAM_BOT_TOKEN`, `DEEPSEEK_API_KEY`,
+  `DISPATCH_DATABASE_URL` / `DISPATCH_DATABASE_PASSWORD` — unchanged from the
+  bot-only setup. `APP_PASSWORD` is optional; blank leaves the UI open.
+- **Database and bot sharing.** Web sessions start in a sandbox; Records →
+  shared-DB toggle switches a session to the Supabase ledger, so allocations
+  made in Telegram appear in the web UI and vice versa (same tables, same
+  advisory lock).
+- **URLs.** `https://<service>.onrender.com/` is the web UI (and Render's
+  health check); the bot answers on Telegram as before — no URL change for
+  either audience.
 
 ## Confirmation behavior
 

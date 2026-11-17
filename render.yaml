@@ -7,46 +7,36 @@
 #   UptimeRobot monitor (5-min interval) at https://<service>.onrender.com/
 # - the bot uses polling, so sleeping only delays replies, never loses them
 #   (Telegram queues undelivered updates)
+# Render blueprint: ONE free web service running both the Telegram bot
+# (long polling, background thread) and the FastAPI web frontend (uvicorn
+# on $PORT) via adapter/run_all.py. The existing UptimeRobot monitor that
+# keeps the bot awake keeps the web UI awake too — no second service, no
+# extra cost, one Supabase ledger, one secret set.
+#
+# Free tier caveats:
+# - the instance sleeps after ~15 min without HTTP traffic -> keep the free
+#   UptimeRobot monitor (5-min interval) on https://<service>.onrender.com/
+# - the bot uses polling, so sleeping only delays replies, never loses them
+#   (Telegram queues undelivered updates)
 services:
   - type: web
     name: dispatch-desk-bot
     runtime: python
     plan: free
-    branch: bot
-    buildCommand: pip install -r adapter/requirements.txt
-    startCommand: python -m adapter.telegram_bot
+    branch: main
+    buildCommand: pip install -r adapter/requirements.txt -r api/requirements.txt
+    startCommand: python -m adapter.run_all
     healthCheckPath: /
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
-      # Required when this bot should share the Streamlit PostgreSQL ledger.
+      # Shared Supabase ledger (bot and web shared mode use the same tables).
       - key: DISPATCH_DATABASE_URL
         sync: false
       - key: DISPATCH_DATABASE_PASSWORD
         sync: false
-
-  # FastAPI web frontend (api/): static UI + REST wrapper over desk/.
-  # Tracks the UI branch; the Streamlit app on main stays untouched.
-  # Records -> "shared DB" toggle reads the same Supabase ledger as the bot,
-  # so allocations made in Telegram appear here and vice versa.
-  - type: web
-    name: dispatch-desk-web
-    runtime: python
-    plan: free
-    branch: main
-    buildCommand: pip install -r api/requirements.txt
-    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /
-    envVars:
-      - key: DEEPSEEK_API_KEY
-        sync: false
-      # Same Supabase ledger as the bot (shared mode).
-      - key: DISPATCH_DATABASE_URL
-        sync: false
-      - key: DISPATCH_DATABASE_PASSWORD
-        sync: false
-      # Optional: set to gate the UI behind a password; leave blank for open.
+      # Optional: set to gate the web UI behind a password; blank = open.
       - key: APP_PASSWORD
         sync: false
