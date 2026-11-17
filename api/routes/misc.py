@@ -39,48 +39,82 @@ class CompareBody(BaseModel):
     limit: int = 3
 
 
-@router.post("/api/compare_models")
-def compare_models(body: CompareBody, request: Request):
-    """Run the first `limit` dev-inbox requests through each model and score
-    behaviour labels against data/labels_inbox.json."""
+COMPARE_FILES = [   # request pool -> its label file (full120 is unlabeled)
+    ("dispatch_requests.txt", "labels_inbox.json"),
+    ("dispatch_requests_full120.txt", None),
+    ("dispatch_requests_heldout.txt", "labels_heldout.json"),
+]
+
+_COMPARE_DESKS = {}   # (provider, model) -> DispatchDesk, reused across calls
+
+
+def _compare_desk(provider, model):
+    key = (provider, model)
+    if key not in _COMPARE_DESKS:
+        _COMPARE_DESKS[key] = DispatchDesk(provider=provider, model=model or None)
+    return _COMPARE_DESKS[key]
+
+
+class ComparePickBody(BaseModel):
+    n: int = 8
+    seed: int | None = None
+
+
+@router.post("/api/compare_pick")
+def compare_pick(body: ComparePickBody):
+    """Random requests across all three inboxes, with labels where they
+    exist — the UI animates the pick, then scores each model per request."""
+    import json as _json
+    import random
     from desk.chat_dump import ENVELOPE
     from desk.config import DATA_DIR
-    import json as _json
+    pool = []
+    for fname, lname in COMPARE_FILES:
+        fpath = DATA_DIR / fname
+        if not fpath.exists():
+            continue
+        labels = {}
+        if lname and (DATA_DIR / lname).exists():
+            raw = _json.loads((DATA_DIR / lname).read_text(encoding="utf-8"))
+            labels = {x["request_id"]: x for x in raw}
+        lines = [l for l in fpath.read_text(encoding="utf-8").splitlines()
+                 if l.strip() and not l.startswith("#")]
+        for i, line in enumerate(lines):
+            m = ENVELOPE.match(line)
+            rid = m.group(1) if m else f"{fname}#{i + 1}"
+            lab = labels.get(rid) or {}
+            pool.append({"rid": rid, "source": fname, "line_no": i + 1,
+                         "text": line, "expected": lab.get("behaviour"),
+                         "note": lab.get("note")})
+    rng = random.Random(body.seed) if body.seed is not None else random.Random()
+    picked = rng.sample(pool, min(max(1, body.n), len(pool)))
+    return {"requests": picked, "pool": len(pool),
+            "files": [f for f, _ in COMPARE_FILES]}
 
-    labels_path = DATA_DIR / "labels_inbox.json"
-    inbox_path = DATA_DIR / "dispatch_requests.txt"
-    raw = _json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else []
-    labels = {x["request_id"]: x for x in raw} if isinstance(raw, list) else raw
-    lines = [l for l in inbox_path.read_text(encoding="utf-8").splitlines()
-             if l.strip() and not l.startswith("#")][:max(1, body.limit)]
 
-    out = []
-    for spec in body.models:
-        provider_, _, model = spec.partition(":")
-        entry = {"model": spec, "provider": provider_, "results": [], "error": None}
-        try:
-            desk = DispatchDesk(provider=provider_, model=model or None)
-            for line in lines:
-                rid = (ENVELOPE.match(line).group(1) if ENVELOPE.match(line) else line[:3])
-                try:
-                    d = desk.handle_message(line, requester="compare")
-                    expected = (labels.get(rid) or {}).get("behaviour")
-                    got = d.behaviour.value
-                    entry["results"].append({
-                        "id": rid, "expected": expected, "got": got,
-                        "ok": expected is None or expected == got})
-                except Exception as exc:
-                    entry["results"].append({"id": rid, "expected": None,
-                                             "got": "error", "ok": False,
-                                             "error": str(exc)[:120]})
-        except Exception as exc:
-            entry["error"] = str(exc)[:200]
-        if entry["results"]:
-            scored = [r for r in entry["results"] if r["expected"]]
-            entry["accuracy"] = (round(sum(r["ok"] for r in scored) / len(scored), 3)
-                                 if scored else None)
-        out.append(entry)
-    return {"models": out, "n": len(lines)}
+class CompareRunBody(BaseModel):
+    model: str                 # "provider:model"
+    text: str
+    rid: str = ""
+
+
+@router.post("/api/compare_run")
+def compare_run(body: CompareRunBody):
+    """Classify ONE request with ONE model (the UI drives the animation
+    and shows progress per request — and stays responsive for dispatch)."""
+    from desk.budget import BudgetExceeded
+    provider_, _, model = body.model.partition(":")
+    try:
+        desk = _compare_desk(provider_, model)
+    except Exception as exc:
+        return {"error": f"Cannot start {body.model}: {exc}"}
+    try:
+        d = desk.handle_message(body.text, requester="compare")
+    except BudgetExceeded:
+        return {"error": "Request limit reached. Please try again later."}
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
+    return {"got": d.behaviour.value, "explanation": d.explanation[:600]}
 
 
 class ShareBody(BaseModel):

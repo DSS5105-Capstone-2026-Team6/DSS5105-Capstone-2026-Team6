@@ -69,6 +69,9 @@ function renderParseResult(r){
       return `<span class="pr-con" style="background:${t}"><b>${name}:</b> ${esc(c.detail || "")}${by}</span>`;
     }).join("") + "</div>";
   }
+  if (r.normalized)
+    html += `<div class="pr-normalized"><div class="k muted">Dispatch will send</div>
+      <div class="v">${esc(r.normalized)}</div></div>`;
   html += `<details style="margin-top:8px"><summary class="muted">Raw JSON</summary>
     <pre>${esc(JSON.stringify(r, null, 2))}</pre></details>
     <div class="row" style="margin-top:8px"><button class="primary" onclick="dispatchParsed()">Dispatch this message</button></div>`;
@@ -83,7 +86,8 @@ async function parseMessage(){
   try {
     const r = await post("/api/parse", {text});
     $("parseResult").innerHTML = renderParseResult(r);
-    window._parsedText = r.error ? null : text;
+    // dispatch the structured request when we have one, else the raw text
+    window._parsedText = r.error ? null : (r.normalized || text);
   } catch(e){
     $("parseResult").innerHTML = `<div class="warn">Parse failed: ${esc(e)}</div>`;
     window._parsedText = null;

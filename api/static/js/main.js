@@ -43,11 +43,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("cmpBtn").onclick = compareModels;
   // non-modal popovers close on any outside click
   document.addEventListener("click", e => {
-    for (const id of ["toollogOverlay","scenarioOverlay","parserOverlay"]){
+    for (const id of ["toollogOverlay","scenarioOverlay","parserOverlay","compareOverlay"]){
       const p = $(id);
       if (p && p.style.display !== "none" && !p.contains(e.target)
           && !e.target.closest("#toollogBtn") && !e.target.closest("#scenarioBtn")
-          && !e.target.closest("#parserBtn"))
+          && !e.target.closest("#parserBtn") && !e.target.closest("#compareDock"))
         p.style.display = "none";
     }
   });

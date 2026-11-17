@@ -107,6 +107,35 @@ legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-ri
 @media (max-width:700px){.pr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pr-cons{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .pr-con{border-radius:10px;padding:4px 10px;font-size:.88em}
+.pr-normalized{margin-top:8px;border:1px solid var(--blue-soft);border-radius:10px;
+  padding:6px 10px;background:#f1f8fe}
+.pr-normalized .k{font-size:.72em;text-transform:uppercase;letter-spacing:.03em}
+.pr-normalized .v{font-weight:600;color:var(--blue-deep)}
+
+/* compare-models animated run */
+.cmp-step{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-weight:600;color:var(--blue-deep)}
+.cmp-step-n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+  border-radius:50%;background:var(--blue-deep);color:#fff;font-size:.72em}
+.cmp-files{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px}
+.cmp-file{padding:3px 10px;border-radius:10px;border:1px solid var(--line);color:var(--muted);
+  font-size:.82em;opacity:0;transform:translateY(4px);transition:all .3s var(--ease)}
+.cmp-file.open{opacity:1;transform:none;background:var(--blue-pale);border-color:var(--blue-soft);color:var(--blue-deep)}
+.cmp-row{border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin:6px 0;background:#fff;
+  transition:border-color .3s,background .3s}
+.cmp-row.starred{border-color:var(--blue-soft);background:#fbfdff}
+.cmp-star{display:inline-block;width:14px;color:#f08c00;margin-right:4px;vertical-align:-2px}
+.cmp-text{font-size:.82em;color:var(--muted);margin:2px 0 4px}
+.cmp-cells{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+.cmp-cell{min-height:22px;display:flex;align-items:center;border:1px dashed var(--line);
+  border-radius:8px;padding:2px 8px;font-size:.85em}
+.cmp-label{margin-top:4px;font-size:.8em}
+.cmp-spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--blue-pale);
+  border-top-color:var(--blue-deep);animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.cmp-summary{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+.cmp-model{margin-bottom:10px}
+.cmp-bar{height:8px;border-radius:4px;background:var(--blue-pale);overflow:hidden;margin-top:4px}
+.cmp-fill{height:100%;background:var(--blue-deep);border-radius:4px;transition:width .8s var(--ease)}
 .overlay{position:fixed;inset:0;background:rgba(28,43,58,.25);z-index:50}
 /* non-modal popovers: they sit next to the rail, never cover the window */
 .popover-panel{position:fixed;top:70px;right:270px;width:400px;max-width:44vw;max-height:72vh;overflow:auto;

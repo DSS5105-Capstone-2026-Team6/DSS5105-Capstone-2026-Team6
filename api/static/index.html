@@ -63,6 +63,15 @@
   <div id="scResult"></div>
 </div>
 
+<!-- Compare-models popover (non-modal: runs alongside dispatch) -->
+<div id="compareOverlay" class="popover-panel wide" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">Compare models</h3>
+    <button class="small" onclick="document.getElementById('compareOverlay').style.display='none'">✕</button>
+  </div>
+  <div id="cmpStage" class="popover-scroll"></div>
+</div>
+
 <div class="layout">
   <!-- ============ LEFT RAIL: chat log + returned batches ============ -->
   <aside class="leftrail">
@@ -165,10 +174,7 @@
       <h3>Compare models</h3>
       <div class="row"><select id="cmpA" style="flex:1"></select></div>
       <div class="row"><select id="cmpB" style="flex:1"></select></div>
-      <div class="row"><select id="cmpN" style="width:70px">
-        <option value="3">3 reqs</option><option value="5">5 reqs</option></select>
-        <button id="cmpBtn" class="small">Run</button></div>
-      <div id="cmpResult" class="muted">Pick two models and compare behaviour scores.</div>
+      <div class="row"><button id="cmpBtn" class="small primary">Compare · 8 random requests</button></div>
     </div>
   </aside>
 </div>
