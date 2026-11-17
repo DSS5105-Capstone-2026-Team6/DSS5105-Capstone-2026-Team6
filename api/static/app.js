@@ -45,8 +45,8 @@ function renderRail(){
       <option value="2026-01-01">January 1st · full replay</option></select>
       <label class="muted"><input type="checkbox" id="stagesSel" onchange="worldSwitch()"> stages</label></div>
     <div class="row"><input id="shockSeed" type="number" value="5105" style="width:80px">
-      <button class="small" onclick="shockOn()">⚡ Trigger</button>
-      <button class="small" onclick="shockOff()">Resolve</button></div>`;
+      <button class="small" onclick="shockOn()">${icon("zap")}Trigger</button>
+      <button class="small" onclick="shockOff()">${icon("check")}Resolve</button></div>`;
 }
 async function setObjective(o){ STATE = await post("/api/rerank", {objective:o}); render(); }
 async function rerankAll(){ setObjective($("#objDock") ? STATE.objective : "hybrid"); }
@@ -105,12 +105,12 @@ function cardHtml(d){
       const now = live(c.workshop_id), add = c.work_days||0;
       const chosenCls = (d.chosen === c.workshop_id && d.recommended_split == null) ? " chosen" : "";
       return `<div class="cand${chosenCls}" onclick="confirmCard('${d.decision_id}','${c.workshop_id}')">
-        <div class="one-line"><b>${esc(c.name)} (${c.workshop_id})</b>${chosenCls?'<span class="rec">⭐ recommended</span>':""}</div>
+        <div class="one-line"><b>${esc(c.name)} (${c.workshop_id})</b>${chosenCls?`<span class="rec">${icon("star")}recommended</span>`:""}</div>
         <div class="qbar-track"><span class="qbar-fill qbar-now" style="width:${(100*now/scale).toFixed(1)}%"></span><span class="qbar-fill qbar-add" style="width:${(100*add/scale).toFixed(1)}%"></span></div>
         <div class="meta">queue ${now.toFixed(1)}d${add?` + ${add.toFixed(1)}d`:""} · finish ${c.estimated_finish} · cost ${c.cost.toFixed(2)} · defect ${c.defect_risk.toFixed(2)}</div></div>`;
     }).join("");
     body += (d.splits||[]).map((sp,i) => {
-      const star = i === d.recommended_split ? ' <span class="rec">⭐ recommended</span>' : "";
+      const star = i === d.recommended_split ? ` <span class="rec">${icon("star")}recommended</span>` : "";
       const parts = sp.parts.map(p => `<div class="split-part"><div class="meta">${p.pieces} pcs · ${esc(p.name)} (${p.workshop_id}) · queue ${live(p.workshop_id).toFixed(1)}d</div></div>`).join("");
       return `<div class="cand" onclick="confirmSplit('${d.decision_id}',${i})">
         <div class="one-line"><b>#${i+1} · ${sp.n_shops} workshops</b>${star}</div>${parts}
@@ -119,16 +119,16 @@ function cardHtml(d){
   }
   const actions = d.already_committed ? "" : `
     <div class="row">
-      <button class="small" onclick="rerank('${d.decision_id}')">🔄 Re-rank</button>
-      <button class="small" onclick="dismiss('${d.decision_id}')">🗑 Dismiss</button>
-      ${d.skipped ? "" : `<button class="small" onclick="skipCard('${d.decision_id}')">⏭ Skip</button>`}
+      <button class="small" onclick="rerank('${d.decision_id}')">${icon("refresh")}Re-rank</button>
+      <button class="small" onclick="dismiss('${d.decision_id}')">${icon("trash")}Dismiss</button>
+      ${d.skipped ? "" : `<button class="small" onclick="skipCard('${d.decision_id}')">${icon("skip")}Skip</button>`}
     </div>`;
   return `<div class="card ${d.already_committed||d.skipped?"done":""}" id="card-${d.decision_id}">
     <span class="chip ${d.behaviour}" style="background:${color}">${label}</span>
     ${d.order_id ? ` <b>${esc(d.order_id)}</b>` : ""}
     ${d.skipped ? ' <span class="muted">(skipped)</span>' : ""}
     <div class="muted" style="margin:4px 0">${esc(d.explanation)}</div>
-    ${(d.warnings||[]).map(w=>`<div class="warn">⚠ ${esc(w)}</div>`).join("")}
+    ${(d.warnings||[]).map(w=>`<div class="warn">${icon("alert")}${esc(w)}</div>`).join("")}
     ${body}${actions}
     <details><summary>Other option (tell me)</summary>
       <div class="chat-box" id="chat-${d.decision_id}"></div>
@@ -139,6 +139,21 @@ function cardHtml(d){
       <div style="margin-top:4px">${(d.tool_log||[]).map(t=>`<code>${esc(t.tool)}</code>`).join(" ")}</div></details>
   </div>`;
 }
+
+/* ---------------- icon system (no emoji; configurable) ---------------- */
+const ICONS = {
+  play: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>',
+  check: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="4 12.5 9.5 18 20 6"/></svg>',
+  list: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.4" fill="currentColor"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><circle cx="4" cy="18" r="1.4" fill="currentColor"/></svg>',
+  calendar: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  refresh: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 12 21 17 16 17"/><polyline points="3 12 3 7 8 7"/><path d="M21 7a9 9 0 0 0-15-4L3 6"/><path d="M3 17a9 9 0 0 0 15 4l3-3"/></svg>',
+  trash: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
+  skip: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"/></svg>',
+  zap: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 4 14 11 14 10 22 20 9 12 9 13 2"/></svg>',
+  star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3"/></svg>',
+  alert: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 L22 20 H2 Z"/><line x1="12" y1="10" x2="12" y2="14.5"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/></svg>',
+};
+function icon(name){ return `<span class="icon">${ICONS[name]||""}</span>`; }
 
 /* ---------------- intake & dispatch ---------------- */
 async function loadSamples(){
@@ -157,11 +172,23 @@ async function doDispatch(){
   const text = $("inbox").value.trim();
   if (!text){ status("Paste a message first."); return; }
   $("dispatchBtn").disabled = true;
-  status("Dispatching… (one LLM round-trip per line)");
+  // per-line dispatch: real per-message progress instead of one opaque wait
+  const {lines} = await post("/api/split", {text});
+  const total = Math.max(1, lines.length);
+  $("dispatchProgress").style.display = "";
   try {
-    STATE = await post("/api/dispatch", {text, new_session:false});
-    render(); status(`${STATE.decisions.length} request(s) in the worklist.`);
-  } catch(e){ status("Dispatch failed: " + e); }
+    for (let i = 0; i < lines.length; i++){
+      $("progressLabel").textContent = `Dispatching ${i+1}/${total} · ${lines[i].slice(0,48)}…`;
+      $("progressFill").style.width = `${(100*i/total).toFixed(0)}%`;
+      STATE = await post("/api/dispatch", {text: lines[i]});
+      render();
+    }
+    $("progressFill").style.width = "100%";
+    $("progressLabel").textContent = `Done — ${total} request(s) dispatched.`;
+  } catch(e){
+    $("progressLabel").textContent = "Dispatch failed: " + e;
+  }
+  setTimeout(() => { $("dispatchProgress").style.display = "none"; }, 2500);
   $("dispatchBtn").disabled = false;
 }
 async function parseMessage(){
@@ -270,10 +297,17 @@ function locateCard(oid){
   if (!oid) return;
   const d = STATE.decisions.find(x => x.order_id === oid);
   if (!d) return;
+  const wl = $("worklist");
+  wl.scrollTop = 0;               // reset the inner scroll first, then locate
+  window.scrollTo({top: 0, behavior: "instant"});
   const el = $("card-"+d.decision_id);
-  if (el){ el.scrollIntoView({behavior:"smooth", block:"center"});
-    el.style.boxShadow = "0 0 0 2px var(--blue)";
-    setTimeout(() => el.style.boxShadow = "", 1600); }
+  if (el){
+    setTimeout(() => {
+      el.scrollIntoView({behavior:"smooth", block:"center"});
+      el.style.boxShadow = "0 0 0 2px var(--blue)";
+      setTimeout(() => el.style.boxShadow = "", 1600);
+    }, 60);
+  }
 }
 async function recordBatch(){
   const body = {workshop_id: $("rbWorkshop").value,
@@ -286,13 +320,23 @@ async function recordBatch(){
   $("rbNote").textContent = r.error ? r.error : `Recorded ✓ ${r.batch_note||""}`;
 }
 
-/* ---------------- dashboard (server-rendered matplotlib charts) ---------------- */
+/* ---------------- dashboard (tiles + grid of matplotlib charts) ---------------- */
+const TILE_DEFS = [
+  ["requests", "Requests"], ["committed", "Committed"], ["pending", "Pending"],
+  ["success_rate", "Success %"], ["failure_rate", "Failure %"],
+  ["avg_ms", "Avg ms"], ["interactions", "Interactions"],
+  ["llm_rounds_today", "LLM today"], ["backlog_days", "Backlog (d)"],
+  ["provider", "Provider"], ["model", "Model"],
+];
 async function renderDashboard(){
+  const a = await api("/api/analytics");
+  $("statTiles").innerHTML = TILE_DEFS.map(([k,label]) =>
+    `<div class="tile"><div class="v">${esc(a.tiles[k] ?? "—")}</div><div class="k">${label}</div></div>`).join("");
   const t = Date.now();   // cache-bust so charts reflect commits immediately
-  $("chartTimeline").src = `/api/chart/timeline?t=${t}`;
-  $("chartLens").src = `/api/chart/lens?t=${t}`;
-  $("chartCapacity").src = `/api/chart/capacity?t=${t}`;
-  $("chartMap").src = `/api/chart/map?t=${t}`;
+  for (const [id,kind] of [["chartTimeline","timeline"],["chartDist","dist"],
+       ["chartLens","lens"],["chartErrors","errors"],
+       ["chartCapacity","capacity"],["chartUsage","usage"],["chartMap","map"]])
+    $(id).src = `/api/chart/${kind}?t=${t}`;
 }
 
 /* ---------------- provider / model ---------------- */

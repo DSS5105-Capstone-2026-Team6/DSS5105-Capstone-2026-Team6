@@ -94,11 +94,41 @@ legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-ri
   box-shadow:var(--shadow-md);z-index:40;animation:fadeUp .25s var(--ease) both}
 .popover-panel.wide{width:560px}
 @media (max-width:900px){.popover-panel{right:12px;left:12px;width:auto}}
-.chatlog{max-height:300px;overflow:auto;font-size:.82em}
+.chatlog{font-size:.82em}
 .chatlog .chat-msg{cursor:pointer;border-radius:6px;padding:2px 4px}
 .chatlog .chat-msg:hover{background:#f1f8fe}
 .chatlog .chat-msg.flash{animation:flash 1.2s ease-in-out 2}
 @keyframes flash{0%,100%{background:transparent}50%{background:var(--blue-pale)}}
 img.chart{width:100%;border:1px solid var(--line);border-radius:12px;margin:6px 0 14px;box-shadow:var(--shadow-sm)}
+
+/* ---------- dashboard grid ---------- */
+.stat-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px}
+.tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow-sm)}
+.tile .v{font-size:1.2rem;font-weight:700;color:var(--blue-deep)}
+.tile .k{color:var(--muted);font-size:.72em;text-transform:uppercase;letter-spacing:.04em}
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.chart-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:var(--shadow-sm)}
+.chart-card h3{margin:0 0 4px}
+.chart-card img.chart{border:none;box-shadow:none;margin:0}
+
+/* ---------- worklist inner scroll ---------- */
+.worklist-scroll{max-height:68vh;overflow-y:auto;padding-right:6px}
+.worklist-scroll::-webkit-scrollbar{width:8px}
+.worklist-scroll::-webkit-scrollbar-thumb{background:var(--blue-pale);border-radius:4px}
+.worklist-scroll::-webkit-scrollbar-thumb:hover{background:var(--blue-soft)}
+
+/* ---------- dispatch progress ---------- */
+.progress-wrap{margin:10px 0}
+.progress-label{font-size:.82em;color:var(--blue-deep);margin-bottom:3px;font-weight:600}
+.progress-track{height:6px;border-radius:4px;background:var(--blue-pale);overflow:hidden}
+.progress-fill{height:100%;background:var(--blue-deep);border-radius:4px;transition:width .35s var(--ease)}
+
+/* ---------- icon system (replaces emoji) ---------- */
+.icon{display:inline-block;vertical-align:-2px;margin-right:4px}
+.icon svg{display:block}
+
+/* ---------- full-height chat dock ---------- */
+#chatDock{display:flex;flex-direction:column;height:calc(100vh - 60px);position:sticky;top:16px}
+#chatLog{flex:1;overflow-y:auto;min-height:0}
 .filebtn{border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer;font-size:.8rem}
 .filebtn:hover{border-color:var(--blue)}

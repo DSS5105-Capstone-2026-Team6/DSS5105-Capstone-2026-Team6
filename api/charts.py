@@ -77,6 +77,49 @@ def lens(candidates, chosen_id, due_slack=None):
     return _png(fig, plt)
 
 
+def distribution(dist):
+    """Behaviour distribution as a horizontal bar chart."""
+    fig, ax, plt = _fig(7.2, 2.4)
+    if not dist:
+        ax.text(0.5, 0.5, "No decisions yet", ha="center", va="center",
+                transform=ax.transAxes, color=MUTED)
+        ax.set_xticks([]); ax.set_yticks([])
+        return _png(fig, plt)
+    colors = {"allocate": "#8ce99a", "refuse": "#ffa8a8", "impossible": "#ffd8a8",
+              "ask": BLUE_PALE, "answer": "#dee2e6", "no_data": "#dee2e6"}
+    labels = list(dist.keys())
+    vals = [dist[k] for k in labels]
+    ax.barh(labels, vals, color=[colors.get(k, BLUE_SOFT) for k in labels])
+    ax.set_xlabel("requests")
+    return _png(fig, plt)
+
+
+def error_types(errors):
+    fig, ax, plt = _fig(7.2, 2.4)
+    labels = list(errors.keys())
+    vals = [errors[k] for k in labels]
+    ax.bar(labels, vals, color=["#ffa8a8", "#ffd8a8", "#dee2e6", BLUE_PALE, "#e03131"][:len(labels)])
+    ax.set_ylabel("count")
+    ax.set_xticklabels(labels, fontsize=8, rotation=15)
+    return _png(fig, plt)
+
+
+def usage_trend(rows):
+    fig, ax, plt = _fig(7.2, 2.4)
+    if not rows:
+        ax.text(0.5, 0.5, "No API usage recorded", ha="center", va="center",
+                transform=ax.transAxes, color=MUTED)
+        ax.set_xticks([]); ax.set_yticks([])
+        return _png(fig, plt)
+    days = [r["day"][5:] for r in rows]
+    vals = [r["rounds"] for r in rows]
+    ax.plot(days, vals, marker="o", color=BLUE_DEEP, lw=2)
+    ax.fill_between(days, vals, color=BLUE_PALE, alpha=0.5)
+    ax.set_ylabel("LLM rounds")
+    ax.set_xticklabels(days, fontsize=8, rotation=20)
+    return _png(fig, plt)
+
+
 def objective_map(bubbles):
     fig, ax, plt = _fig(7.2, 3.0)
     for b in bubbles:

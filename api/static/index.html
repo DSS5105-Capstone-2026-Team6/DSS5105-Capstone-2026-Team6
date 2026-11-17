@@ -79,8 +79,8 @@
 
     <!-- primary action bar: only the main flow lives here -->
     <div class="actionbar">
-      <button id="dispatchBtn" class="primary">▶ Dispatch</button>
-      <button id="confirmAllBtn">✅ Confirm all open</button>
+      <button id="dispatchBtn" class="primary"><span class="icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg></span>Dispatch</button>
+      <button id="confirmAllBtn"><span class="icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="4 12.5 9.5 18 20 6"/></svg></span>Confirm all open</button>
       <span id="status"></span>
     </div>
 
@@ -110,15 +110,25 @@
 
       <div id="kpis" class="kpis"></div>
       <div id="caseFilter" class="row"></div>
-      <div id="worklist"></div>
+      <div id="dispatchProgress" class="progress-wrap" style="display:none">
+        <div class="progress-label" id="progressLabel"></div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div id="worklist" class="worklist-scroll"></div>
     </section>
 
     <!-- ============ DASHBOARD TAB ============ -->
     <section id="tab-dashboard" style="display:none">
-      <h3>Queue timeline</h3><img id="chartTimeline" class="chart" alt="">
-      <h3>Allocator lens</h3><img id="chartLens" class="chart" alt="">
-      <h3>Capacity: profile vs learned</h3><img id="chartCapacity" class="chart" alt="">
-      <h3>Objective map</h3><img id="chartMap" class="chart" alt="">
+      <div id="statTiles" class="stat-tiles"></div>
+      <div class="chart-grid">
+        <div class="chart-card"><h3>Queue timeline</h3><img id="chartTimeline" class="chart" alt=""></div>
+        <div class="chart-card"><h3>Behaviour distribution</h3><img id="chartDist" class="chart" alt=""></div>
+        <div class="chart-card"><h3>Allocator lens</h3><img id="chartLens" class="chart" alt=""></div>
+        <div class="chart-card"><h3>Error types</h3><img id="chartErrors" class="chart" alt=""></div>
+        <div class="chart-card"><h3>Capacity: profile vs learned</h3><img id="chartCapacity" class="chart" alt=""></div>
+        <div class="chart-card"><h3>LLM usage trend</h3><img id="chartUsage" class="chart" alt=""></div>
+        <div class="chart-card"><h3>Objective map</h3><img id="chartMap" class="chart" alt=""></div>
+      </div>
     </section>
 
     <!-- ============ RECORDS TAB ============ -->
@@ -140,8 +150,8 @@
     <div class="dock" id="panelDock">
       <h3>Panels</h3>
       <div class="row">
-        <button id="toollogBtn" class="small">🧾 Tool log</button>
-        <button id="scenarioBtn" class="small">📅 Scenario preview</button>
+        <button id="toollogBtn" class="small">Tool log</button>
+        <button id="scenarioBtn" class="small">Scenario preview</button>
       </div>
     </div>
   </aside>

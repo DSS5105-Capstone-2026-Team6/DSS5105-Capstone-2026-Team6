@@ -10,6 +10,7 @@ Run:  uvicorn api.main:app --port 8000
 import os
 import secrets
 import sys
+import threading
 import time
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -62,6 +63,10 @@ def _session(request: Request):
             "chat_log": [],
             "provider": "deepseek",
             "model": None,
+            "lock": threading.Lock(),   # agent history is not thread-safe;
+                                        # parse+dispatch must not interleave
+            "timings": [],              # [{kind, ms}] per desk interaction
+            "api_errors": 0,
         }
     return _sessions[sid], sid
 
@@ -117,6 +122,7 @@ def _state(s, sid):
                           "models": v["models"]} for k, v in PROVIDERS.items()},
         "provider": s["provider"],
         "model": s["model"],
+        "api_errors": s["api_errors"],
     }
 
 
@@ -184,14 +190,29 @@ class ParseBody(BaseModel):
     text: str
 
 
+class SplitBody(BaseModel):
+    text: str
+
+
+@app.post("/api/split")
+def split(body: SplitBody):
+    """Split an inbox dump into individual messages (for per-line progress)."""
+    return {"lines": split_chat_dump(body.text.strip())}
+
+
 @app.post("/api/parse")
 def parse(body: ParseBody, request: Request):
     s, _ = _session(request)
     from desk.llm_parser import parse_message
-    try:
-        return parse_message(body.text, s["desk"].agent)
-    except Exception as exc:
-        return {"error": f"Parse failed: {exc}"}
+    t0 = time.perf_counter()
+    with s["lock"]:
+        try:
+            out = parse_message(body.text, s["desk"].agent)
+        except Exception as exc:
+            s["api_errors"] += 1
+            return {"error": f"Parse failed: {exc}"}
+    s["timings"].append({"kind": "parse", "ms": round((time.perf_counter() - t0) * 1000)})
+    return out
 
 
 class DispatchBody(BaseModel):
@@ -208,18 +229,22 @@ def dispatch(body: DispatchBody, request: Request):
     from desk.contracts import Behaviour, Decision
     out = []
     for msg in split_chat_dump(body.text.strip()):
-        desk.agent.new_conversation()
-        try:
-            d = desk.handle_message(msg, requester="web")
-        except BudgetExceeded:
-            d = Decision(request_id="", behaviour=Behaviour.ASK,
-                         explanation="Request limit reached. Please try again later.")
-        except Exception:
-            d = Decision(request_id="", behaviour=Behaviour.ASK,
-                         explanation="Request failed. Please retry later.")
-        s["decisions"][d.decision_id] = {"decision": d, "msg": msg, "skipped": False}
-        out.append(d)
-        _log(s, "dispatcher", msg, d.explanation)
+        t0 = time.perf_counter()
+        with s["lock"]:
+            try:
+                d = desk.handle_message(msg, requester="web")
+            except BudgetExceeded:
+                s["api_errors"] += 1
+                d = Decision(request_id="", behaviour=Behaviour.ASK,
+                             explanation="Request limit reached. Please try again later.")
+            except Exception:
+                s["api_errors"] += 1
+                d = Decision(request_id="", behaviour=Behaviour.ASK,
+                             explanation="Request failed. Please retry later.")
+            s["decisions"][d.decision_id] = {"decision": d, "msg": msg, "skipped": False}
+            out.append(d)
+            _log(s, "dispatcher", msg, d.explanation)
+        s["timings"].append({"kind": "dispatch", "ms": round((time.perf_counter() - t0) * 1000)})
     _refresh_stale(s)
     return _state(s, sid)
 
@@ -238,13 +263,18 @@ def followup(body: FollowupBody, request: Request):
     item = s["decisions"].get(body.decision_id)
     if item is None:
         return {"error": "Unknown decision."}
+    t0 = time.perf_counter()
     try:
-        updated, record, reply = desk.follow_up(body.text, item["decision"],
-                                                requester="web")
+        with s["lock"]:
+            updated, record, reply = desk.follow_up(body.text, item["decision"],
+                                                    requester="web")
     except BudgetExceeded:
         return {"error": "Request limit reached. Please try again later."}
     except Exception:
         return {"error": "Request failed. Please retry later."}
+    finally:
+        s["timings"].append({"kind": "followup",
+                             "ms": round((time.perf_counter() - t0) * 1000)})
     if record is not None:
         del s["decisions"][body.decision_id]
     elif updated is not None:
@@ -496,6 +526,32 @@ def chart(kind: str, request: Request):
         due = date.fromisoformat(desk.orders.by_id(open_orders[0])["due_date"])
         png = charts.lens(res.get("candidates", []), res.get("chosen"),
                           (due - chat_today()).days)
+    elif kind == "dist":
+        dec = [_public(x["decision"], x["skipped"], ()) for x in s["decisions"].values()]
+        dist = {}
+        for d in dec:
+            dist[d["behaviour"]] = dist.get(d["behaviour"], 0) + 1
+        png = charts.distribution(dist)
+    elif kind == "errors":
+        dec = [_public(x["decision"], x["skipped"], ()) for x in s["decisions"].values()]
+        dist = {}
+        for d in dec:
+            dist[d["behaviour"]] = dist.get(d["behaviour"], 0) + 1
+        errors = {b: dist.get(b, 0) for b in ("refuse", "impossible", "no_data", "ask")}
+        errors["api_error"] = s["api_errors"]
+        png = charts.error_types(errors)
+    elif kind == "usage":
+        from collections import Counter
+        from datetime import datetime, timezone
+        usage = Counter()
+        try:
+            with s["desk"].agent.budget.database.connect() as db:
+                for _, at in db.execute("SELECT scope, at FROM api_usage"):
+                    usage[datetime.fromtimestamp(at, timezone.utc).date().isoformat()] += 1
+        except Exception:
+            pass
+        png = charts.usage_trend([{"day": d, "rounds": n}
+                                  for d, n in sorted(usage.items())])
     elif kind == "map":
         png = charts.objective_map([
             {"workshop": w.name, "cost": w.cost, "defect": w.defect_rate,
@@ -504,6 +560,60 @@ def chart(kind: str, request: Request):
     else:
         return JSONResponse({"error": "unknown chart"}, status_code=404)
     return Response(content=png, media_type="image/png")
+
+
+@app.get("/api/analytics")
+def analytics(request: Request):
+    """Multi-dimensional dashboard metrics: distribution, rates, latency,
+    throughput, error types, model usage, and queue backlog."""
+    s, _ = _session(request)
+    desk = s["desk"]
+    decisions = [_public(x["decision"], x["skipped"], _committed_orders(s))
+                 for x in s["decisions"].values()]
+    dist = {}
+    for d in decisions:
+        dist[d["behaviour"]] = dist.get(d["behaviour"], 0) + 1
+    records = desk.audit.load_all()
+    committed_ids = {r.order_id for r in records}
+    done = sum(1 for d in decisions if d["already_committed"]) or len(committed_ids)
+    failed = sum(1 for d in decisions if d["behaviour"] in ("refuse", "no_data"))
+    total = max(1, len(decisions))
+    timings = s["timings"]
+    avg_ms = round(sum(t["ms"] for t in timings) / len(timings), 1) if timings else 0
+    queues = desk.state.queues
+    from collections import Counter
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
+    usage = Counter()
+    try:
+        with desk.agent.budget.database.connect() as db:
+            for scope, at in db.execute("SELECT scope, at FROM api_usage"):
+                day = datetime.fromtimestamp(at, timezone.utc).date().isoformat()
+                usage[day] += 1
+    except Exception:
+        pass
+    errors = {b: dist.get(b, 0) for b in ("refuse", "impossible", "no_data", "ask")}
+    errors["api_error"] = s["api_errors"]
+    return {
+        "tiles": {
+            "requests": len(decisions),
+            "committed": len(committed_ids),
+            "pending": sum(1 for d in decisions
+                           if not d["skipped"] and not d["already_committed"]),
+            "success_rate": round(100 * done / total, 1),
+            "failure_rate": round(100 * failed / total, 1),
+            "avg_ms": avg_ms,
+            "interactions": len(timings),
+            "llm_rounds_today": usage.get(today, 0),
+            "backlog_days": round(sum(queues.values()), 1),
+            "provider": s["provider"],
+            "model": s["model"] or PROVIDERS[s["provider"]]["models"][0][0],
+        },
+        "dist": dist,
+        "errors": errors,
+        "usage": [{"day": d, "rounds": n} for d, n in sorted(usage.items())],
+        "commits": len(records),
+    }
 
 
 class BatchBody(BaseModel):
