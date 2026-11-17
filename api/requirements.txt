@@ -1,0 +1,7 @@
+# FastAPI deployment of the desk (static UI + REST wrapper over desk/).
+# Bot-only deps stay in adapter/requirements.txt; web deploys install this set.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+openai>=1.0
+python-dotenv>=1.0
+psycopg[binary,pool]>=3.2
