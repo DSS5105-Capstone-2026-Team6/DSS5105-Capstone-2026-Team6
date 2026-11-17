@@ -162,6 +162,18 @@ def _current_as_of():
     return CHAT_AS_OF
 
 
+def _refresh_stale_async(s):
+    """Re-rank stale proposals in the background so recommendations (the
+    star) catch up after a commit without blocking the commit response."""
+    def run():
+        try:
+            with s["lock"]:
+                _refresh_stale(s)
+        except Exception:
+            pass
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _refresh_stale(s):
     """One-click confirm: re-rank open proposals whose version went stale."""
     desk = s["desk"]
@@ -294,7 +306,11 @@ def followup(body: FollowupBody, request: Request):
     desk = s["desk"]
     item = s["decisions"].get(body.decision_id)
     if item is None:
-        return {"error": "Unknown decision."}
+        st = _state(s, sid)
+        st["reply"] = ("This request is already closed (committed or "
+                       "dismissed) — there is nothing left to discuss.")
+        st["notice"] = st["reply"]
+        return st
     t0 = time.perf_counter()
     try:
         with s["lock"]:
@@ -373,10 +389,7 @@ def confirm(body: ConfirmBody, request: Request):
              f"Committed {result.record_id} — {result.order_id} → {result.workshop_id}.")
     else:
         return {"error": err}
-    # NO bulk re-rank here: after a commit every other proposal is stale,
-    # and re-ranking them all (rank + split_options + perf reads per card)
-    # is what froze the UI at "Committing". The clicked card refreshes
-    # itself via the one-click retry; others refresh on demand.
+    _refresh_stale_async(s)   # stars catch up in the background, no freeze
     return _state(s, sid)
 
 
@@ -390,18 +403,30 @@ def confirm_split(body: SplitBody, request: Request):
     s, sid = _session(request)
     item = s["decisions"].get(body.decision_id)
     if item is None:
-        return {"error": "Unknown decision."}
+        st = _state(s, sid)
+        st["reply"] = ("This request is already closed (committed or "
+                       "dismissed) — there is nothing left to discuss.")
+        st["notice"] = st["reply"]
+        return st
+    decision = item["decision"]
     try:
-        records = s["desk"].confirm_split(item["decision"], body.index,
+        records = s["desk"].confirm_split(decision, body.index,
                                           committed_by="web")
     except ProposalChanged as exc:
+        # stale after another commit: retry once with the refreshed proposal
+        # (same one-click semantics as _commit)
         item["decision"] = exc.decision
+        try:
+            records = s["desk"].confirm_split(exc.decision, body.index,
+                                              committed_by="web")
+        except (ProposalChanged, ValueError) as exc2:
+            return {"error": str(exc2)}
     except ValueError as exc:
         return {"error": str(exc)}
-    else:
-        del s["decisions"][body.decision_id]
-        _log(s, "dispatcher", f"(split #{body.index + 1})",
-             f"Committed {len(records)} parts.")
+    del s["decisions"][body.decision_id]
+    _log(s, "dispatcher", f"(split #{body.index + 1})",
+         f"Committed {len(records)} parts.")
+    _refresh_stale_async(s)
     return _state(s, sid)
 
 
