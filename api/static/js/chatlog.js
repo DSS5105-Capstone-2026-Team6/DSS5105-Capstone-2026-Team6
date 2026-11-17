@@ -62,37 +62,3 @@ async function recordBatch(){
   $("rbNote").textContent = r.error ? r.error : `Recorded ✓ ${r.batch_note||""}`;
 }
 
-/* smooth CSS zoom for charts: scale the image (GPU), pan via the viewport
-   scroll — no re-render, no jank, no state drift */
-function makeChartZoom(){
-  for (const vp of document.querySelectorAll(".chart-viewport")){
-    if (vp.__zoom) continue;
-    vp.__zoom = true;
-    const img = vp.querySelector("img");
-    let scale = 1;
-    const apply = () => { img.style.transform = `scale(${scale})`; };
-    vp.addEventListener("wheel", e => {
-      e.preventDefault();
-      const f = e.deltaY < 0 ? 1.12 : 1/1.12;
-      scale = Math.min(6, Math.max(1, scale * f));
-      if (scale === 1){ img.style.transform = ""; vp.scrollTo(0,0); return; }
-      // zoom towards the cursor: keep the hovered point stable
-      const r = vp.getBoundingClientRect();
-      const px = (e.clientX - r.left + vp.scrollLeft) / (r.width * (scale/f));
-      const py = (e.clientY - r.top + vp.scrollTop) / (r.height * (scale/f));
-      apply();
-      vp.scrollLeft = px * r.width * scale - (e.clientX - r.left);
-      vp.scrollTop  = py * r.height * scale - (e.clientY - r.top);
-    }, {passive:false});
-    let drag = null;
-    vp.addEventListener("mousedown", e => { drag = {x:e.clientX, y:e.clientY, l:vp.scrollLeft, t:vp.scrollTop}; e.preventDefault(); });
-    window.addEventListener("mousemove", e => {
-      if (!drag) return;
-      vp.scrollLeft = drag.l - (e.clientX - drag.x);
-      vp.scrollTop  = drag.t - (e.clientY - drag.y);
-    });
-    window.addEventListener("mouseup", () => drag = null);
-    vp.addEventListener("dblclick", () => { scale = 1; img.style.transform = ""; vp.scrollTo({left:0, top:0, behavior:"smooth"}); });
-  }
-}
-
