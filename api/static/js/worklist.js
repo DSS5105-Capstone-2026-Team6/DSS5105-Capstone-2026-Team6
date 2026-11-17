@@ -74,9 +74,11 @@ function cardHtml(d){
         <div class="meta">finish ${sp.earliest_finish} (${sp.meets_due?"on time":sp.days_late+"d late"}) · cost ${sp.cost.toFixed(2)} · defect ${sp.defect_risk.toFixed(2)}</div></div>`;
     }).join("");
   }
-  const actions = d.already_committed ? "" : `
+  // skip/dismiss stay available even on already-committed cards (they close
+  // the request; only committing is blocked); re-rank needs live candidates
+  const actions = `
     <div class="row">
-      <button class="small" onclick="rerank('${d.decision_id}')">${icon("refresh")}Re-rank</button>
+      ${!d.already_committed && d.candidates.length ? `<button class="small" onclick="rerank('${d.decision_id}')">${icon("refresh")}Re-rank</button>` : ""}
       <button class="small" onclick="dismiss('${d.decision_id}')">${icon("trash")}Dismiss</button>
       ${d.skipped ? "" : `<button class="small" onclick="skipCard('${d.decision_id}')">${icon("skip")}Skip</button>`}
     </div>`;

@@ -309,15 +309,22 @@ def followup(body: FollowupBody, request: Request):
                              "ms": round((time.perf_counter() - t0) * 1000)})
     thread = s["item_chats"].setdefault(body.decision_id, [])
     thread.append({"who": "you", "text": body.text})
+    # every path that returns a reply must record it — the question/cancel
+    # branches (updated=None, record=None) used to drop the desk's answer
+    if reply:
+        thread.append({"who": "desk", "text": reply})
     if record is not None:
-        thread.append({"who": "desk", "text": reply or ""})
         del s["decisions"][body.decision_id]
     elif updated is not None:
-        thread.append({"who": "desk", "text": reply or ""})
+        # follow_up may return a NEW decision object with a NEW id: move the
+        # thread BEFORE swapping (checking "is" after assignment always fails)
+        if updated.decision_id != body.decision_id:
+            s["item_chats"][updated.decision_id] = \
+                s["item_chats"].pop(body.decision_id, thread)
+            s["decisions"][updated.decision_id] = \
+                s["decisions"].pop(body.decision_id)
+            item = s["decisions"][updated.decision_id]
         item["decision"] = updated
-        # a replaced decision object gets a new id; carry the thread over
-        if updated is not item["decision"] and updated.decision_id != body.decision_id:
-            s["item_chats"][updated.decision_id] = s["item_chats"].pop(body.decision_id, thread)
     _log(s, "dispatcher", body.text, reply or "", decision_id=body.decision_id)
     st = _state(s, sid)
     st["reply"] = reply
