@@ -34,20 +34,4 @@ async function doDispatch(){
   setTimeout(() => { $("dispatchProgress").style.display = "none"; }, 2500);
   $("dispatchBtn").disabled = false;
 }
-async function parseMessage(){
-  const text = $("parserBox").value.trim();
-  if (!text){ status("Type a message to parse."); return; }
-  status("Parsing…");
-  const r = await post("/api/parse", {text});
-  $("parseResult").innerHTML = r.error ? `<div class="warn">${esc(r.error)}</div>`
-    : `<pre>${esc(JSON.stringify(r, null, 2))}</pre>
-       <button class="primary" onclick="dispatchParsed()">Dispatch this message</button>`;
-  window._parsedText = r.error ? null : text;
-  status("");
-}
-async function dispatchParsed(){
-  if (!window._parsedText) return;
-  $("inbox").value = window._parsedText;
-  switchTab("desk"); doDispatch();
-}
 

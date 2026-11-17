@@ -27,7 +27,19 @@
     <button class="small" onclick="document.getElementById('toollogOverlay').style.display='none'">✕</button>
   </div>
   <div class="muted">Per order: behaviour chip + the tool calls the agent made</div>
-  <div id="toollogBody"></div>
+  <div id="toollogBody" class="popover-scroll"></div>
+</div>
+
+<!-- LLM parser popover (non-modal: runs alongside dispatch) -->
+<div id="parserOverlay" class="popover-panel wide" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <h3 style="margin:0">LLM parser</h3>
+    <button class="small" onclick="document.getElementById('parserOverlay').style.display='none'">✕</button>
+  </div>
+  <div class="muted">Parse one freeform message into structured orders &amp; constraints, checked against the register</div>
+  <textarea id="parserBox" placeholder="Boss: ORD-045 — 150 vests for Cotton Club, due Apr 09. It's urgent." style="min-height:70px;margin-top:8px"></textarea>
+  <div class="row"><button id="parseBtn" class="small primary">Parse</button></div>
+  <div id="parseResult" class="popover-scroll"></div>
 </div>
 
 <!-- Scenario popover (non-modal) -->
@@ -72,6 +84,7 @@
     <header class="topbar">
       <h1><span class="dot"></span> Dispatch Desk</h1>
       <div class="topbar-right">
+        <button id="parserBtn" class="small" title="Parse one freeform message first">LLM parser</button>
         <select id="providerSel" title="Provider"></select>
         <select id="modelSel" title="Model"></select>
       </div>
@@ -100,13 +113,6 @@
         <button class="small" onclick="document.getElementById('inbox').value=''">Clear</button>
       </div>
       <textarea id="inbox" placeholder="Ravi: ORD-063 — 100 cardigans, make Apr 29."></textarea>
-
-      <details class="parser-box">
-        <summary>LLM parser — parse one freeform message first</summary>
-        <textarea id="parserBox" placeholder="Boss: ORD-045 — 150 vests for Cotton Club, due Apr 09. It's urgent." style="min-height:70px;margin-top:8px"></textarea>
-        <div class="row"><button id="parseBtn" class="small">Parse</button></div>
-        <div id="parseResult"></div>
-      </details>
 
       <div id="kpis" class="kpis"></div>
       <div id="caseFilter" class="row"></div>
@@ -179,6 +185,7 @@
 <script src="/static/js/dashboard.js"></script>
 <script src="/static/js/provider.js"></script>
 <script src="/static/js/toollog.js"></script>
+<script src="/static/js/parser.js"></script>
 <script src="/static/js/compare.js"></script>
 <script src="/static/js/main.js"></script>
 </body>

@@ -82,8 +82,24 @@ def _session(request: Request):
             "shock_target": None,
             "stages": False,
             "item_chats": {},   # decision_id -> [{who, text}] per-card chat
+            "tool_history": [],  # archived tool logs of committed/dismissed cards
+            "metrics": {"dispatched": 0, "committed": set(), "failed": 0},
         }
-    return _sessions[sid], sid
+    s = _sessions[sid]
+    s.setdefault("tool_history", [])
+    s.setdefault("metrics", {"dispatched": 0, "committed": set(), "failed": 0})
+    return s, sid
+
+
+def _archive_tool_log(s, d):
+    """Keep a card's tool log reachable after it leaves the open list
+    (commit / split / dismiss) — the overlay reads this history."""
+    s["tool_history"].append({
+        "order_id": d.parsed.order_id,
+        "behaviour": d.behaviour.value,
+        "tool_log": [{"tool": t.get("tool"), "arguments": t.get("arguments")}
+                     for t in d.tool_log],
+    })
 
 
 def _public(d, skipped=False, committed_orders=()):
@@ -144,6 +160,7 @@ def _state(s, sid):
         "provider": s["provider"],
         "model": s["model"],
         "api_errors": s["api_errors"],
+        "tool_history": s["tool_history"],
         "shock_target": s["shock_target"],
         "shock_seed": s.get("shock_seed", 5105),
         "stages": s["stages"],
@@ -263,6 +280,11 @@ def parse(body: ParseBody, request: Request):
         except Exception as exc:
             s["api_errors"] += 1
             return {"error": f"Parse failed: {exc}"}
+        # attach the register row per parsed order so the UI can render the
+        # same field-by-field comparison card as the Streamlit parser view
+        for o in out.get("orders") or []:
+            rec = s["desk"].orders.by_id(o.get("order_id")) if o.get("order_id") else None
+            o["register"] = dict(rec) if rec else None
     s["timings"].append({"kind": "parse", "ms": round((time.perf_counter() - t0) * 1000)})
     return out
 
@@ -277,6 +299,8 @@ def dispatch(body: DispatchBody, request: Request):
     s, sid = _session(request)
     if body.new_session:
         s["decisions"] = {}
+        s["tool_history"] = []
+        s["metrics"] = {"dispatched": 0, "committed": set(), "failed": 0}
     desk = s["desk"]
     from desk.contracts import Behaviour, Decision
     out = []
@@ -294,6 +318,9 @@ def dispatch(body: DispatchBody, request: Request):
                 d = Decision(request_id="", behaviour=Behaviour.ASK,
                              explanation="Request failed. Please retry later.")
             s["decisions"][d.decision_id] = {"decision": d, "msg": msg, "skipped": False}
+            s["metrics"]["dispatched"] += 1
+            if d.behaviour in (Behaviour.REFUSE, Behaviour.NO_DATA):
+                s["metrics"]["failed"] += 1
             out.append(d)
             _log(s, "dispatcher", msg, d.explanation, decision_id=d.decision_id)
         s["timings"].append({"kind": "dispatch", "ms": round((time.perf_counter() - t0) * 1000)})
@@ -396,7 +423,9 @@ def confirm(body: ConfirmBody, request: Request):
         item["decision"] = result
         return {"error": err}
     elif err is None:
+        _archive_tool_log(s, item["decision"])
         del s["decisions"][body.decision_id]
+        s["metrics"]["committed"].add(result.order_id)
         _log(s, "dispatcher", f"(card) {body.workshop_id}",
              f"Committed {result.record_id} — {result.order_id} → {result.workshop_id}.")
     else:
@@ -435,7 +464,9 @@ def confirm_split(body: SplitBody, request: Request):
             return {"error": str(exc2)}
     except ValueError as exc:
         return {"error": str(exc)}
+    _archive_tool_log(s, decision)
     del s["decisions"][body.decision_id]
+    s["metrics"]["committed"].add(records[0].order_id)   # split = one request
     _log(s, "dispatcher", f"(split #{body.index + 1})",
          f"Committed {len(records)} parts.")
     _refresh_stale_async(s)
@@ -455,7 +486,9 @@ def confirm_all(request: Request):
               and x["decision"].chosen]
     results, failures = s["desk"].confirm_all(open_d, committed_by="web")
     for d, record in results:
+        _archive_tool_log(s, d)
         s["decisions"].pop(d.decision_id, None)
+        s["metrics"]["committed"].add(record.order_id)
         _log(s, "dispatcher", f"(confirm all) {d.parsed.order_id}",
              f"Committed {record.record_id}.")
     st = _state(s, sid)
@@ -480,7 +513,9 @@ def skip(body: IdBody, request: Request):
 @app.post("/api/dismiss")
 def dismiss(body: IdBody, request: Request):
     s, sid = _session(request)
-    s["decisions"].pop(body.decision_id, None)
+    item = s["decisions"].pop(body.decision_id, None)
+    if item:
+        _archive_tool_log(s, item["decision"])
     return _state(s, sid)
 
 
@@ -695,9 +730,13 @@ def analytics(request: Request):
         dist[d["behaviour"]] = dist.get(d["behaviour"], 0) + 1
     records = desk.audit.load_all()
     committed_ids = {r.order_id for r in records}
-    done = sum(1 for d in decisions if d["already_committed"]) or len(committed_ids)
-    failed = sum(1 for d in decisions if d["behaviour"] in ("refuse", "no_data"))
-    total = max(1, len(decisions))
+    # per-session rates: a split commit writes one ledger row per part but is
+    # still ONE answered request, so count unique order ids against the
+    # number of requests dispatched — never ledger rows vs open cards
+    m = s["metrics"]
+    done = len(m["committed"])
+    failed = m["failed"]
+    total = max(1, m["dispatched"])
     timings = s["timings"]
     avg_ms = round(sum(t["ms"] for t in timings) / len(timings), 1) if timings else 0
     queues = desk.state.queues

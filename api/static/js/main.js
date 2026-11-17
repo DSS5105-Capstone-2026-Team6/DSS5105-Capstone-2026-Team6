@@ -37,15 +37,17 @@ document.addEventListener("DOMContentLoaded", () => {
   $("modelSel").onchange = providerChanged;
   $("toollogBtn").onclick = () => { renderToolLogOverlay(); $("toollogOverlay").style.display = "block"; };
   $("scenarioBtn").onclick = () => { $("scenarioOverlay").style.display = "block"; };
+  $("parserBtn").onclick = () => { $("parserOverlay").style.display = "block"; $("parserBox").focus(); };
   for (const x of ["desk","dashboard","records"]) $("tabbtn-"+x).onclick = () => switchTab(x);
   $("rbBtn").onclick = recordBatch;
   $("cmpBtn").onclick = compareModels;
   // non-modal popovers close on any outside click
   document.addEventListener("click", e => {
-    for (const id of ["toollogOverlay","scenarioOverlay"]){
+    for (const id of ["toollogOverlay","scenarioOverlay","parserOverlay"]){
       const p = $(id);
       if (p && p.style.display !== "none" && !p.contains(e.target)
-          && !e.target.closest("#toollogBtn") && !e.target.closest("#scenarioBtn"))
+          && !e.target.closest("#toollogBtn") && !e.target.closest("#scenarioBtn")
+          && !e.target.closest("#parserBtn"))
         p.style.display = "none";
     }
   });

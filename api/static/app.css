@@ -87,7 +87,26 @@ legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-ri
   background:#f8fafc;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:10px}
 .actionbar .primary{padding:8px 20px;font-size:.95rem;box-shadow:var(--shadow-sm)}
 #status{margin-left:auto}
-.parser-box{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin:10px 0;background:#fff}
+/* scrollable body inside a popover: header/buttons stay put, content scrolls */
+.popover-scroll{max-height:56vh;overflow-y:auto;margin-top:8px;padding-right:4px}
+.popover-scroll::-webkit-scrollbar{width:8px}
+.popover-scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+
+/* LLM parser card view (mirrors the Streamlit parser view) */
+.pr-head{display:flex;align-items:center;gap:10px;margin:10px 0 4px;flex-wrap:wrap}
+.pr-chip{padding:2px 10px;border-radius:10px;font-weight:600;font-size:.85em}
+.pr-order{font-size:1.05em;font-weight:700;color:var(--blue-deep)}
+.pr-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:6px}
+.pr-cell{border:1px solid var(--line);border-radius:10px;padding:5px 9px;background:#fbfdff}
+.pr-cell .k{color:var(--muted);font-size:.75em;text-transform:uppercase;letter-spacing:.03em}
+.pr-cell .v{font-weight:600}
+.pr-cell .v.null{color:#adb5bd;font-weight:400;font-style:italic}
+.pr-cell .reg{font-size:.75em;margin-top:1px}
+.pr-cell.diff{border-color:#ffa94d;background:#fff9f0}
+.pr-ok{color:#2b8a3e}.pr-warn{color:#d9480f}
+@media (max-width:700px){.pr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pr-cons{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pr-con{border-radius:10px;padding:4px 10px;font-size:.88em}
 .overlay{position:fixed;inset:0;background:rgba(28,43,58,.25);z-index:50}
 /* non-modal popovers: they sit next to the rail, never cover the window */
 .popover-panel{position:fixed;top:70px;right:270px;width:400px;max-width:44vw;max-height:72vh;overflow:auto;
